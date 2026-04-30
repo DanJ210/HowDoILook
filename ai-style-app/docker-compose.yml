@@ -1,0 +1,38 @@
+# Local infrastructure only — starts PostgreSQL and Azurite.
+# Backend, Worker, and Frontend still run via `dotnet run` / `npm run dev`.
+#
+# Usage:
+#   docker compose up -d        # start infrastructure
+#   docker compose down         # stop and remove containers (data preserved in volumes)
+#   docker compose down -v      # stop and delete all data volumes
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_style_app
+    ports:
+      - "5432:5432"
+    volumes:
+      - ai_style_app_pgdata:/var/lib/postgresql/data
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    container_name: azurite
+    restart: unless-stopped
+    ports:
+      - "10000:10000"   # Blob
+      - "10001:10001"   # Queue
+      - "10002:10002"   # Table
+    volumes:
+      - azurite_data:/data
+    command: azurite --loose --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+
+volumes:
+  ai_style_app_pgdata:
+    name: ai_style_app_pgdata
+    external: true   # uses the existing named volume created previously
+  azurite_data:

@@ -1,0 +1,88 @@
+# ── Secrets & Configuration (environment-specific) ────────────────
+.env
+.env.local
+.env.*.local
+**/*.Development.json
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Staging.json
+secrets.json
+local.settings.json
+
+# ── Frontend (Node.js) ────────────────────────────────────────────
+ai-style-app/frontend/node_modules/
+ai-style-app/frontend/dist/
+ai-style-app/frontend/.vite/
+
+# ── .NET build output & artifacts ────────────────────────────────
+**/bin/
+**/obj/
+**/packages/
+*.user
+*.suo
+.vs/
+.vscode/settings.json
+.vscode/launch.json
+
+# ── Local cache & temporary files ────────────────────────────────
+.vs/
+.vscode/
+*.log
+*.bak
+*.swp
+*~
+
+# ── OS files ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# ── Docker local storage ──────────────────────────────────────────
+__blobstorage__/
+__queuestorage__/
+__tablestorage__/
+.azurite/
+
+# ── IDE & Editor ──────────────────────────────────────────────────
+.idea/
+*.swp
+*.swo
+*~
+.vimrc
+.project
+.classpath
+*.sublime-workspace
+
+# ── Visual Studio Code ────────────────────────────────────────────
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+.vscode/extensions.json
+
+# ── npm ───────────────────────────────────────────────────────────
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# ── Certificates (development) ────────────────────────────────────
+*.pem
+*.key
+*.crt
+*.pfx
+
+# ── Database ──────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Build outputs (specific) ──────────────────────────────────────
+ai-style-app/backend/bin/
+ai-style-app/backend/obj/
+ai-style-app/data/bin/
+ai-style-app/data/obj/
+ai-style-app/worker/bin/
+ai-style-app/worker/obj/
+ai-style-app/frontend/dist/
+ai-style-app/frontend/node_modules/

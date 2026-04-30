@@ -1,0 +1,74 @@
+using AiStyleApp.Api.Models;
+using AiStyleApp.Data;
+using AiStyleApp.Data.Entities;
+using Microsoft.EntityFrameworkCore;
+
+namespace AiStyleApp.Api.Services;
+
+public interface IJobService
+{
+    Task<JobStatusResponse?> GetJobStatusAsync(Guid jobId, string userId, CancellationToken ct = default);
+    Task<StyleJobEntity?> GetByExternalIdAsync(string externalPredictionId, CancellationToken ct = default);
+    Task UpdateFromWebhookAsync(StyleJobEntity job, string status, string? resultJson, string? errorCode, string? errorMessage, CancellationToken ct = default);
+}
+
+public class JobService : IJobService
+{
+    private readonly AppDbContext _db;
+
+    public JobService(AppDbContext db)
+    {
+        _db = db;
+    }
+
+    public async Task<JobStatusResponse?> GetJobStatusAsync(Guid jobId, string userId, CancellationToken ct = default)
+    {
+        var job = await _db.StyleJobs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(j => j.Id == jobId && j.UserId == userId, ct);
+
+        if (job is null) return null;
+
+        return MapToResponse(job);
+    }
+
+    public Task<StyleJobEntity?> GetByExternalIdAsync(string externalPredictionId, CancellationToken ct = default)
+        => _db.StyleJobs.FirstOrDefaultAsync(j => j.ExternalPredictionId == externalPredictionId, ct);
+
+    public async Task UpdateFromWebhookAsync(
+        StyleJobEntity job,
+        string status,
+        string? resultJson,
+        string? errorCode,
+        string? errorMessage,
+        CancellationToken ct = default)
+    {
+        job.Status = status;
+        job.ResultJson = resultJson;
+        job.ErrorCode = errorCode;
+        job.ErrorMessage = errorMessage;
+
+        if (status == JobStatus.Processing && job.StartedAtUtc is null)
+            job.StartedAtUtc = DateTimeOffset.UtcNow;
+
+        if (JobStatus.IsTerminal(status))
+            job.CompletedAtUtc = DateTimeOffset.UtcNow;
+
+        await _db.SaveChangesAsync(ct);
+    }
+
+    private static JobStatusResponse MapToResponse(StyleJobEntity job) => new(
+        job.Id,
+        job.StyleItemId,
+        job.Status,
+        job.JobType,
+        job.ErrorCode,
+        job.ErrorMessage,
+        job.ResultJson,
+        job.ExternalPredictionId,
+        job.CreatedAtUtc,
+        job.StartedAtUtc,
+        job.CompletedAtUtc,
+        job.AttemptCount
+    );
+}
