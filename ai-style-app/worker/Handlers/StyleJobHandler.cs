@@ -75,7 +75,7 @@ public class StyleJobHandler : IMessageHandler
         try
         {
             var webhookUrl = $"{_webhookBaseUrl}/api/webhooks/replicate";
-            var predictionId = await _replicate.CreatePredictionAsync(job.Prompt, webhookUrl, cancellationToken);
+            var predictionId = await _replicate.CreatePredictionAsync(job.Prompt, webhookUrl, job.ImageUrl, cancellationToken);
 
             entity.ExternalPredictionId = predictionId;
             await _db.SaveChangesAsync(cancellationToken);

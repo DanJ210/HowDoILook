@@ -14,6 +14,7 @@ export interface StyleItemResponse {
   id: string
   name: string
   description: string
+  imageUrl: string | null
   createdAt: string
 }
 
@@ -21,6 +22,11 @@ export interface GenerateStyleRequest {
   name: string
   description: string
   prompt: string
+  imageUrl?: string
+}
+
+export interface UploadImageResponse {
+  url: string
 }
 
 export interface GenerateStyleResponse {

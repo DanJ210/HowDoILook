@@ -7,7 +7,7 @@ namespace AiStyleApp.Worker.Services;
 
 public interface IReplicateWorkerClient
 {
-    Task<string> CreatePredictionAsync(string prompt, string webhookUrl, CancellationToken ct = default);
+    Task<string> CreatePredictionAsync(string prompt, string webhookUrl, string? imageUrl = null, CancellationToken ct = default);
 }
 
 public class ReplicateWorkerClient : IReplicateWorkerClient
@@ -26,12 +26,16 @@ public class ReplicateWorkerClient : IReplicateWorkerClient
             new AuthenticationHeaderValue("Token", token);
     }
 
-    public async Task<string> CreatePredictionAsync(string prompt, string webhookUrl, CancellationToken ct = default)
+    public async Task<string> CreatePredictionAsync(string prompt, string webhookUrl, string? imageUrl = null, CancellationToken ct = default)
     {
+        object input = imageUrl is not null
+            ? new { prompt, image = imageUrl }
+            : new { prompt };
+
         var body = new
         {
             version = _modelVersion,
-            input = new { prompt },
+            input,
             webhook = webhookUrl,
             webhook_events_filter = new[] { "start", "completed" }
         };

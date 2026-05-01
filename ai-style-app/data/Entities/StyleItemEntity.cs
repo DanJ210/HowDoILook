@@ -26,6 +26,10 @@ public class StyleItemEntity
     [MaxLength(4000)]
     public required string Prompt { get; set; }
 
+    [Column("image_url")]
+    [MaxLength(2048)]
+    public string? ImageUrl { get; set; }
+
     [Column("created_at_utc")]
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 

@@ -14,7 +14,8 @@ The worker and backend depend on Azure Storage Queue. Run Azurite locally before
 
 ```bash
 docker run -d --name azurite -p 10000:10000 -p 10001:10001 -p 10002:10002 \
-  mcr.microsoft.com/azure-storage/azurite
+  mcr.microsoft.com/azure-storage/azurite \
+  azurite --loose --skipApiVersionCheck --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
 ```
 
 If you use Docker Desktop, ensure the daemon is running first. If `azurite` already exists from a previous run, use:

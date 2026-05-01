@@ -29,7 +29,7 @@ services:
       - "10002:10002"   # Table
     volumes:
       - azurite_data:/data
-    command: azurite --loose --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+    command: azurite --loose --skipApiVersionCheck --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
 
 volumes:
   ai_style_app_pgdata:

@@ -47,7 +47,8 @@ public class StyleService : IStyleService
             UserId = userId,
             Name = request.Name,
             Description = request.Description,
-            Prompt = request.Prompt
+            Prompt = request.Prompt,
+            ImageUrl = request.ImageUrl
         };
 
         var job = new StyleJobEntity
@@ -55,6 +56,7 @@ public class StyleService : IStyleService
             UserId = userId,
             StyleItemId = item.Id,
             Prompt = request.Prompt,
+            ImageUrl = request.ImageUrl,
             CorrelationId = Guid.NewGuid().ToString()
         };
 
@@ -71,7 +73,8 @@ public class StyleService : IStyleService
             EnqueuedAtUtc: DateTimeOffset.UtcNow,
             CorrelationId: job.CorrelationId ?? Guid.NewGuid().ToString(),
             Attempt: 0,
-            SchemaVersion: 1
+            SchemaVersion: 1,
+            ImageUrl: request.ImageUrl
         );
 
         await _queue.PublishAsync(queueMessage, ct);
@@ -92,6 +95,6 @@ public class StyleService : IStyleService
     }
 
     private static StyleItemResponse Map(StyleItemEntity e) =>
-        new(e.Id, e.Name, e.Description, e.CreatedAtUtc);
+        new(e.Id, e.Name, e.Description, e.ImageUrl, e.CreatedAtUtc);
 }
 

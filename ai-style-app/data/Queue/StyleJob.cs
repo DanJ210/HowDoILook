@@ -10,5 +10,6 @@ public record StyleJob(
     DateTimeOffset EnqueuedAtUtc,
     string CorrelationId,
     int Attempt,
-    int SchemaVersion = 1
+    int SchemaVersion = 1,
+    string? ImageUrl = null
 );

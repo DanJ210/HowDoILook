@@ -29,6 +29,10 @@ public class StyleJobEntity
     [MaxLength(4000)]
     public required string Prompt { get; set; }
 
+    [Column("image_url")]
+    [MaxLength(2048)]
+    public string? ImageUrl { get; set; }
+
     [Column("external_prediction_id")]
     [MaxLength(200)]
     public string? ExternalPredictionId { get; set; }

@@ -4,6 +4,7 @@ public record StyleItemResponse(
     Guid Id,
     string Name,
     string Description,
+    string? ImageUrl,
     DateTimeOffset CreatedAt
 );
 
@@ -17,7 +18,8 @@ public record CreateStyleItemRequest(
 public record GenerateStyleRequest(
     string Name,
     string Description,
-    string Prompt
+    string Prompt,
+    string? ImageUrl = null
 );
 
 public record GenerateStyleResponse(

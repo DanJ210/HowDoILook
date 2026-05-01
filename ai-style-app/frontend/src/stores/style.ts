@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '@/api/client'
-import type { StyleItemResponse, GenerateStyleRequest, GenerateStyleResponse } from '@/types/api'
+import type { StyleItemResponse, GenerateStyleRequest, GenerateStyleResponse, UploadImageResponse } from '@/types/api'
 import { useJobStore } from './job'
 
 export const useStyleStore = defineStore('style', () => {
@@ -21,8 +21,15 @@ export const useStyleStore = defineStore('style', () => {
     }
   }
 
-  async function generate(request: GenerateStyleRequest): Promise<GenerateStyleResponse> {
-    const resp = await api.post<GenerateStyleResponse>('/style/generate', request)
+  async function generate(request: GenerateStyleRequest, imageFile?: File): Promise<GenerateStyleResponse> {
+    let imageUrl: string | undefined
+
+    if (imageFile) {
+      const uploaded = await api.upload<UploadImageResponse>('/upload/image', imageFile)
+      imageUrl = uploaded.url
+    }
+
+    const resp = await api.post<GenerateStyleResponse>('/style/generate', { ...request, imageUrl })
 
     // Start polling for the job
     const jobStore = useJobStore()

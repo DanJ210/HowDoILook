@@ -79,11 +79,14 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 // Options
 builder.Services.Configure<QueueOptions>(builder.Configuration.GetSection(QueueOptions.Section));
 builder.Services.Configure<ReplicateOptions>(builder.Configuration.GetSection(ReplicateOptions.Section));
+builder.Services.Configure<BlobStorageOptions>(
+    builder.Configuration.GetSection(BlobStorageOptions.Section));
 
 // Application services
 builder.Services.AddScoped<IStyleService, StyleService>();
 builder.Services.AddScoped<IJobService, JobService>();
 builder.Services.AddScoped<IQueuePublisher, QueuePublisher>();
+builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();
 builder.Services.AddSingleton<IReplicateSignatureVerifier, ReplicateSignatureVerifier>();
 builder.Services.AddHttpClient<IReplicateClient, ReplicateClient>();
 
