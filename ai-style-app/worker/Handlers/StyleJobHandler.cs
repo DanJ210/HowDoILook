@@ -13,7 +13,6 @@ public class StyleJobHandler : IMessageHandler
     private readonly AppDbContext _db;
     private readonly IReplicateWorkerClient _replicate;
     private readonly string _webhookBaseUrl;
-    private const int MaxAttempts = 3;
 
     public StyleJobHandler(
         ILogger<StyleJobHandler> logger,
@@ -67,8 +66,10 @@ public class StyleJobHandler : IMessageHandler
             return;
         }
 
+        var nextAttempt = entity.AttemptCount + 1;
+
         entity.Status = "Processing";
-        entity.AttemptCount = job.Attempt + 1;
+        entity.AttemptCount = nextAttempt;
         entity.StartedAtUtc ??= DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);
 
@@ -88,14 +89,14 @@ public class StyleJobHandler : IMessageHandler
         {
             _logger.LogError(ex, "Failed to submit job {JobId} to Replicate (attempt {Attempt}).", entity.Id, entity.AttemptCount);
 
-            if (entity.AttemptCount >= MaxAttempts)
+            if (entity.AttemptCount >= entity.MaxAttempts)
             {
                 entity.Status = "Failed";
                 entity.ErrorCode = "replicate_submission_failed";
                 entity.ErrorMessage = ex.Message;
                 entity.CompletedAtUtc = DateTimeOffset.UtcNow;
                 await _db.SaveChangesAsync(cancellationToken);
-                _logger.LogWarning("Job {JobId} marked as Failed after {MaxAttempts} attempts.", entity.Id, MaxAttempts);
+                _logger.LogWarning("Job {JobId} marked as Failed after {MaxAttempts} attempts.", entity.Id, entity.MaxAttempts);
             }
             else
             {
