@@ -4,6 +4,7 @@ using AiStyleApp.Data.Queue;
 using AiStyleApp.Worker.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using System.Net;
 
 namespace AiStyleApp.Worker.Handlers;
 
@@ -76,7 +77,8 @@ public class StyleJobHandler : IMessageHandler
         try
         {
             var webhookUrl = $"{_webhookBaseUrl}/api/webhooks/replicate";
-            var predictionId = await _replicate.CreatePredictionAsync(job.Prompt, webhookUrl, job.ImageUrl, cancellationToken);
+            var replicateImageUrl = GetReplicateAccessibleImageUrl(job.ImageUrl);
+            var predictionId = await _replicate.CreatePredictionAsync(job.Prompt, webhookUrl, replicateImageUrl, cancellationToken);
 
             entity.ExternalPredictionId = predictionId;
             await _db.SaveChangesAsync(cancellationToken);
@@ -84,6 +86,24 @@ public class StyleJobHandler : IMessageHandler
             _logger.LogInformation(
                 "Created Replicate prediction {PredictionId} for job {JobId}.",
                 predictionId, entity.Id);
+        }
+        catch (ReplicateApiException ex) when (
+            ex.StatusCode is HttpStatusCode.PaymentRequired
+            or HttpStatusCode.Unauthorized
+            or HttpStatusCode.Forbidden
+            or HttpStatusCode.UnprocessableEntity)
+        {
+            _logger.LogError(
+                ex,
+                "Replicate rejected job {JobId} with status {StatusCode}. Marking as failed without retry.",
+                entity.Id,
+                (int)ex.StatusCode);
+
+            entity.Status = "Failed";
+            entity.ErrorCode = "replicate_request_rejected";
+            entity.ErrorMessage = ex.Message;
+            entity.CompletedAtUtc = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -106,6 +126,51 @@ public class StyleJobHandler : IMessageHandler
                 throw; // Worker's retry logic will re-enqueue
             }
         }
+    }
+
+    private string? GetReplicateAccessibleImageUrl(string? imageUrl)
+    {
+        if (string.IsNullOrWhiteSpace(imageUrl))
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(_webhookBaseUrl) || !Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri))
+        {
+            return imageUrl;
+        }
+
+        var isLocalHost = uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+
+        if (!isLocalHost || uri.Port != 10000)
+        {
+            return imageUrl;
+        }
+
+        // Azurite path shape: /devstoreaccount1/{container}/{userId}/{fileName}
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length < 4)
+        {
+            return imageUrl;
+        }
+
+        var container = segments[1];
+        if (!container.Equals("user-uploads", StringComparison.OrdinalIgnoreCase))
+        {
+            return imageUrl;
+        }
+
+        var userId = segments[2];
+        var fileName = segments[3];
+        var publicUrl = $"{_webhookBaseUrl}/api/upload/public/{Uri.EscapeDataString(userId)}/{Uri.EscapeDataString(fileName)}";
+
+        _logger.LogInformation(
+            "Rewriting local blob URL for Replicate access. Local={LocalUrl}, Public={PublicUrl}",
+            imageUrl,
+            publicUrl);
+
+        return publicUrl;
     }
 }
 

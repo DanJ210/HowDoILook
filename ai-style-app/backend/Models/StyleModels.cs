@@ -5,7 +5,8 @@ public record StyleItemResponse(
     string Name,
     string Description,
     string? ImageUrl,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    Guid? LatestJobId
 );
 
 public record CreateStyleItemRequest(

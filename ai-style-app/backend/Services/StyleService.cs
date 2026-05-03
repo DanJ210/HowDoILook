@@ -21,6 +21,7 @@ public class StyleService : IStyleService
     {
         var items = await _db.StyleItems
             .AsNoTracking()
+            .Include(x => x.Jobs)
             .Where(x => x.UserId == userId)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(ct);
@@ -32,6 +33,7 @@ public class StyleService : IStyleService
     {
         var item = await _db.StyleItems
             .AsNoTracking()
+            .Include(x => x.Jobs)
             .FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, ct);
 
         return item is null ? null : Map(item);
@@ -95,6 +97,12 @@ public class StyleService : IStyleService
     }
 
     private static StyleItemResponse Map(StyleItemEntity e) =>
-        new(e.Id, e.Name, e.Description, e.ImageUrl, e.CreatedAtUtc);
+        new(
+            e.Id,
+            e.Name,
+            e.Description,
+            e.ImageUrl,
+            e.CreatedAtUtc,
+            e.Jobs.OrderByDescending(job => job.CreatedAtUtc).Select(job => (Guid?)job.Id).FirstOrDefault());
 }
 

@@ -1,6 +1,7 @@
 using AiStyleApp.Api.Models;
 using AiStyleApp.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Text;
 using System.Text.Json;
 
 namespace AiStyleApp.Api.Controllers;
@@ -28,14 +29,34 @@ public class WebhooksController : ControllerBase
     {
         // Read the raw body for HMAC verification
         Request.EnableBuffering();
-        using var reader = new System.IO.StreamReader(Request.Body, leaveOpen: true);
-        var rawBody = await reader.ReadToEndAsync(ct);
+        using var memory = new MemoryStream();
+        await Request.Body.CopyToAsync(memory, ct);
+        var rawBodyBytes = memory.ToArray();
+        var rawBody = Encoding.UTF8.GetString(rawBodyBytes);
         Request.Body.Position = 0;
 
-        var signature = Request.Headers["Webhook-Secret"].FirstOrDefault() ?? string.Empty;
-        if (!_verifier.IsValid(rawBody, signature))
+        var webhookId = Request.Headers["webhook-id"].FirstOrDefault() ?? string.Empty;
+        var webhookTimestamp = Request.Headers["webhook-timestamp"].FirstOrDefault() ?? string.Empty;
+        var webhookSignature = Request.Headers["webhook-signature"].FirstOrDefault() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(webhookId)
+            || string.IsNullOrWhiteSpace(webhookTimestamp)
+            || string.IsNullOrWhiteSpace(webhookSignature))
         {
-            _logger.LogWarning("Rejected Replicate webhook: invalid signature.");
+            _logger.LogWarning("Rejected Replicate webhook: missing verification headers.");
+            return Unauthorized("Missing verification headers.");
+        }
+
+        var verification = _verifier.Verify(rawBodyBytes, webhookId, webhookTimestamp, webhookSignature);
+        if (!verification.IsValid)
+        {
+            _logger.LogWarning(
+                "Rejected Replicate webhook: {FailureReason} WebhookId={WebhookId}, Timestamp={WebhookTimestamp}, SignaturePrefix={SignaturePrefix}, BodyLength={BodyLength}",
+                verification.FailureReason,
+                webhookId,
+                webhookTimestamp,
+                webhookSignature.Length > 24 ? webhookSignature[..24] : webhookSignature,
+                rawBodyBytes.Length);
             return Unauthorized("Invalid signature.");
         }
 

@@ -16,6 +16,7 @@ export interface StyleItemResponse {
   description: string
   imageUrl: string | null
   createdAt: string
+  latestJobId: string | null
 }
 
 export interface GenerateStyleRequest {

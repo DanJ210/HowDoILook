@@ -53,6 +53,24 @@ public class UploadController : ControllerBase
 
         return Ok(new UploadImageResponse(url));
     }
+
+    /// <summary>
+    /// Public image endpoint for external processors (e.g. Replicate) to fetch uploaded files.
+    /// In local development this bridges private Azurite URLs through the backend/ngrok URL.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpGet("public/{userId}/{fileName}")]
+    public async Task<IActionResult> GetPublicImage(string userId, string fileName, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(fileName))
+            return BadRequest("Invalid image path.");
+
+        var downloaded = await _blobs.DownloadAsync(userId, fileName, ct);
+        if (downloaded is null)
+            return NotFound();
+
+        return File(downloaded.Value.Content, downloaded.Value.ContentType);
+    }
 }
 
 public record UploadImageResponse(string Url);

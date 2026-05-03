@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useJobStore } from '@/stores/job'
 import { TERMINAL_STATUSES } from '@/types/api'
 
 const route = useRoute()
+const router = useRouter()
 const jobStore = useJobStore()
 
 const jobId = computed(() => route.params.id as string)
@@ -37,11 +38,28 @@ function parsedResult(json: string | null) {
   if (!json) return null
   try { return JSON.parse(json) } catch { return json }
 }
+
+function goBack() {
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
+
+  router.push({ name: 'home' })
+}
 </script>
 
 <template>
   <main class="max-w-xl mx-auto px-4 py-8">
-    <h1 class="text-2xl font-bold mb-6">Job Status</h1>
+    <div class="mb-6 flex items-center justify-between gap-4">
+      <h1 class="text-2xl font-bold">Job Status</h1>
+      <button
+        @click="goBack"
+        class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-200 transition text-sm"
+      >
+        Back to List
+      </button>
+    </div>
 
     <div v-if="!job" class="text-gray-500">
       <span v-if="isPolling">Loading job…</span>

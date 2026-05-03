@@ -18,6 +18,10 @@ async function handleDevLogin() {
   await authStore.loginDev('dev-user')
   await styleStore.fetchAll()
 }
+
+function viewJob(jobId: string) {
+  router.push({ name: 'job-status', params: { id: jobId } })
+}
 </script>
 
 <template>
@@ -82,13 +86,22 @@ async function handleDevLogin() {
           <p class="text-gray-600 text-sm mt-1">{{ item.description }}</p>
           <p class="text-gray-400 text-xs mt-2">{{ new Date(item.createdAt).toLocaleString() }}</p>
         </div>
-        <button
-          @click="styleStore.remove(item.id)"
-          class="text-red-400 hover:text-red-600 text-sm ml-4 shrink-0"
-          title="Delete"
-        >
-          Delete
-        </button>
+        <div class="ml-4 shrink-0 flex items-center gap-3">
+          <button
+            v-if="item.latestJobId"
+            @click="viewJob(item.latestJobId)"
+            class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-200 transition text-sm"
+          >
+            View Job
+          </button>
+          <button
+            @click="styleStore.remove(item.id)"
+            class="text-red-400 hover:text-red-600 text-sm"
+            title="Delete"
+          >
+            Delete
+          </button>
+        </div>
       </li>
     </ul>
   </main>
