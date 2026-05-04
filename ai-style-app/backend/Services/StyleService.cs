@@ -96,13 +96,17 @@ public class StyleService : IStyleService
         return true;
     }
 
-    private static StyleItemResponse Map(StyleItemEntity e) =>
-        new(
+    private static StyleItemResponse Map(StyleItemEntity e)
+    {
+        var latestJob = e.Jobs.OrderByDescending(job => job.CreatedAtUtc).FirstOrDefault();
+        return new(
             e.Id,
             e.Name,
             e.Description,
             e.ImageUrl,
             e.CreatedAtUtc,
-            e.Jobs.OrderByDescending(job => job.CreatedAtUtc).Select(job => (Guid?)job.Id).FirstOrDefault());
+            latestJob?.Id,
+            latestJob?.Status);
+    }
 }
 

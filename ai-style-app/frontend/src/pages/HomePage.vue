@@ -3,6 +3,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useStyleStore } from '@/stores/style'
 import { useAuthStore } from '@/stores/auth'
+import type { JobStatus } from '@/types/api'
 
 const router = useRouter()
 const styleStore = useStyleStore()
@@ -21,6 +22,20 @@ async function handleDevLogin() {
 
 function viewJob(jobId: string) {
   router.push({ name: 'job-status', params: { id: jobId } })
+}
+
+const statusPillClass: Record<JobStatus, string> = {
+  Queued:     'bg-gray-100 text-gray-600',
+  Processing: 'bg-blue-100 text-blue-700',
+  Succeeded:  'bg-green-100 text-green-700',
+  Failed:     'bg-red-100 text-red-700',
+  TimedOut:   'bg-orange-100 text-orange-700',
+  Canceled:   'bg-gray-100 text-gray-500',
+}
+
+function pillClass(status: JobStatus | null) {
+  if (!status) return ''
+  return statusPillClass[status] ?? 'bg-gray-100 text-gray-600'
 }
 </script>
 
@@ -87,6 +102,12 @@ function viewJob(jobId: string) {
           <p class="text-gray-400 text-xs mt-2">{{ new Date(item.createdAt).toLocaleString() }}</p>
         </div>
         <div class="ml-4 shrink-0 flex items-center gap-3">
+          <span
+            v-if="item.latestJobStatus"
+            :class="['text-xs font-medium px-2.5 py-1 rounded-full', pillClass(item.latestJobStatus)]"
+          >
+            {{ item.latestJobStatus }}
+          </span>
           <button
             v-if="item.latestJobId"
             @click="viewJob(item.latestJobId)"

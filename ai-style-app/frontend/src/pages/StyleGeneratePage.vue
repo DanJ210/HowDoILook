@@ -82,6 +82,17 @@ import { computed } from 'vue'
 
 <template>
   <main class="max-w-xl mx-auto px-4 py-8">
+    <button
+      type="button"
+      @click="router.back()"
+      class="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+      Back
+    </button>
+
     <h1 class="text-2xl font-bold mb-6">Generate Style</h1>
 
     <form @submit.prevent="handleSubmit" class="space-y-5">
