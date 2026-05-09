@@ -3,10 +3,12 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useStyleStore } from '@/stores/style'
+import { useBackendRequestState } from '@/composables/useBackendRequestState'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const styleStore = useStyleStore()
+const requestState = useBackendRequestState()
 
 const form = ref({ name: '', description: '', haircut: 'No change', hairColor: 'No change', gender: 'none' })
 const selectedFile = ref<File | null>(null)
@@ -14,7 +16,10 @@ const previewUrl = ref<string | null>(null)
 const isResultPublic = ref(false)
 const isUploading = ref(false)
 const isSubmitting = ref(false)
-const submitError = ref<string | null>(null)
+const lastErrorWasNetwork = ref(false)
+
+// Alias for convenience — composable owns the reactive ref
+const submitError = requestState.error
 
 const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 const MAX_SIZE_MB = 10
@@ -63,17 +68,21 @@ function removeFile() {
 async function handleSubmit() {
   if (!selectedFile.value) {
     submitError.value = 'Please upload a photo before generating a style.'
+    lastErrorWasNetwork.value = false
     return
   }
 
   isSubmitting.value = true
   isUploading.value = true
   submitError.value = null
+  lastErrorWasNetwork.value = false
   try {
     const resp = await styleStore.generate(form.value, selectedFile.value ?? undefined, isResultPublic.value)
     router.push({ name: 'job-status', params: { id: resp.jobId } })
   } catch (err: unknown) {
-    submitError.value = (err as { message?: string })?.message ?? 'Failed to submit request.'
+    // No auto-retry — submitting is a mutation; user retries explicitly
+    lastErrorWasNetwork.value = requestState.isOfflineError(err)
+    requestState.handleError(err)
   } finally {
     isSubmitting.value = false
     isUploading.value = false
@@ -364,7 +373,19 @@ async function handleDevLogin() {
         </select>
       </div>
 
-      <div v-if="submitError" class="text-red-600 text-sm">{{ submitError }}</div>
+      <div v-if="submitError" class="space-y-2">
+        <div class="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+          {{ submitError }}
+        </div>
+        <button
+          v-if="lastErrorWasNetwork"
+          type="button"
+          @click="handleSubmit"
+          class="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+        >
+          Try again
+        </button>
+      </div>
 
       <button
         type="submit"

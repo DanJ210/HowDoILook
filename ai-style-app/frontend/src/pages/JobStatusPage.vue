@@ -3,10 +3,15 @@ import { onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useJobStore } from '@/stores/job'
 import { TERMINAL_STATUSES } from '@/types/api'
+import { useBackendRequestState } from '@/composables/useBackendRequestState'
 
 const route = useRoute()
 const router = useRouter()
 const jobStore = useJobStore()
+const requestState = useBackendRequestState({
+  retryDelayMs: 3000,
+  offlineMessage: 'Waiting for backend to come online…'
+})
 
 const jobId = computed(() => route.params.id as string)
 const job = computed(() => jobStore.getJob(jobId.value))
@@ -15,12 +20,30 @@ const pollingState = computed(() => jobStore.getPollingState(jobId.value))
 const pollingError = computed(() => jobStore.getPollingError(jobId.value))
 
 onMounted(() => {
-  if (jobId.value) {
-    jobStore.fetchJob(jobId.value)
-    if (!job.value || !TERMINAL_STATUSES.includes(job.value.status)) {
-      jobStore.startPolling(jobId.value)
+  if (!jobId.value) return
+
+  requestState.beginInitialLoad()
+
+  const loadJob = async (isRetry = false) => {
+    try {
+      if (!isRetry) {
+        requestState.beginInitialLoad()
+      }
+
+      await jobStore.fetchJob(jobId.value)
+      requestState.reset()
+
+      if (!job.value || !TERMINAL_STATUSES.includes(job.value.status)) {
+        jobStore.startPolling(jobId.value)
+      }
+    } catch (err: unknown) {
+      requestState.handleError(err, () => loadJob(true))
+    } finally {
+      requestState.finishLoad()
     }
   }
+
+  loadJob()
 })
 
 onUnmounted(() => {
@@ -81,7 +104,19 @@ function goBack() {
       </button>
     </div>
 
-    <div v-if="!job" class="text-gray-500">
+    <div v-if="requestState.isLoading || requestState.isWaitingForBackend" class="space-y-4 text-center text-slate-300">
+      <div class="mx-auto h-64 max-w-2xl animate-pulse rounded-3xl bg-white/5" />
+      <p v-if="requestState.isWaitingForBackend" class="text-sm text-slate-400">
+        {{ requestState.offlineMessage }} retrying every 3s
+      </p>
+      <p v-else class="text-gray-500">Loading job…</p>
+    </div>
+
+    <div v-else-if="requestState.error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
+      {{ requestState.error }}
+    </div>
+
+    <div v-else-if="!job" class="text-gray-500">
       <span v-if="isPolling">Loading job…</span>
       <span v-else>Job not found.</span>
     </div>

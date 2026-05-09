@@ -4,49 +4,81 @@ import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { PublicFeedItemResponse, FeedPageResponse } from '@/types/api'
+import { useBackendRequestState } from '@/composables/useBackendRequestState'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const requestState = useBackendRequestState({
+  retryDelayMs: 3000,
+  offlineMessage: 'Waiting for backend to come online…'
+})
+const retryCount = requestState.retryCount
 
 const PAGE_SIZE = 12
 
 const feed = ref<PublicFeedItemResponse[]>([])
-const isLoading = ref(false)
-const isLoadingMore = ref(false)
 const hasMore = ref(true)
-const error = ref<string | null>(null)
 
 // Cursor = publishedAtUtc of last loaded item
 let cursor: string | null = null
 
-async function fetchPage(loadMore = false) {
+function isFeedPageResponse(value: unknown): value is FeedPageResponse {
+  if (!value || typeof value !== 'object') return false
+  const maybeFeed = value as Partial<FeedPageResponse>
+  return Array.isArray(maybeFeed.items) && typeof maybeFeed.hasMore === 'boolean'
+}
+
+function normalizeFeedPageResponse(value: unknown): FeedPageResponse {
+  if (isFeedPageResponse(value)) return value
+
+  // Backward compatibility with older backend shape: PublicFeedItemResponse[]
+  if (Array.isArray(value)) {
+    return {
+      items: value as PublicFeedItemResponse[],
+      hasMore: false
+    }
+  }
+
+  return {
+    items: [],
+    hasMore: false
+  }
+}
+
+async function fetchPage(loadMore = false, isRetry = false) {
   if (loadMore) {
-    isLoadingMore.value = true
+    requestState.beginLoadMore()
   } else {
-    isLoading.value = true
-    error.value = null
-    feed.value = []
-    cursor = null
-    hasMore.value = true
+    if (!isRetry) {
+      requestState.beginInitialLoad()
+      feed.value = []
+      cursor = null
+      hasMore.value = true
+    }
   }
 
   try {
     let url = `/style/feed?take=${PAGE_SIZE}`
     if (cursor) url += `&before=${encodeURIComponent(cursor)}`
 
-    const page = await api.get<FeedPageResponse>(url)
+    const response = await api.get<unknown>(url)
+    const page = normalizeFeedPageResponse(response)
 
     feed.value = loadMore ? [...feed.value, ...page.items] : page.items
     hasMore.value = page.hasMore
+    requestState.reset()
 
     if (page.items.length > 0) {
       cursor = page.items[page.items.length - 1].publishedAtUtc
     }
   } catch (err: unknown) {
-    error.value = (err as { message?: string })?.message ?? 'Failed to load the public feed.'
+    if (!loadMore && feed.value.length === 0) {
+      requestState.handleError(err, () => fetchPage(false, true))
+    } else {
+      requestState.handleError(err, undefined, true)
+    }
   } finally {
-    isLoading.value = false
-    isLoadingMore.value = false
+    requestState.finishLoad()
   }
 }
 
@@ -59,7 +91,7 @@ onMounted(async () => {
 
   observer = new IntersectionObserver(
     async (entries) => {
-      if (entries[0].isIntersecting && !isLoadingMore.value && !isLoading.value && hasMore.value) {
+      if (entries[0].isIntersecting && !requestState.isLoadingMore.value && !requestState.isLoading.value && hasMore.value) {
         await fetchPage(true)
       }
     },
@@ -133,17 +165,23 @@ function openJobs() {
     </section>
 
     <!-- Initial loading -->
-    <div v-if="isLoading" class="grid grid-cols-2 gap-1 sm:grid-cols-3">
-      <div
-        v-for="n in PAGE_SIZE"
-        :key="n"
-        class="aspect-square animate-pulse rounded-2xl bg-white/5"
-      />
+    <div v-if="requestState.isLoading || requestState.isWaitingForBackend" class="space-y-3">
+      <div class="grid grid-cols-2 gap-1 sm:grid-cols-3">
+        <div
+          v-for="n in PAGE_SIZE"
+          :key="n"
+          class="aspect-square animate-pulse rounded-2xl bg-white/5"
+        />
+      </div>
+      <p v-if="requestState.isWaitingForBackend" class="text-center text-sm text-slate-400">
+        {{ requestState.offlineMessage }} retrying every 3s
+        <span v-if="retryCount > 0">(attempt {{ retryCount + 1 }})</span>
+      </p>
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
-      {{ error }}
+    <div v-else-if="requestState.error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
+      {{ requestState.error }}
     </div>
 
     <!-- Empty -->
@@ -182,7 +220,7 @@ function openJobs() {
 
       <!-- Infinite scroll sentinel -->
       <div ref="sentinel" class="mt-6 flex justify-center pb-2">
-        <span v-if="isLoadingMore" class="animate-pulse text-sm text-slate-400">Loading more…</span>
+        <span v-if="requestState.isLoadingMore" class="animate-pulse text-sm text-slate-400">Loading more…</span>
         <span v-else-if="!hasMore && feed.length > 0" class="text-sm text-slate-500">All caught up</span>
       </div>
     </section>

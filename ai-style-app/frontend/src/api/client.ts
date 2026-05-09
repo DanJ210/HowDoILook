@@ -8,14 +8,24 @@ function getAuthHeader(): Record<string, string> {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeader(),
-      ...options?.headers
-    },
-    ...options
-  })
+  let response: Response
+
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeader(),
+        ...options?.headers
+      },
+      ...options
+    })
+  } catch (err: unknown) {
+    const error: ApiError = {
+      message: (err as { message?: string })?.message ?? 'Unable to reach the backend.',
+      statusCode: 0
+    }
+    throw error
+  }
 
   if (!response.ok) {
     const error: ApiError = {
@@ -35,12 +45,22 @@ async function uploadFile<T>(path: string, file: File): Promise<T> {
   const form = new FormData()
   form.append('file', file)
 
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
-    // Do NOT set Content-Type — the browser must set it with the multipart boundary
-    headers: { ...getAuthHeader() },
-    body: form
-  })
+  let response: Response
+
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      // Do NOT set Content-Type — the browser must set it with the multipart boundary
+      headers: { ...getAuthHeader() },
+      body: form
+    })
+  } catch (err: unknown) {
+    const error: ApiError = {
+      message: (err as { message?: string })?.message ?? 'Unable to reach the backend.',
+      statusCode: 0
+    }
+    throw error
+  }
 
   if (!response.ok) {
     const error: ApiError = {

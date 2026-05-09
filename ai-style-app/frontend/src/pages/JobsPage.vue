@@ -4,13 +4,16 @@ import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { UserJobSummaryResponse, JobStatus } from '@/types/api'
+import { useBackendRequestState } from '@/composables/useBackendRequestState'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const requestState = useBackendRequestState({
+  retryDelayMs: 3000,
+  offlineMessage: 'Waiting for backend to come online…'
+})
 
 const jobs = ref<UserJobSummaryResponse[]>([])
-const isLoading = ref(false)
-const error = ref<string | null>(null)
 
 const statusPillClass: Record<JobStatus, string> = {
   Queued: 'bg-amber-500/15 text-amber-200 border-amber-400/20',
@@ -25,17 +28,19 @@ function pillClass(status: JobStatus) {
   return statusPillClass[status] ?? 'bg-slate-500/15 text-slate-200 border-slate-400/20'
 }
 
-async function fetchJobs() {
+async function fetchJobs(isRetry = false) {
   if (!authStore.isAuthenticated) return
 
-  isLoading.value = true
-  error.value = null
+  if (!isRetry) {
+    requestState.beginInitialLoad()
+  }
   try {
     jobs.value = await api.get<UserJobSummaryResponse[]>('/jobs')
+    requestState.reset()
   } catch (err: unknown) {
-    error.value = (err as { message?: string })?.message ?? 'Failed to load your jobs.'
+    requestState.handleError(err, () => fetchJobs(true))
   } finally {
-    isLoading.value = false
+    requestState.finishLoad()
   }
 }
 
@@ -81,10 +86,18 @@ const hasJobs = computed(() => jobs.value.length > 0)
       </button>
     </div>
 
-    <div v-else-if="isLoading" class="py-24 text-center text-slate-300 animate-pulse">Loading your jobs…</div>
+    <div v-else-if="requestState.isLoading || requestState.isWaitingForBackend" class="space-y-3 py-24 text-center text-slate-300">
+      <div class="mx-auto grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
+        <div v-for="n in 4" :key="n" class="h-32 animate-pulse rounded-3xl bg-white/5" />
+      </div>
+      <p v-if="requestState.isWaitingForBackend" class="text-sm text-slate-400">
+        {{ requestState.offlineMessage }} retrying every 3s
+      </p>
+      <p v-else class="animate-pulse text-slate-300">Loading your jobs…</p>
+    </div>
 
-    <div v-else-if="error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
-      {{ error }}
+    <div v-else-if="requestState.error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
+      {{ requestState.error }}
     </div>
 
     <div v-else-if="!hasJobs" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-center text-slate-200 shadow-xl shadow-black/10">
