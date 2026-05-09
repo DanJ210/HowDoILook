@@ -87,6 +87,8 @@ builder.Services.AddScoped<IStyleService, StyleService>();
 builder.Services.AddScoped<IJobService, JobService>();
 builder.Services.AddScoped<IQueuePublisher, QueuePublisher>();
 builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();
+builder.Services.AddScoped<IGeneratedImageArchiver, GeneratedImageArchiver>();
+builder.Services.AddHttpClient<GeneratedImageArchiver>();
 builder.Services.AddSingleton<IReplicateSignatureVerifier, ReplicateSignatureVerifier>();
 builder.Services.AddHttpClient<IReplicateClient, ReplicateClient>();
 

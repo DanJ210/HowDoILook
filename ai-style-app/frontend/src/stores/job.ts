@@ -7,6 +7,8 @@ import { TERMINAL_STATUSES } from '@/types/api'
 export const useJobStore = defineStore('job', () => {
   const jobs = ref<Record<string, JobStatusResponse>>({})
   const activePollingIds = ref<Set<string>>(new Set())
+  const pollingState = ref<Record<string, 'polling' | 'stopped' | 'completed' | 'error'>>({})
+  const pollingError = ref<Record<string, string | null>>({})
 
   function getJob(jobId: string): JobStatusResponse | undefined {
     return jobs.value[jobId]
@@ -22,6 +24,8 @@ export const useJobStore = defineStore('job', () => {
     if (activePollingIds.value.has(jobId)) return
 
     activePollingIds.value.add(jobId)
+    pollingState.value[jobId] = 'polling'
+    pollingError.value[jobId] = null
 
     let intervalMs = 2000
     const maxIntervalMs = 10000
@@ -32,6 +36,7 @@ export const useJobStore = defineStore('job', () => {
 
         if (TERMINAL_STATUSES.includes(job.status)) {
           activePollingIds.value.delete(jobId)
+          pollingState.value[jobId] = 'completed'
           onComplete?.(job)
           return
         }
@@ -39,8 +44,10 @@ export const useJobStore = defineStore('job', () => {
         // Exponential backoff — cap at 10s
         intervalMs = Math.min(intervalMs * 1.5, maxIntervalMs)
         setTimeout(poll, intervalMs)
-      } catch {
+      } catch (err: unknown) {
         activePollingIds.value.delete(jobId)
+        pollingState.value[jobId] = 'error'
+        pollingError.value[jobId] = (err as { message?: string })?.message ?? 'Failed to poll job status.'
       }
     }
 
@@ -49,7 +56,16 @@ export const useJobStore = defineStore('job', () => {
 
   function stopPolling(jobId: string) {
     activePollingIds.value.delete(jobId)
+    pollingState.value[jobId] = 'stopped'
   }
 
-  return { jobs, activePollingIds, getJob, fetchJob, startPolling, stopPolling }
+  function getPollingState(jobId: string) {
+    return pollingState.value[jobId] ?? 'stopped'
+  }
+
+  function getPollingError(jobId: string) {
+    return pollingError.value[jobId] ?? null
+  }
+
+  return { jobs, activePollingIds, getJob, fetchJob, startPolling, stopPolling, getPollingState, getPollingError }
 })

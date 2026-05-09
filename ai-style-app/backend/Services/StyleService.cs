@@ -44,20 +44,26 @@ public class StyleService : IStyleService
         string userId,
         CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(request.ImageUrl))
+        {
+            throw new ArgumentException("ImageUrl is required for hairstyle generation.", nameof(request));
+        }
+
         var item = new StyleItemEntity
         {
             UserId = userId,
             Name = request.Name,
             Description = request.Description,
-            Prompt = request.Prompt,
-            ImageUrl = request.ImageUrl
+            Prompt = request.Prompt ?? BuildPromptSummary(request),
+            ImageUrl = request.ImageUrl,
+            IsResultPublic = request.IsResultPublic
         };
 
         var job = new StyleJobEntity
         {
             UserId = userId,
             StyleItemId = item.Id,
-            Prompt = request.Prompt,
+            Prompt = request.Prompt ?? BuildPromptSummary(request),
             ImageUrl = request.ImageUrl,
             CorrelationId = Guid.NewGuid().ToString()
         };
@@ -71,12 +77,15 @@ public class StyleService : IStyleService
             StyleItemId: item.Id,
             UserId: userId,
             JobType: job.JobType,
-            Prompt: request.Prompt,
+            Prompt: request.Prompt ?? BuildPromptSummary(request),
             EnqueuedAtUtc: DateTimeOffset.UtcNow,
             CorrelationId: job.CorrelationId ?? Guid.NewGuid().ToString(),
             Attempt: 0,
             SchemaVersion: 1,
-            ImageUrl: request.ImageUrl
+            ImageUrl: request.ImageUrl,
+            Haircut: request.Haircut,
+            HairColor: request.HairColor,
+            Gender: request.Gender
         );
 
         await _queue.PublishAsync(queueMessage, ct);
@@ -104,9 +113,19 @@ public class StyleService : IStyleService
             e.Name,
             e.Description,
             e.ImageUrl,
+            e.IsResultPublic,
             e.CreatedAtUtc,
             latestJob?.Id,
             latestJob?.Status);
+    }
+
+    private static string BuildPromptSummary(GenerateStyleRequest r)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(r.Haircut)) parts.Add($"Haircut: {r.Haircut}");
+        if (!string.IsNullOrWhiteSpace(r.HairColor)) parts.Add($"Hair color: {r.HairColor}");
+        if (!string.IsNullOrWhiteSpace(r.Gender) && r.Gender != "none") parts.Add($"Gender: {r.Gender}");
+        return parts.Count > 0 ? string.Join(", ", parts) : r.Description;
     }
 }
 

@@ -6,9 +6,10 @@ import { useStyleStore } from '@/stores/style'
 const router = useRouter()
 const styleStore = useStyleStore()
 
-const form = ref({ name: '', description: '', prompt: '' })
+const form = ref({ name: '', description: '', haircut: 'No change', hairColor: 'No change', gender: 'none' })
 const selectedFile = ref<File | null>(null)
 const previewUrl = ref<string | null>(null)
+const isResultPublic = ref(false)
 const isUploading = ref(false)
 const isSubmitting = ref(false)
 const submitError = ref<string | null>(null)
@@ -50,6 +51,7 @@ function setFile(file: File | null) {
 
 function removeFile() {
   selectedFile.value = null
+  isResultPublic.value = false
   if (previewUrl.value) {
     URL.revokeObjectURL(previewUrl.value)
     previewUrl.value = null
@@ -57,11 +59,16 @@ function removeFile() {
 }
 
 async function handleSubmit() {
+  if (!selectedFile.value) {
+    submitError.value = 'Please upload a photo before generating a style.'
+    return
+  }
+
   isSubmitting.value = true
-  isUploading.value = !!selectedFile.value
+  isUploading.value = true
   submitError.value = null
   try {
-    const resp = await styleStore.generate(form.value, selectedFile.value ?? undefined)
+    const resp = await styleStore.generate(form.value, selectedFile.value ?? undefined, isResultPublic.value)
     router.push({ name: 'job-status', params: { id: resp.jobId } })
   } catch (err: unknown) {
     submitError.value = (err as { message?: string })?.message ?? 'Failed to submit request.'
@@ -99,7 +106,7 @@ import { computed } from 'vue'
 
       <!-- Photo upload -->
       <div>
-        <label class="block text-sm font-medium mb-1">Your Photo <span class="text-gray-400 font-normal">(optional)</span></label>
+        <label class="block text-sm font-medium mb-1">Your Photo <span class="text-red-500">*</span></label>
 
         <div v-if="!previewUrl"
           class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition"
@@ -125,6 +132,31 @@ import { computed } from 'vue'
             class="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm transition"
             title="Remove photo"
           >✕</button>
+        </div>
+
+        <!-- Visibility toggle — only shown when an image is attached -->
+        <div v-if="selectedFile" class="mt-3 flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
+          <div>
+            <p class="text-sm font-medium">Make result public</p>
+            <p class="text-xs text-gray-400 mt-0.5">Anyone with the link can view the generated image</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="isResultPublic"
+            @click="isResultPublic = !isResultPublic"
+            :class="[
+              'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+              isResultPublic ? 'bg-blue-600' : 'bg-gray-200'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition duration-200',
+                isResultPublic ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
         </div>
       </div>
 
@@ -153,17 +185,167 @@ import { computed } from 'vue'
         />
       </div>
 
-      <!-- Prompt -->
+      <!-- Haircut -->
       <div>
-        <label class="block text-sm font-medium mb-1" for="prompt">Prompt</label>
-        <textarea
-          id="prompt"
-          v-model="form.prompt"
-          rows="4"
-          required
+        <label class="block text-sm font-medium mb-1" for="haircut">Haircut</label>
+        <select
+          id="haircut"
+          v-model="form.haircut"
           class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Detailed image generation prompt..."
-        />
+        >
+          <option value="No change">No change</option>
+          <option value="Random">Random</option>
+          <option value="Straight">Straight</option>
+          <option value="Wavy">Wavy</option>
+          <option value="Curly">Curly</option>
+          <option value="Bob">Bob</option>
+          <option value="Pixie Cut">Pixie Cut</option>
+          <option value="Layered">Layered</option>
+          <option value="Messy Bun">Messy Bun</option>
+          <option value="High Ponytail">High Ponytail</option>
+          <option value="Low Ponytail">Low Ponytail</option>
+          <option value="Braided Ponytail">Braided Ponytail</option>
+          <option value="French Braid">French Braid</option>
+          <option value="Dutch Braid">Dutch Braid</option>
+          <option value="Fishtail Braid">Fishtail Braid</option>
+          <option value="Space Buns">Space Buns</option>
+          <option value="Top Knot">Top Knot</option>
+          <option value="Undercut">Undercut</option>
+          <option value="Mohawk">Mohawk</option>
+          <option value="Crew Cut">Crew Cut</option>
+          <option value="Faux Hawk">Faux Hawk</option>
+          <option value="Slicked Back">Slicked Back</option>
+          <option value="Side-Parted">Side-Parted</option>
+          <option value="Center-Parted">Center-Parted</option>
+          <option value="Blunt Bangs">Blunt Bangs</option>
+          <option value="Side-Swept Bangs">Side-Swept Bangs</option>
+          <option value="Shag">Shag</option>
+          <option value="Lob">Lob</option>
+          <option value="Angled Bob">Angled Bob</option>
+          <option value="A-Line Bob">A-Line Bob</option>
+          <option value="Asymmetrical Bob">Asymmetrical Bob</option>
+          <option value="Graduated Bob">Graduated Bob</option>
+          <option value="Inverted Bob">Inverted Bob</option>
+          <option value="Layered Shag">Layered Shag</option>
+          <option value="Choppy Layers">Choppy Layers</option>
+          <option value="Razor Cut">Razor Cut</option>
+          <option value="Perm">Perm</option>
+          <option value="Ombré">Ombré</option>
+          <option value="Straightened">Straightened</option>
+          <option value="Soft Waves">Soft Waves</option>
+          <option value="Glamorous Waves">Glamorous Waves</option>
+          <option value="Hollywood Waves">Hollywood Waves</option>
+          <option value="Finger Waves">Finger Waves</option>
+          <option value="Tousled">Tousled</option>
+          <option value="Feathered">Feathered</option>
+          <option value="Pageboy">Pageboy</option>
+          <option value="Pigtails">Pigtails</option>
+          <option value="Pin Curls">Pin Curls</option>
+          <option value="Rollerset">Rollerset</option>
+          <option value="Twist Out">Twist Out</option>
+          <option value="Bantu Knots">Bantu Knots</option>
+          <option value="Dreadlocks">Dreadlocks</option>
+          <option value="Cornrows">Cornrows</option>
+          <option value="Box Braids">Box Braids</option>
+          <option value="Crochet Braids">Crochet Braids</option>
+          <option value="Double Dutch Braids">Double Dutch Braids</option>
+          <option value="French Fishtail Braid">French Fishtail Braid</option>
+          <option value="Waterfall Braid">Waterfall Braid</option>
+          <option value="Rope Braid">Rope Braid</option>
+          <option value="Heart Braid">Heart Braid</option>
+          <option value="Halo Braid">Halo Braid</option>
+          <option value="Crown Braid">Crown Braid</option>
+          <option value="Braided Crown">Braided Crown</option>
+          <option value="Bubble Braid">Bubble Braid</option>
+          <option value="Bubble Ponytail">Bubble Ponytail</option>
+          <option value="Ballerina Braids">Ballerina Braids</option>
+          <option value="Milkmaid Braids">Milkmaid Braids</option>
+          <option value="Bohemian Braids">Bohemian Braids</option>
+          <option value="Flat Twist">Flat Twist</option>
+          <option value="Crown Twist">Crown Twist</option>
+          <option value="Twisted Bun">Twisted Bun</option>
+          <option value="Twisted Half-Updo">Twisted Half-Updo</option>
+          <option value="Twist and Pin Updo">Twist and Pin Updo</option>
+          <option value="Chignon">Chignon</option>
+          <option value="Simple Chignon">Simple Chignon</option>
+          <option value="Messy Chignon">Messy Chignon</option>
+          <option value="French Twist">French Twist</option>
+          <option value="French Twist Updo">French Twist Updo</option>
+          <option value="French Roll">French Roll</option>
+          <option value="Updo">Updo</option>
+          <option value="Messy Updo">Messy Updo</option>
+          <option value="Knotted Updo">Knotted Updo</option>
+          <option value="Ballerina Bun">Ballerina Bun</option>
+          <option value="Banana Clip Updo">Banana Clip Updo</option>
+          <option value="Beehive">Beehive</option>
+          <option value="Bouffant">Bouffant</option>
+          <option value="Hair Bow">Hair Bow</option>
+          <option value="Half-Up Top Knot">Half-Up Top Knot</option>
+          <option value="Half-Up, Half-Down">Half-Up, Half-Down</option>
+          <option value="Messy Bun with a Headband">Messy Bun with a Headband</option>
+          <option value="Messy Bun with a Scarf">Messy Bun with a Scarf</option>
+          <option value="Messy Fishtail Braid">Messy Fishtail Braid</option>
+          <option value="Sideswept Pixie">Sideswept Pixie</option>
+          <option value="Mohawk Fade">Mohawk Fade</option>
+          <option value="Zig-Zag Part">Zig-Zag Part</option>
+          <option value="Victory Rolls">Victory Rolls</option>
+        </select>
+      </div>
+
+      <!-- Hair color -->
+      <div>
+        <label class="block text-sm font-medium mb-1" for="hairColor">Hair color</label>
+        <select
+          id="hairColor"
+          v-model="form.hairColor"
+          class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="No change">No change</option>
+          <option value="Random">Random</option>
+          <option value="Blonde">Blonde</option>
+          <option value="Brunette">Brunette</option>
+          <option value="Black">Black</option>
+          <option value="Dark Brown">Dark Brown</option>
+          <option value="Medium Brown">Medium Brown</option>
+          <option value="Light Brown">Light Brown</option>
+          <option value="Chestnut">Chestnut</option>
+          <option value="Auburn">Auburn</option>
+          <option value="Copper">Copper</option>
+          <option value="Red">Red</option>
+          <option value="Strawberry Blonde">Strawberry Blonde</option>
+          <option value="Platinum Blonde">Platinum Blonde</option>
+          <option value="Silver">Silver</option>
+          <option value="White">White</option>
+          <option value="Blue">Blue</option>
+          <option value="Purple">Purple</option>
+          <option value="Pink">Pink</option>
+          <option value="Green">Green</option>
+          <option value="Blue-Black">Blue-Black</option>
+          <option value="Golden Blonde">Golden Blonde</option>
+          <option value="Honey Blonde">Honey Blonde</option>
+          <option value="Caramel">Caramel</option>
+          <option value="Mahogany">Mahogany</option>
+          <option value="Burgundy">Burgundy</option>
+          <option value="Jet Black">Jet Black</option>
+          <option value="Ash Brown">Ash Brown</option>
+          <option value="Ash Blonde">Ash Blonde</option>
+          <option value="Titanium">Titanium</option>
+          <option value="Rose Gold">Rose Gold</option>
+        </select>
+      </div>
+
+      <!-- Gender -->
+      <div>
+        <label class="block text-sm font-medium mb-1" for="gender">Gender <span class="text-gray-400 font-normal">(optional, helps model accuracy)</span></label>
+        <select
+          id="gender"
+          v-model="form.gender"
+          class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="none">Not specified</option>
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+        </select>
       </div>
 
       <div v-if="submitError" class="text-red-600 text-sm">{{ submitError }}</div>

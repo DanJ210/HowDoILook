@@ -21,7 +21,7 @@ export const useStyleStore = defineStore('style', () => {
     }
   }
 
-  async function generate(request: GenerateStyleRequest, imageFile?: File): Promise<GenerateStyleResponse> {
+  async function generate(request: GenerateStyleRequest, imageFile?: File, isResultPublic = false): Promise<GenerateStyleResponse> {
     let imageUrl: string | undefined
 
     if (imageFile) {
@@ -29,7 +29,7 @@ export const useStyleStore = defineStore('style', () => {
       imageUrl = uploaded.url
     }
 
-    const resp = await api.post<GenerateStyleResponse>('/style/generate', { ...request, imageUrl })
+    const resp = await api.post<GenerateStyleResponse>('/style/generate', { ...request, imageUrl, isResultPublic })
 
     // Start polling for the job
     const jobStore = useJobStore()

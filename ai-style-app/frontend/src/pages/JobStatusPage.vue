@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useJobStore } from '@/stores/job'
 import { TERMINAL_STATUSES } from '@/types/api'
@@ -11,6 +11,8 @@ const jobStore = useJobStore()
 const jobId = computed(() => route.params.id as string)
 const job = computed(() => jobStore.getJob(jobId.value))
 const isPolling = computed(() => jobStore.activePollingIds.has(jobId.value))
+const pollingState = computed(() => jobStore.getPollingState(jobId.value))
+const pollingError = computed(() => jobStore.getPollingError(jobId.value))
 
 onMounted(() => {
   if (jobId.value) {
@@ -18,6 +20,12 @@ onMounted(() => {
     if (!job.value || !TERMINAL_STATUSES.includes(job.value.status)) {
       jobStore.startPolling(jobId.value)
     }
+  }
+})
+
+onUnmounted(() => {
+  if (jobId.value && isPolling.value) {
+    jobStore.stopPolling(jobId.value)
   }
 })
 
@@ -38,6 +46,18 @@ function parsedResult(json: string | null) {
   if (!json) return null
   try { return JSON.parse(json) } catch { return json }
 }
+
+/** Extracts image URLs from a Replicate output (string[] | string | null). */
+const resultImages = computed<string[]>(() => {
+  if (!job.value?.resultJson) return []
+  try {
+    const parsed = JSON.parse(job.value.resultJson)
+    if (Array.isArray(parsed) && parsed.every((v: unknown) => typeof v === 'string'))
+      return parsed as string[]
+    if (typeof parsed === 'string') return [parsed]
+  } catch { /* fall through */ }
+  return []
+})
 
 function goBack() {
   if (window.history.length > 1) {
@@ -74,6 +94,13 @@ function goBack() {
           {{ job.status }}
         </span>
         <span v-if="isPolling" class="text-sm text-gray-400 animate-pulse">polling…</span>
+        <span v-else-if="pollingState === 'completed'" class="text-sm text-gray-400">polling complete</span>
+        <span v-else-if="pollingState === 'stopped'" class="text-sm text-amber-600">polling stopped</span>
+        <span v-else-if="pollingState === 'error'" class="text-sm text-red-600">polling stopped (connection issue)</span>
+      </div>
+
+      <div v-if="pollingState === 'error' && pollingError" class="p-3 bg-amber-50 border border-amber-200 rounded text-sm text-amber-700">
+        <strong>Polling error:</strong> {{ pollingError }}
       </div>
 
       <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -104,9 +131,41 @@ function goBack() {
         <strong>Error:</strong> {{ job.errorMessage }}
       </div>
 
-      <div v-if="job.resultJson" class="space-y-2">
+      <div v-if="job.resultJson" class="space-y-3">
         <h2 class="font-semibold">Result</h2>
-        <pre class="bg-gray-50 border rounded p-3 text-xs overflow-auto max-h-64">{{ parsedResult(job.resultJson) }}</pre>
+
+        <!-- Permanent archived image (preferred) -->
+        <div v-if="job.resultImageUrl" class="space-y-1">
+          <a :href="job.resultImageUrl" target="_blank" rel="noopener noreferrer" class="block">
+            <img
+              :src="job.resultImageUrl"
+              alt="Generated image"
+              class="w-full rounded-lg border border-gray-200 shadow-sm object-contain max-h-[480px]"
+            />
+          </a>
+        </div>
+
+        <!-- Temporary Replicate URLs (while archival is in progress) -->
+        <div v-else-if="resultImages.length" class="space-y-3">
+          <p class="text-xs text-amber-600">Archiving image — this link is temporary.</p>
+          <a
+            v-for="(url, i) in resultImages"
+            :key="i"
+            :href="url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="block"
+          >
+            <img
+              :src="url"
+              :alt="`Generated image ${i + 1}`"
+              class="w-full rounded-lg border border-gray-200 shadow-sm object-contain max-h-[480px]"
+            />
+          </a>
+        </div>
+
+        <!-- Fallback for non-image results -->
+        <pre v-else class="bg-gray-50 border rounded p-3 text-xs overflow-auto max-h-64">{{ parsedResult(job.resultJson) }}</pre>
       </div>
     </div>
   </main>

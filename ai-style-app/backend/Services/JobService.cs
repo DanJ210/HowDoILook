@@ -65,6 +65,7 @@ public class JobService : IJobService
         job.ErrorCode,
         job.ErrorMessage,
         job.ResultJson,
+        job.ResultImageUrl,
         job.ExternalPredictionId,
         job.CreatedAtUtc,
         job.StartedAtUtc,

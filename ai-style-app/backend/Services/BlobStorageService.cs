@@ -24,13 +24,20 @@ public class BlobStorageService : IBlobStorageService
         string extension,
         CancellationToken ct = default)
     {
+        var blobName = $"{userId}/{Guid.NewGuid()}{extension}";
+        return await UploadAsync(data, contentType, blobName, ct);
+    }
+
+    public async Task<string> UploadAsync(
+        Stream data,
+        string contentType,
+        string blobPath,
+        CancellationToken ct = default)
+    {
         var container = _client.GetBlobContainerClient(_containerName);
         await container.CreateIfNotExistsAsync(PublicAccessType.Blob, cancellationToken: ct);
 
-        // Scope blobs per user to keep storage organised; random name prevents enumeration
-        var blobName = $"{userId}/{Guid.NewGuid()}{extension}";
-        var blob = container.GetBlobClient(blobName);
-
+        var blob = container.GetBlobClient(blobPath);
         await blob.UploadAsync(data, new BlobHttpHeaders { ContentType = contentType }, cancellationToken: ct);
 
         return blob.Uri.ToString();

@@ -30,6 +30,9 @@ public class StyleItemEntity
     [MaxLength(2048)]
     public string? ImageUrl { get; set; }
 
+    [Column("is_result_public")]
+    public bool IsResultPublic { get; set; } = false;
+
     [Column("created_at_utc")]
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 

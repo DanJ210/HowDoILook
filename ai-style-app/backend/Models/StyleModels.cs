@@ -5,6 +5,7 @@ public record StyleItemResponse(
     string Name,
     string Description,
     string? ImageUrl,
+    bool IsResultPublic,
     DateTimeOffset CreatedAt,
     Guid? LatestJobId,
     string? LatestJobStatus
@@ -20,8 +21,12 @@ public record CreateStyleItemRequest(
 public record GenerateStyleRequest(
     string Name,
     string Description,
-    string Prompt,
-    string? ImageUrl = null
+    string? Prompt = null,
+    string? ImageUrl = null,
+    bool IsResultPublic = false,
+    string? Haircut = null,
+    string? HairColor = null,
+    string? Gender = null
 );
 
 public record GenerateStyleResponse(
@@ -41,6 +46,7 @@ public record JobStatusResponse(
     string? ErrorCode,
     string? ErrorMessage,
     string? ResultJson,
+    string? ResultImageUrl,
     string? ExternalPredictionId,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset? StartedAtUtc,

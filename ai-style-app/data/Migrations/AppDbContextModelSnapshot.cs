@@ -44,6 +44,10 @@ namespace AiStyleApp.Data.Migrations
                         .HasColumnType("character varying(2048)")
                         .HasColumnName("image_url");
 
+                    b.Property<bool>("IsResultPublic")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_result_public");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -136,6 +140,11 @@ namespace AiStyleApp.Data.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)")
                         .HasColumnName("prompt");
+
+                    b.Property<string>("ResultImageUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("result_image_url");
 
                     b.Property<string>("ResultJson")
                         .HasColumnType("jsonb")

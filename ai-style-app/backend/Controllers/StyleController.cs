@@ -44,6 +44,11 @@ public class StyleController : ControllerBase
         [FromBody] GenerateStyleRequest request,
         CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(request.ImageUrl))
+        {
+            return BadRequest("A user image is required for hairstyle generation.");
+        }
+
         var (item, jobId) = await _styleService.CreateAndEnqueueAsync(request, UserId, ct);
 
         var response = new GenerateStyleResponse(

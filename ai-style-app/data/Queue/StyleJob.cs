@@ -11,5 +11,8 @@ public record StyleJob(
     string CorrelationId,
     int Attempt,
     int SchemaVersion = 1,
-    string? ImageUrl = null
+    string? ImageUrl = null,
+    string? Haircut = null,
+    string? HairColor = null,
+    string? Gender = null
 );

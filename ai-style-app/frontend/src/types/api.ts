@@ -15,6 +15,7 @@ export interface StyleItemResponse {
   name: string
   description: string
   imageUrl: string | null
+  isResultPublic: boolean
   createdAt: string
   latestJobId: string | null
   latestJobStatus: JobStatus | null
@@ -23,8 +24,12 @@ export interface StyleItemResponse {
 export interface GenerateStyleRequest {
   name: string
   description: string
-  prompt: string
+  prompt?: string
   imageUrl?: string
+  isResultPublic?: boolean
+  haircut?: string
+  hairColor?: string
+  gender?: string
 }
 
 export interface UploadImageResponse {
@@ -52,6 +57,7 @@ export interface JobStatusResponse {
   errorCode: string | null
   errorMessage: string | null
   resultJson: string | null
+  resultImageUrl: string | null
   externalPredictionId: string | null
   createdAtUtc: string
   startedAtUtc: string | null

@@ -40,6 +40,10 @@ public class StyleJobEntity
     [Column("result_json", TypeName = "jsonb")]
     public string? ResultJson { get; set; }
 
+    [Column("result_image_url")]
+    [MaxLength(2048)]
+    public string? ResultImageUrl { get; set; }
+
     [Column("error_code")]
     [MaxLength(100)]
     public string? ErrorCode { get; set; }
