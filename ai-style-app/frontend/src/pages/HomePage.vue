@@ -12,7 +12,7 @@ const requestState = useBackendRequestState({
   retryDelayMs: 3000,
   offlineMessage: 'Waiting for backend to come online…'
 })
-const retryCount = requestState.retryCount
+const { isLoading, isLoadingMore, isWaitingForBackend, error, offlineMessage, retryCount } = requestState
 
 const PAGE_SIZE = 12
 
@@ -91,7 +91,7 @@ onMounted(async () => {
 
   observer = new IntersectionObserver(
     async (entries) => {
-      if (entries[0].isIntersecting && !requestState.isLoadingMore.value && !requestState.isLoading.value && hasMore.value) {
+      if (entries[0].isIntersecting && !isLoadingMore.value && !isLoading.value && hasMore.value) {
         await fetchPage(true)
       }
     },
@@ -165,7 +165,7 @@ function openJobs() {
     </section>
 
     <!-- Initial loading -->
-    <div v-if="requestState.isLoading || requestState.isWaitingForBackend" class="space-y-3">
+    <div v-if="isLoading || isWaitingForBackend" class="space-y-3">
       <div class="grid grid-cols-2 gap-1 sm:grid-cols-3">
         <div
           v-for="n in PAGE_SIZE"
@@ -173,15 +173,15 @@ function openJobs() {
           class="aspect-square animate-pulse rounded-2xl bg-white/5"
         />
       </div>
-      <p v-if="requestState.isWaitingForBackend" class="text-center text-sm text-slate-400">
-        {{ requestState.offlineMessage }} retrying every 3s
+      <p v-if="isWaitingForBackend" class="text-center text-sm text-slate-400">
+        {{ offlineMessage }} retrying every 3s
         <span v-if="retryCount > 0">(attempt {{ retryCount + 1 }})</span>
       </p>
     </div>
 
     <!-- Error -->
-    <div v-else-if="requestState.error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
-      {{ requestState.error }}
+    <div v-else-if="error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
+      {{ error }}
     </div>
 
     <!-- Empty -->
@@ -220,7 +220,7 @@ function openJobs() {
 
       <!-- Infinite scroll sentinel -->
       <div ref="sentinel" class="mt-6 flex justify-center pb-2">
-        <span v-if="requestState.isLoadingMore" class="animate-pulse text-sm text-slate-400">Loading more…</span>
+        <span v-if="isLoadingMore" class="animate-pulse text-sm text-slate-400">Loading more…</span>
         <span v-else-if="!hasMore && feed.length > 0" class="text-sm text-slate-500">All caught up</span>
       </div>
     </section>

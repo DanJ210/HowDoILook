@@ -12,6 +12,7 @@ const requestState = useBackendRequestState({
   retryDelayMs: 3000,
   offlineMessage: 'Waiting for backend to come online…'
 })
+const { isLoading, isWaitingForBackend, error, offlineMessage } = requestState
 
 const jobs = ref<UserJobSummaryResponse[]>([])
 
@@ -86,18 +87,18 @@ const hasJobs = computed(() => jobs.value.length > 0)
       </button>
     </div>
 
-    <div v-else-if="requestState.isLoading || requestState.isWaitingForBackend" class="space-y-3 py-24 text-center text-slate-300">
+    <div v-else-if="isLoading || isWaitingForBackend" class="space-y-3 py-24 text-center text-slate-300">
       <div class="mx-auto grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
         <div v-for="n in 4" :key="n" class="h-32 animate-pulse rounded-3xl bg-white/5" />
       </div>
-      <p v-if="requestState.isWaitingForBackend" class="text-sm text-slate-400">
-        {{ requestState.offlineMessage }} retrying every 3s
+      <p v-if="isWaitingForBackend" class="text-sm text-slate-400">
+        {{ offlineMessage }} retrying every 3s
       </p>
       <p v-else class="animate-pulse text-slate-300">Loading your jobs…</p>
     </div>
 
-    <div v-else-if="requestState.error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
-      {{ requestState.error }}
+    <div v-else-if="error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
+      {{ error }}
     </div>
 
     <div v-else-if="!hasJobs" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-center text-slate-200 shadow-xl shadow-black/10">
