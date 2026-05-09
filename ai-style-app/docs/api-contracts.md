@@ -47,6 +47,8 @@ In Swagger, click **Authorize** and paste only the JWT value from `accessToken`.
   "id": "uuid",
   "name": "string",
   "description": "string",
+  "imageUrl": "string | null",
+  "isResultPublic": false,
   "createdAt": "ISO 8601 datetime"
 }
 ```
@@ -57,7 +59,28 @@ In Swagger, click **Authorize** and paste only the JWT value from `accessToken`.
 {
   "name": "string",
   "description": "string",
-  "prompt": "string"
+  "prompt": "string | null",
+  "imageUrl": "https://...",
+  "isResultPublic": false,
+  "haircut": "No change | Bob | ...",
+  "hairColor": "No change | Blonde | ...",
+  "gender": "none | male | female"
+}
+```
+
+`imageUrl` is required by the current hairstyle-generation flow.
+
+### Example GenerateStyleRequest
+
+```json
+{
+  "name": "Summer look",
+  "description": "Try a shorter haircut with subtle color changes.",
+  "imageUrl": "https://api.example.com/api/upload/public/user-123/abc123.jpg",
+  "isResultPublic": true,
+  "haircut": "Layered",
+  "hairColor": "Honey Blonde",
+  "gender": "female"
 }
 ```
 
@@ -91,6 +114,7 @@ The response is `202 Accepted`. Poll `statusEndpoint` to track progress.
   "errorCode": "string | null",
   "errorMessage": "string | null",
   "resultJson": "json string | null",
+  "resultImageUrl": "string | null",
   "externalPredictionId": "string | null",
   "createdAtUtc": "ISO 8601 datetime",
   "startedAtUtc": "ISO 8601 datetime | null",
@@ -115,7 +139,22 @@ Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Cancel
 |--------|------|------|-------------|
 | `POST` | `/api/webhooks/replicate` | HMAC-SHA256 | Receives Replicate prediction callbacks |
 
-The webhook verifies the `Webhook-Secret` header using HMAC-SHA256. Set `Replicate__WebhookSecret` in app settings to match the secret sent by Replicate. The endpoint is not protected by JWT.
+The webhook verifies Replicate signature headers (`webhook-id`, `webhook-timestamp`, `webhook-signature`) using HMAC-SHA256. Set `Replicate__WebhookSigningSecret` to the signing secret from Replicate. The endpoint is not protected by JWT.
+
+## Uploads
+
+| Method | Path | Auth | Request Body | Response |
+|--------|------|------|--------------|----------|
+| `POST` | `/api/upload/image` | Required | multipart form (`file`) | `UploadImageResponse` |
+| `GET` | `/api/upload/public/{userId}/{fileName}` | Not required | — | Image bytes |
+
+### UploadImageResponse
+
+```json
+{
+  "url": "https://..."
+}
+```
 
 ## Queue Message Contract
 
@@ -131,7 +170,11 @@ Messages enqueued to `style-jobs` follow this schema (v1):
   "enqueuedAtUtc": "ISO 8601 datetime",
   "correlationId": "string",
   "attempt": 1,
-  "schemaVersion": 1
+  "schemaVersion": 1,
+  "imageUrl": "string | null",
+  "haircut": "string | null",
+  "hairColor": "string | null",
+  "gender": "string | null"
 }
 ```
 

@@ -40,16 +40,19 @@ graph TD
 - Validates JWT on protected routes.
 - Persists style items and job records to PostgreSQL via EF Core 8.
 - Enqueues `StyleJob` messages to Azure Storage Queue.
+- Accepts image uploads via `POST /api/upload/image` and exposes `GET /api/upload/public/{userId}/{fileName}` for external model fetches.
 - Receives Replicate webhook callbacks (`POST /api/webhooks/replicate`), verifies HMAC-SHA256 signature, updates job status and result in the database.
+- On successful webhook callbacks, archives generated images to blob storage and stores a permanent `result_image_url`.
 - Exposes Swagger at `/swagger` in development.
 - Auto-applies EF Core migrations on startup in Development.
 
 ### Worker (`/worker`)
 - **BackgroundService** that polls the Azure Storage Queue every 5 seconds.
 - Deserializes each message as a `StyleJob` (from `AiStyleApp.Data.Queue` shared library).
-- Marks the job `Processing` in PostgreSQL, submits a prediction to the Replicate API, stores the returned `external_prediction_id`.
+- Marks the job `Processing` in PostgreSQL, validates/normalizes image + haircut/color inputs, submits a prediction to the Replicate API, stores the returned `external_prediction_id`.
 - Retries up to 3 times on Replicate API failure; marks `Failed` on exhaustion.
 - Deletes the message from the queue only after successful processing.
+- Uses Replicate model slug `flux-kontext-apps/change-haircut` and resolves `latest_version.id` dynamically from Replicate.
 
 ### Shared Data Library (`/data`)
 - **`AiStyleApp.Data`** class library referenced by both Backend and Worker.
@@ -72,6 +75,8 @@ graph TD
 | `name` | varchar(200) | |
 | `description` | varchar(2000) | |
 | `prompt` | varchar(4000) | |
+| `image_url` | varchar(2048) | uploaded user photo URL |
+| `is_result_public` | boolean | if true, generated result can be shown via shared link |
 | `created_at_utc` | timestamptz | |
 | `updated_at_utc` | timestamptz | |
 
@@ -85,8 +90,10 @@ graph TD
 | `job_type` | varchar(100) | |
 | `status` | varchar(50) | indexed; default `Queued` |
 | `prompt` | varchar(4000) | |
+| `image_url` | varchar(2048) | source user image URL |
 | `external_prediction_id` | varchar(200) | Replicate prediction ID |
 | `result_json` | jsonb | null until Succeeded |
+| `result_image_url` | varchar(2048) | permanent archived blob URL for generated image |
 | `error_code` | varchar(100) | |
 | `error_message` | varchar(2000) | |
 | `attempt_count` | int | |
@@ -98,13 +105,13 @@ graph TD
 
 ## Data Flow
 
-1. User fills out the Generate Style form (Name, Description, Prompt) in the Vue frontend.
-2. Frontend calls `POST /api/style/generate` with a JWT.
-3. Backend creates a `StyleItemEntity` and `StyleJobEntity` (status `Queued`) in PostgreSQL, then enqueues a `StyleJob` message.
+1. User uploads a photo (`POST /api/upload/image`) and fills out Generate Style fields (Name, Description, optional prompt, haircut, hair color, gender, visibility).
+2. Frontend calls `POST /api/style/generate` with a JWT and the uploaded `imageUrl`.
+3. Backend creates a `StyleItemEntity` and `StyleJobEntity` (status `Queued`) in PostgreSQL, then enqueues a `StyleJob` message including image and hair parameters.
 4. Backend returns `202 Accepted` with `jobId` and `statusEndpoint`.
 5. Frontend navigates to the job status page and begins polling `GET /api/jobs/{id}`.
-6. Worker dequeues the message, marks the job `Processing`, and submits a prediction to the Replicate API.
+6. Worker dequeues the message, marks the job `Processing`, verifies the image is externally reachable, and submits a prediction to Replicate (`flux-kontext-apps/change-haircut`).
 7. Replicate sends a webhook callback to `POST /api/webhooks/replicate`.
-8. Backend verifies the HMAC signature, updates the job to `Succeeded` (or `Failed`) with `result_json`.
+8. Backend verifies the HMAC signature, updates the job to `Succeeded` (or `Failed`) with `result_json`, and asynchronously archives the generated image.
 9. Frontend polling detects the terminal status and displays the result (or error).
 

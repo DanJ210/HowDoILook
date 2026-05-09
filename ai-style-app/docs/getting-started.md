@@ -54,12 +54,16 @@ Edit `ai-style-app/backend/appsettings.Development.json` and `ai-style-app/worke
 ```json
 "Replicate": {
   "ApiToken": "r8_YOUR_REPLICATE_TOKEN",
-  "ModelVersion": "stability-ai/sdxl:39ed52f2319f9b5b5474b42ab48c1e7a",
-  "WebhookSecret": "dev-webhook-secret-change-me"
+  "WebhookSigningSecret": "whsec_dev_webhook_secret"
 }
 ```
 
 For the worker, also set `WebhookBaseUrl` to your publicly reachable URL (see step below for ngrok).
+
+Current generation model behavior:
+
+- Worker uses Replicate model slug `flux-kontext-apps/change-haircut`.
+- Worker resolves `latest_version.id` dynamically from Replicate at runtime.
 
 ## 4. Expose Webhook for Local Development (ngrok)
 
@@ -142,8 +146,7 @@ Copy `infrastructure/local.env.example` to `.env` and fill in all values before 
 | `JWT_ISSUER` | Backend | Token issuer (default: `ai-style-app`) |
 | `JWT_AUDIENCE` | Backend | Token audience (default: `ai-style-app-client`) |
 | `Replicate__ApiToken` | Backend, Worker | Replicate API token |
-| `Replicate__ModelVersion` | Backend, Worker | Replicate model version string |
-| `Replicate__WebhookSecret` | Backend | HMAC secret for webhook verification |
+| `Replicate__WebhookSigningSecret` | Backend | HMAC secret for webhook verification |
 | `Replicate__WebhookBaseUrl` | Worker | Publicly reachable base URL for callbacks |
 
 Map these to .NET configuration using double-underscore notation, e.g. `Replicate__ApiToken`.
@@ -177,6 +180,22 @@ After starting all services:
 
 3. Copy `accessToken` from the response.
 4. Click **Authorize** in Swagger and paste the token value.
-5. Call `POST /api/style` again.
+5. Call `POST /api/style/generate` with an uploaded `imageUrl`.
 
 If no token is provided, the API correctly returns `401 Unauthorized` with `www-authenticate: Bearer`.
+
+### Example request body for `POST /api/style/generate`
+
+Upload an image first with `POST /api/upload/image`, then use the returned URL:
+
+```json
+{
+  "name": "Summer look",
+  "description": "Try a softer layered style.",
+  "imageUrl": "https://your-host/api/upload/public/user-123/abc123.jpg",
+  "isResultPublic": true,
+  "haircut": "Layered",
+  "hairColor": "Honey Blonde",
+  "gender": "female"
+}
+```

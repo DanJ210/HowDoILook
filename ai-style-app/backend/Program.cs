@@ -90,7 +90,6 @@ builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();
 builder.Services.AddScoped<IGeneratedImageArchiver, GeneratedImageArchiver>();
 builder.Services.AddHttpClient<GeneratedImageArchiver>();
 builder.Services.AddSingleton<IReplicateSignatureVerifier, ReplicateSignatureVerifier>();
-builder.Services.AddHttpClient<IReplicateClient, ReplicateClient>();
 
 var app = builder.Build();
 

@@ -190,11 +190,12 @@ Keep non-secret defaults in `appsettings.json`. Secrets come exclusively from en
     "ContainerName": "user-uploads"
   },
   "Replicate": {
-    "ModelVersion": "black-forest-labs/flux-dev",
-    "ImagePromptStrength": 0.35
+    "WebhookBaseUrl": "https://your-public-api-host"
   }
 }
 ```
+
+Model selection is code-driven in the worker (`flux-kontext-apps/change-haircut`) and resolves `latest_version.id` at runtime via Replicate API.
 
 ---
 
@@ -514,7 +515,7 @@ jobs:
 
 ### Application
 
-- [ ] Add rate limiting on `POST /api/upload/image` and `POST /api/style` endpoints
+- [ ] Add rate limiting on `POST /api/upload/image` and `POST /api/style/generate` endpoints
 - [ ] Validate image content type server-side (magic bytes, not just `Content-Type` header)
 - [ ] Set `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` response headers
 - [ ] Ensure EF Core queries use parameterized values (default with EF Core — verify no raw SQL)
