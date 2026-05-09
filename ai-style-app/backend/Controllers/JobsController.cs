@@ -22,6 +22,13 @@ public class JobsController : ControllerBase
         ?? User.FindFirstValue("sub")
         ?? throw new InvalidOperationException("User identity not found.");
 
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<UserJobSummaryResponse>>> GetAll(CancellationToken ct)
+    {
+        var jobs = await _jobs.GetAllAsync(UserId, ct);
+        return Ok(jobs);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<JobStatusResponse>> GetById(Guid id, CancellationToken ct)
     {

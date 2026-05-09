@@ -39,6 +39,43 @@ public class StyleService : IStyleService
         return item is null ? null : Map(item);
     }
 
+    public async Task<FeedPageResponse> GetPublicFeedAsync(int take, DateTimeOffset? before, CancellationToken ct = default)
+    {
+        take = Math.Clamp(take, 1, 50);
+
+        var query = _db.StyleJobs
+            .AsNoTracking()
+            .Include(j => j.StyleItem)
+            .Where(j =>
+                j.StyleItem.IsResultPublic &&
+                j.ResultImageUrl != null &&
+                j.Status == "Succeeded" &&
+                j.CompletedAtUtc != null);
+
+        if (before.HasValue)
+            query = query.Where(j => j.CompletedAtUtc < before.Value);
+
+        var jobs = await query
+            .OrderByDescending(j => j.CompletedAtUtc)
+            .Take(take + 1)
+            .ToListAsync(ct);
+
+        var hasMore = jobs.Count > take;
+        if (hasMore) jobs = jobs.Take(take).ToList();
+
+        var feedItems = jobs
+            .Select(j => new PublicFeedItemResponse(
+                j.StyleItemId,
+                j.Id,
+                j.StyleItem.Name,
+                j.StyleItem.Description,
+                j.ResultImageUrl!,
+                j.CompletedAtUtc!.Value))
+            .ToList();
+
+        return new FeedPageResponse(feedItems, hasMore);
+    }
+
     public async Task<(StyleItemResponse item, Guid jobId)> CreateAndEnqueueAsync(
         GenerateStyleRequest request,
         string userId,

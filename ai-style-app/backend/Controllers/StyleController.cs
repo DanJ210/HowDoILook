@@ -31,6 +31,17 @@ public class StyleController : ControllerBase
         return Ok(items);
     }
 
+    [AllowAnonymous]
+    [HttpGet("feed")]
+    public async Task<ActionResult<FeedPageResponse>> GetFeed(
+        [FromQuery] int take = 12,
+        [FromQuery] DateTimeOffset? before = null,
+        CancellationToken ct = default)
+    {
+        var result = await _styleService.GetPublicFeedAsync(take, before, ct);
+        return Ok(result);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<StyleItemResponse>> GetById(Guid id, CancellationToken ct)
     {

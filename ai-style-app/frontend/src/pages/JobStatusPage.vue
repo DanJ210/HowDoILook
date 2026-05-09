@@ -70,12 +70,12 @@ function goBack() {
 </script>
 
 <template>
-  <main class="max-w-xl mx-auto px-4 py-8">
-    <div class="mb-6 flex items-center justify-between gap-4">
-      <h1 class="text-2xl font-bold">Job Status</h1>
+  <main class="max-w-2xl mx-auto px-4 py-6 sm:py-8">
+    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+      <h1 class="text-2xl font-bold leading-tight">Job Status</h1>
       <button
         @click="goBack"
-        class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-200 transition text-sm"
+        class="w-full sm:w-auto bg-slate-100 text-slate-700 px-3 py-2 rounded hover:bg-slate-200 transition text-sm"
       >
         Back to List
       </button>
@@ -87,7 +87,7 @@ function goBack() {
     </div>
 
     <div v-else class="space-y-4">
-      <div class="flex items-center gap-3">
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3">
         <span
           :class="['px-3 py-1 rounded-full text-sm font-medium', statusColor(job.status)]"
         >
@@ -103,27 +103,27 @@ function goBack() {
         <strong>Polling error:</strong> {{ pollingError }}
       </div>
 
-      <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+      <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
         <dt class="text-gray-500 font-medium">Job ID</dt>
-        <dd class="font-mono truncate">{{ job.id }}</dd>
+        <dd class="font-mono truncate sm:text-right">{{ job.id }}</dd>
 
         <dt class="text-gray-500 font-medium">Style Item</dt>
-        <dd class="font-mono truncate">{{ job.styleItemId }}</dd>
+        <dd class="font-mono truncate sm:text-right">{{ job.styleItemId }}</dd>
 
         <dt class="text-gray-500 font-medium">Attempts</dt>
-        <dd>{{ job.attemptCount }}</dd>
+        <dd class="sm:text-right">{{ job.attemptCount }}</dd>
 
         <dt class="text-gray-500 font-medium">Created</dt>
-        <dd>{{ new Date(job.createdAtUtc).toLocaleString() }}</dd>
+        <dd class="sm:text-right">{{ new Date(job.createdAtUtc).toLocaleString() }}</dd>
 
         <template v-if="job.startedAtUtc">
           <dt class="text-gray-500 font-medium">Started</dt>
-          <dd>{{ new Date(job.startedAtUtc).toLocaleString() }}</dd>
+          <dd class="sm:text-right">{{ new Date(job.startedAtUtc).toLocaleString() }}</dd>
         </template>
 
         <template v-if="job.completedAtUtc">
           <dt class="text-gray-500 font-medium">Completed</dt>
-          <dd>{{ new Date(job.completedAtUtc).toLocaleString() }}</dd>
+          <dd class="sm:text-right">{{ new Date(job.completedAtUtc).toLocaleString() }}</dd>
         </template>
       </dl>
 

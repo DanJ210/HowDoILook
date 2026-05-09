@@ -8,6 +8,7 @@ namespace AiStyleApp.Api.Services;
 public interface IJobService
 {
     Task<JobStatusResponse?> GetJobStatusAsync(Guid jobId, string userId, CancellationToken ct = default);
+    Task<IEnumerable<UserJobSummaryResponse>> GetAllAsync(string userId, CancellationToken ct = default);
     Task<StyleJobEntity?> GetByExternalIdAsync(string externalPredictionId, CancellationToken ct = default);
     Task UpdateFromWebhookAsync(StyleJobEntity job, string status, string? resultJson, string? errorCode, string? errorMessage, CancellationToken ct = default);
 }
@@ -30,6 +31,26 @@ public class JobService : IJobService
         if (job is null) return null;
 
         return MapToResponse(job);
+    }
+
+    public async Task<IEnumerable<UserJobSummaryResponse>> GetAllAsync(string userId, CancellationToken ct = default)
+    {
+        var jobs = await _db.StyleJobs
+            .AsNoTracking()
+            .Include(j => j.StyleItem)
+            .Where(j => j.UserId == userId)
+            .OrderByDescending(j => j.CreatedAtUtc)
+            .ToListAsync(ct);
+
+        return jobs.Select(job => new UserJobSummaryResponse(
+            job.Id,
+            job.StyleItemId,
+            job.StyleItem.Name,
+            job.Status,
+            job.ResultImageUrl,
+            job.StyleItem.IsResultPublic,
+            job.CreatedAtUtc,
+            job.CompletedAtUtc));
     }
 
     public Task<StyleJobEntity?> GetByExternalIdAsync(string externalPredictionId, CancellationToken ct = default)

@@ -13,6 +13,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/pages/StyleGeneratePage.vue')
   },
   {
+    path: '/jobs',
+    name: 'jobs',
+    component: () => import('@/pages/JobsPage.vue')
+  },
+  {
     path: '/jobs/:id',
     name: 'job-status',
     component: () => import('@/pages/JobStatusPage.vue')

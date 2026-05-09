@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import { useStyleStore } from '@/stores/style'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const styleStore = useStyleStore()
 
 const form = ref({ name: '', description: '', haircut: 'No change', hairColor: 'No change', gender: 'none' })
@@ -84,15 +86,17 @@ const buttonLabel = computed(() => {
   return 'Generate Style'
 })
 
-import { computed } from 'vue'
+async function handleDevLogin() {
+  await authStore.loginDev('dev-user')
+}
 </script>
 
 <template>
-  <main class="max-w-xl mx-auto px-4 py-8">
+  <main class="mx-auto max-w-2xl px-4 py-6 sm:py-8">
     <button
       type="button"
       @click="router.back()"
-      class="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6 transition"
+      class="mb-5 flex items-center gap-1 text-sm text-slate-300 transition hover:text-white sm:mb-6"
     >
       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
@@ -100,16 +104,28 @@ import { computed } from 'vue'
       Back
     </button>
 
-    <h1 class="text-2xl font-bold mb-6">Generate Style</h1>
+    <h1 class="mb-5 text-2xl font-bold text-white sm:mb-6">Generate Style</h1>
 
-    <form @submit.prevent="handleSubmit" class="space-y-5">
+    <div v-if="!authStore.isAuthenticated" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-slate-200 shadow-xl shadow-black/10 backdrop-blur">
+      <p class="text-lg font-medium">Sign in to generate a style.</p>
+      <p class="mt-2 text-sm text-slate-400">Use the dev login for local development.</p>
+      <button
+        type="button"
+        @click="handleDevLogin"
+        class="mt-4 rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400"
+      >
+        Dev Login
+      </button>
+    </div>
+
+    <form v-else @submit.prevent="handleSubmit" class="space-y-6">
 
       <!-- Photo upload -->
       <div>
         <label class="block text-sm font-medium mb-1">Your Photo <span class="text-red-500">*</span></label>
 
         <div v-if="!previewUrl"
-          class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition"
+          class="border-2 border-dashed border-gray-300 rounded-lg p-4 sm:p-6 text-center cursor-pointer hover:border-blue-400 transition"
           @click="($refs.fileInput as HTMLInputElement).click()"
           @dragover.prevent
           @drop="onDrop"
@@ -118,7 +134,7 @@ import { computed } from 'vue'
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
               d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
-          <p class="text-sm text-gray-500">Drag &amp; drop or <span class="text-blue-600 underline">browse</span></p>
+          <p class="text-sm sm:text-base text-gray-500">Drag &amp; drop or <span class="text-blue-600 underline">browse</span></p>
           <p class="text-xs text-gray-400 mt-1">JPEG, PNG, WebP, GIF — max 10 MB</p>
           <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
             class="hidden" @change="onFileChange" />
@@ -129,14 +145,14 @@ import { computed } from 'vue'
           <button
             type="button"
             @click="removeFile"
-            class="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center text-sm transition"
+            class="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-full w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center text-sm transition"
             title="Remove photo"
           >✕</button>
         </div>
 
         <!-- Visibility toggle — only shown when an image is attached -->
-        <div v-if="selectedFile" class="mt-3 flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">
-          <div>
+        <div v-if="selectedFile" class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-gray-200 px-4 py-3">
+          <div class="min-w-0">
             <p class="text-sm font-medium">Make result public</p>
             <p class="text-xs text-gray-400 mt-0.5">Anyone with the link can view the generated image</p>
           </div>
@@ -146,14 +162,14 @@ import { computed } from 'vue'
             :aria-checked="isResultPublic"
             @click="isResultPublic = !isResultPublic"
             :class="[
-              'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+              'relative inline-flex h-7 w-12 sm:h-6 sm:w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 self-start sm:self-auto',
               isResultPublic ? 'bg-blue-600' : 'bg-gray-200'
             ]"
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition duration-200',
-                isResultPublic ? 'translate-x-5' : 'translate-x-0'
+                'pointer-events-none inline-block h-6 w-6 sm:h-5 sm:w-5 rounded-full bg-white shadow transform transition duration-200',
+                isResultPublic ? 'translate-x-5 sm:translate-x-5' : 'translate-x-0'
               ]"
             />
           </button>
@@ -167,7 +183,7 @@ import { computed } from 'vue'
           id="name"
           v-model="form.name"
           required
-          class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="e.g. Urban Explorer"
         />
       </div>
@@ -180,7 +196,7 @@ import { computed } from 'vue'
           v-model="form.description"
           rows="3"
           required
-          class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           placeholder="A short description of the style..."
         />
       </div>
@@ -191,7 +207,7 @@ import { computed } from 'vue'
         <select
           id="haircut"
           v-model="form.haircut"
-          class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="No change">No change</option>
           <option value="Random">Random</option>
@@ -298,7 +314,7 @@ import { computed } from 'vue'
         <select
           id="hairColor"
           v-model="form.hairColor"
-          class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="No change">No change</option>
           <option value="Random">Random</option>
@@ -340,7 +356,7 @@ import { computed } from 'vue'
         <select
           id="gender"
           v-model="form.gender"
-          class="w-full border rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="none">Not specified</option>
           <option value="male">Male</option>
@@ -353,7 +369,7 @@ import { computed } from 'vue'
       <button
         type="submit"
         :disabled="isSubmitting"
-        class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+        class="w-full bg-blue-600 text-white py-3 px-4 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition text-base sm:text-sm"
       >
         {{ buttonLabel }}
       </button>

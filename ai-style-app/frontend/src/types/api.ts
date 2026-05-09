@@ -43,6 +43,31 @@ export interface GenerateStyleResponse {
   statusEndpoint: string
 }
 
+export interface PublicFeedItemResponse {
+  styleItemId: string
+  jobId: string
+  name: string
+  description: string
+  resultImageUrl: string
+  publishedAtUtc: string
+}
+
+export interface FeedPageResponse {
+  items: PublicFeedItemResponse[]
+  hasMore: boolean
+}
+
+export interface UserJobSummaryResponse {
+  jobId: string
+  styleItemId: string
+  styleName: string
+  status: JobStatus
+  resultImageUrl: string | null
+  isResultPublic: boolean
+  createdAtUtc: string
+  completedAtUtc: string | null
+}
+
 // ── Jobs ─────────────────────────────────────────────────────────────────────
 
 export type JobStatus = 'Queued' | 'Processing' | 'Succeeded' | 'Failed' | 'TimedOut' | 'Canceled'

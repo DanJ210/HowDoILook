@@ -1,130 +1,191 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useStyleStore } from '@/stores/style'
+import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
-import type { JobStatus } from '@/types/api'
+import type { PublicFeedItemResponse, FeedPageResponse } from '@/types/api'
 
 const router = useRouter()
-const styleStore = useStyleStore()
 const authStore = useAuthStore()
 
-onMounted(() => {
-  if (authStore.isAuthenticated) {
-    styleStore.fetchAll()
+const PAGE_SIZE = 12
+
+const feed = ref<PublicFeedItemResponse[]>([])
+const isLoading = ref(false)
+const isLoadingMore = ref(false)
+const hasMore = ref(true)
+const error = ref<string | null>(null)
+
+// Cursor = publishedAtUtc of last loaded item
+let cursor: string | null = null
+
+async function fetchPage(loadMore = false) {
+  if (loadMore) {
+    isLoadingMore.value = true
+  } else {
+    isLoading.value = true
+    error.value = null
+    feed.value = []
+    cursor = null
+    hasMore.value = true
   }
+
+  try {
+    let url = `/style/feed?take=${PAGE_SIZE}`
+    if (cursor) url += `&before=${encodeURIComponent(cursor)}`
+
+    const page = await api.get<FeedPageResponse>(url)
+
+    feed.value = loadMore ? [...feed.value, ...page.items] : page.items
+    hasMore.value = page.hasMore
+
+    if (page.items.length > 0) {
+      cursor = page.items[page.items.length - 1].publishedAtUtc
+    }
+  } catch (err: unknown) {
+    error.value = (err as { message?: string })?.message ?? 'Failed to load the public feed.'
+  } finally {
+    isLoading.value = false
+    isLoadingMore.value = false
+  }
+}
+
+// Infinite scroll sentinel
+const sentinel = ref<HTMLElement | null>(null)
+let observer: IntersectionObserver | null = null
+
+onMounted(async () => {
+  await fetchPage()
+
+  observer = new IntersectionObserver(
+    async (entries) => {
+      if (entries[0].isIntersecting && !isLoadingMore.value && !isLoading.value && hasMore.value) {
+        await fetchPage(true)
+      }
+    },
+    { rootMargin: '200px' }
+  )
+
+  if (sentinel.value) observer.observe(sentinel.value)
 })
+
+onUnmounted(() => {
+  observer?.disconnect()
+})
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
 
 async function handleDevLogin() {
   await authStore.loginDev('dev-user')
-  await styleStore.fetchAll()
 }
 
-function viewJob(jobId: string) {
-  router.push({ name: 'job-status', params: { id: jobId } })
+function openGenerate() {
+  router.push({ name: 'style-generate' })
 }
 
-const statusPillClass: Record<JobStatus, string> = {
-  Queued:     'bg-gray-100 text-gray-600',
-  Processing: 'bg-blue-100 text-blue-700',
-  Succeeded:  'bg-green-100 text-green-700',
-  Failed:     'bg-red-100 text-red-700',
-  TimedOut:   'bg-orange-100 text-orange-700',
-  Canceled:   'bg-gray-100 text-gray-500',
-}
-
-function pillClass(status: JobStatus | null) {
-  if (!status) return ''
-  return statusPillClass[status] ?? 'bg-gray-100 text-gray-600'
+function openJobs() {
+  router.push({ name: 'jobs' })
 }
 </script>
 
 <template>
-  <main class="max-w-3xl mx-auto px-4 py-8">
-    <div class="flex items-center justify-between mb-8">
-      <h1 class="text-3xl font-bold">AI Style App</h1>
-      <div v-if="!authStore.isAuthenticated">
-        <button
-          @click="handleDevLogin"
-          class="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 transition text-sm"
-        >
-          Dev Login
-        </button>
-      </div>
-      <div v-else class="flex gap-3 items-center">
-        <span class="text-sm text-gray-500">Signed in</span>
-        <button
-          @click="router.push({ name: 'style-generate' })"
-          class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition text-sm"
-        >
-          + Generate Style
-        </button>
-        <button
-          @click="authStore.logout()"
-          class="text-sm text-gray-500 hover:text-gray-700 underline"
-        >
-          Logout
-        </button>
-      </div>
-    </div>
-
-    <div v-if="!authStore.isAuthenticated" class="text-center py-16 text-gray-400">
-      <p class="text-lg">Sign in to manage your styles.</p>
-    </div>
-
-    <div v-else-if="styleStore.isLoading" class="text-center py-16 text-gray-400 animate-pulse">
-      Loading…
-    </div>
-
-    <div v-else-if="styleStore.error" class="p-4 bg-red-50 border border-red-200 rounded text-red-700">
-      {{ styleStore.error }}
-    </div>
-
-    <div v-else-if="styleStore.items.length === 0" class="text-center py-16 text-gray-400">
-      <p class="text-lg mb-4">No styles yet.</p>
-      <button
-        @click="router.push({ name: 'style-generate' })"
-        class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition"
-      >
-        Generate your first style
-      </button>
-    </div>
-
-    <ul v-else class="space-y-4">
-      <li
-        v-for="item in styleStore.items"
-        :key="item.id"
-        class="border rounded-lg p-4 flex justify-between items-start hover:shadow-sm transition"
-      >
-        <div>
-          <h2 class="font-semibold text-lg">{{ item.name }}</h2>
-          <p class="text-gray-600 text-sm mt-1">{{ item.description }}</p>
-          <p class="text-gray-400 text-xs mt-2">{{ new Date(item.createdAt).toLocaleString() }}</p>
+  <main class="mx-auto max-w-5xl px-4 pt-6 pb-8 sm:pt-10">
+    <!-- Hero banner -->
+    <section class="mb-6 overflow-hidden rounded-[2rem] border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/10 backdrop-blur sm:p-8">
+      <div class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+        <div class="space-y-3">
+          <p class="text-xs uppercase tracking-[0.3em] text-sky-200/70">Public feed</p>
+          <h1 class="text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+            Discover public hair transformations.
+          </h1>
+          <p class="max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
+            Browse results shared by other users, then jump into Generate to create your own look.
+          </p>
         </div>
-        <div class="ml-4 shrink-0 flex items-center gap-3">
-          <span
-            v-if="item.latestJobStatus"
-            :class="['text-xs font-medium px-2.5 py-1 rounded-full', pillClass(item.latestJobStatus)]"
-          >
-            {{ item.latestJobStatus }}
-          </span>
+
+        <div class="flex flex-col gap-3 sm:flex-row lg:flex-col lg:justify-end">
           <button
-            v-if="item.latestJobId"
-            @click="viewJob(item.latestJobId)"
-            class="bg-slate-100 text-slate-700 px-3 py-1.5 rounded hover:bg-slate-200 transition text-sm"
+            v-if="!authStore.isAuthenticated"
+            type="button"
+            @click="handleDevLogin"
+            class="rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400"
           >
-            View Job
+            Dev Login
           </button>
           <button
-            @click="styleStore.remove(item.id)"
-            class="text-red-400 hover:text-red-600 text-sm"
-            title="Delete"
+            type="button"
+            @click="openGenerate"
+            class="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
           >
-            Delete
+            Generate a look
+          </button>
+          <button
+            type="button"
+            @click="openJobs"
+            class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+          >
+            Your jobs
           </button>
         </div>
-      </li>
-    </ul>
+      </div>
+    </section>
+
+    <!-- Initial loading -->
+    <div v-if="isLoading" class="grid grid-cols-2 gap-1 sm:grid-cols-3">
+      <div
+        v-for="n in PAGE_SIZE"
+        :key="n"
+        class="aspect-square animate-pulse rounded-2xl bg-white/5"
+      />
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
+      {{ error }}
+    </div>
+
+    <!-- Empty -->
+    <div v-else-if="feed.length === 0" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-slate-200 shadow-xl shadow-black/10">
+      <p class="text-lg font-medium">No public looks yet.</p>
+      <p class="mt-2 text-sm text-slate-400">When users mark results public, they will appear here.</p>
+    </div>
+
+    <!-- Instagram-style grid -->
+    <section v-else>
+      <div class="grid grid-cols-2 gap-1 sm:grid-cols-3">
+        <article
+          v-for="item in feed"
+          :key="item.jobId"
+          class="group relative aspect-square cursor-pointer overflow-hidden rounded-2xl bg-slate-800"
+        >
+          <img
+            :src="item.resultImageUrl"
+            :alt="item.name"
+            loading="lazy"
+            class="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          />
+          <!-- gradient overlay always visible at bottom -->
+          <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-12 pb-3 px-3 transition-opacity duration-300">
+            <p class="truncate text-sm font-semibold leading-tight text-white">{{ item.name }}</p>
+            <p class="mt-0.5 text-[11px] text-slate-300">{{ formatDate(item.publishedAtUtc) }}</p>
+          </div>
+          <!-- hover overlay with description -->
+          <div class="absolute inset-0 flex flex-col justify-end bg-black/60 p-3 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+            <p class="text-sm font-semibold text-white">{{ item.name }}</p>
+            <p class="mt-1 line-clamp-3 text-xs leading-relaxed text-slate-200">{{ item.description }}</p>
+            <p class="mt-2 text-[11px] text-slate-400">{{ formatDate(item.publishedAtUtc) }}</p>
+          </div>
+        </article>
+      </div>
+
+      <!-- Infinite scroll sentinel -->
+      <div ref="sentinel" class="mt-6 flex justify-center pb-2">
+        <span v-if="isLoadingMore" class="animate-pulse text-sm text-slate-400">Loading more…</span>
+        <span v-else-if="!hasMore && feed.length > 0" class="text-sm text-slate-500">All caught up</span>
+      </div>
+    </section>
   </main>
 </template>
 

@@ -36,6 +36,31 @@ public record GenerateStyleResponse(
     string StatusEndpoint
 );
 
+public record PublicFeedItemResponse(
+    Guid StyleItemId,
+    Guid JobId,
+    string Name,
+    string Description,
+    string ResultImageUrl,
+    DateTimeOffset PublishedAtUtc
+);
+
+public record FeedPageResponse(
+    IReadOnlyList<PublicFeedItemResponse> Items,
+    bool HasMore
+);
+
+public record UserJobSummaryResponse(
+    Guid JobId,
+    Guid StyleItemId,
+    string StyleName,
+    string Status,
+    string? ResultImageUrl,
+    bool IsResultPublic,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? CompletedAtUtc
+);
+
 // ── Job status / result ──────────────────────────────────────────────────────
 
 public record JobStatusResponse(
