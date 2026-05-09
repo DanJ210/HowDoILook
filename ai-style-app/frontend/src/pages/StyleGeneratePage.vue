@@ -216,7 +216,7 @@ async function handleDevLogin() {
         <select
           id="haircut"
           v-model="form.haircut"
-          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="No change">No change</option>
           <option value="Random">Random</option>
@@ -323,7 +323,7 @@ async function handleDevLogin() {
         <select
           id="hairColor"
           v-model="form.hairColor"
-          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="No change">No change</option>
           <option value="Random">Random</option>
@@ -365,7 +365,7 @@ async function handleDevLogin() {
         <select
           id="gender"
           v-model="form.gender"
-          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option value="none">Not specified</option>
           <option value="male">Male</option>
