@@ -22,6 +22,12 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public ActionResult<object> CreateToken([FromBody] DevTokenRequest request)
     {
+        var authMode = (_configuration["Auth:Mode"] ?? "dev").Trim().ToLowerInvariant();
+        if (authMode != "dev")
+        {
+            return NotFound();
+        }
+
         var jwtKey = _configuration["Jwt:Key"];
         var issuer = _configuration["Jwt:Issuer"];
         var audience = _configuration["Jwt:Audience"];

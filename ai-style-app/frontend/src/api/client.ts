@@ -1,9 +1,11 @@
 import type { ApiError } from '@/types/api'
+import { useAuthStore } from '@/stores/auth'
 
 const BASE_URL = '/api'
 
-function getAuthHeader(): Record<string, string> {
-  const token = localStorage.getItem('access_token')
+async function getAuthHeader(): Promise<Record<string, string>> {
+  const authStore = useAuthStore()
+  const token = await authStore.getAccessToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
@@ -11,10 +13,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   let response: Response
 
   try {
+    const authHeader = await getAuthHeader()
+
     response = await fetch(`${BASE_URL}${path}`, {
       headers: {
         'Content-Type': 'application/json',
-        ...getAuthHeader(),
+        ...authHeader,
         ...options?.headers
       },
       ...options
@@ -48,10 +52,12 @@ async function uploadFile<T>(path: string, file: File): Promise<T> {
   let response: Response
 
   try {
+    const authHeader = await getAuthHeader()
+
     response = await fetch(`${BASE_URL}${path}`, {
       method: 'POST',
       // Do NOT set Content-Type — the browser must set it with the multipart boundary
-      headers: { ...getAuthHeader() },
+      headers: { ...authHeader },
       body: form
     })
   } catch (err: unknown) {

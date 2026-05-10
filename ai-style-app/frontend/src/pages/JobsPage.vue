@@ -47,7 +47,7 @@ async function fetchJobs(isRetry = false) {
   }
 }
 
-async function handleDevLogin() {
+async function handleSignIn() {
   await loginDevAndRun(fetchJobs)
 }
 
@@ -78,13 +78,13 @@ const hasJobs = computed(() => jobs.value.length > 0)
 
     <div v-if="!authStore.isAuthenticated" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-center text-slate-200 shadow-xl shadow-black/10">
       <p class="text-lg font-medium">Sign in to view your jobs.</p>
-      <p class="mt-2 text-sm text-slate-400">Use the dev login to continue from local development.</p>
+      <p class="mt-2 text-sm text-slate-400">Use your account to view and manage generated jobs.</p>
       <button
         type="button"
-        @click="handleDevLogin"
+        @click="handleSignIn"
         class="mt-4 w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400 sm:w-auto"
       >
-        Dev Login
+        Sign in
       </button>
     </div>
 

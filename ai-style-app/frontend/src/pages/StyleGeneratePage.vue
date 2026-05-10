@@ -78,7 +78,7 @@ const buttonLabel = computed(() => {
   return 'Generate Style'
 })
 
-async function handleDevLogin() {
+async function handleSignIn() {
   await loginDevAndRun()
 }
 </script>
@@ -100,13 +100,13 @@ async function handleDevLogin() {
 
     <div v-if="!authStore.isAuthenticated" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-slate-200 shadow-xl shadow-black/10 backdrop-blur">
       <p class="text-lg font-medium">Sign in to generate a style.</p>
-      <p class="mt-2 text-sm text-slate-400">Use the dev login for local development.</p>
+      <p class="mt-2 text-sm text-slate-400">Create a look under your account and optionally publish the result.</p>
       <button
         type="button"
-        @click="handleDevLogin"
+        @click="handleSignIn"
         class="mt-4 rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400"
       >
-        Dev Login
+        Sign in
       </button>
     </div>
 

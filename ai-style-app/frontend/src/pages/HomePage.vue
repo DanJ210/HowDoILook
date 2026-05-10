@@ -111,7 +111,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-async function handleDevLogin() {
+async function handleSignIn() {
   await loginDevAndRun()
 }
 
@@ -143,10 +143,10 @@ function openJobs() {
           <button
             v-if="!authStore.isAuthenticated"
             type="button"
-            @click="handleDevLogin"
+            @click="handleSignIn"
             class="rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400"
           >
-            Dev Login
+            Sign in
           </button>
           <button
             type="button"

@@ -4,7 +4,12 @@ All endpoints are prefixed with `/api`. Protected endpoints require `Authorizati
 
 ## Authentication
 
-Use this endpoint to get a JWT for local development and Swagger testing.
+Protected APIs accept JWT bearer tokens.
+
+- In `Auth:Mode = auth0`, tokens are issued by Auth0 and validated with `Auth0:Authority` + `Auth0:Audience`.
+- In `Auth:Mode = dev`, you can mint local dev tokens with `/api/auth/token`.
+
+### Dev Token Endpoint (only when `Auth:Mode = dev`)
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|

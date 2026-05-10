@@ -52,9 +52,33 @@ builder.Services.AddCors(options =>
 });
 
 // JWT authentication
+var authMode = (builder.Configuration["Auth:Mode"] ?? "dev").Trim().ToLowerInvariant();
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        options.MapInboundClaims = false;
+
+        if (authMode == "auth0")
+        {
+            var authority = builder.Configuration["Auth0:Authority"]
+                ?? throw new InvalidOperationException("Auth0:Authority is not configured.");
+            var audience = builder.Configuration["Auth0:Audience"]
+                ?? throw new InvalidOperationException("Auth0:Audience is not configured.");
+
+            options.Authority = authority;
+            options.Audience = audience;
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                NameClaimType = "sub"
+            };
+
+            return;
+        }
+
         var jwtKey = builder.Configuration["Jwt:Key"]
             ?? throw new InvalidOperationException("Jwt:Key is not configured.");
 
@@ -66,7 +90,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+            NameClaimType = "sub"
         };
     });
 
