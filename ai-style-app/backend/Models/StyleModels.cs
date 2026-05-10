@@ -61,6 +61,10 @@ public record UserJobSummaryResponse(
     DateTimeOffset? CompletedAtUtc
 );
 
+public record UpdateJobVisibilityRequest(
+    bool IsResultPublic
+);
+
 // ── Job status / result ──────────────────────────────────────────────────────
 
 public record JobStatusResponse(

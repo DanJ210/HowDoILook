@@ -9,6 +9,7 @@ public interface IJobService
 {
     Task<JobStatusResponse?> GetJobStatusAsync(Guid jobId, string userId, CancellationToken ct = default);
     Task<IEnumerable<UserJobSummaryResponse>> GetAllAsync(string userId, CancellationToken ct = default);
+    Task<UserJobSummaryResponse?> UpdateVisibilityAsync(Guid jobId, string userId, bool isResultPublic, CancellationToken ct = default);
     Task<StyleJobEntity?> GetByExternalIdAsync(string externalPredictionId, CancellationToken ct = default);
     Task UpdateFromWebhookAsync(StyleJobEntity job, string status, string? resultJson, string? errorCode, string? errorMessage, CancellationToken ct = default);
 }
@@ -55,6 +56,31 @@ public class JobService : IJobService
 
     public Task<StyleJobEntity?> GetByExternalIdAsync(string externalPredictionId, CancellationToken ct = default)
         => _db.StyleJobs.FirstOrDefaultAsync(j => j.ExternalPredictionId == externalPredictionId, ct);
+
+    public async Task<UserJobSummaryResponse?> UpdateVisibilityAsync(Guid jobId, string userId, bool isResultPublic, CancellationToken ct = default)
+    {
+        var job = await _db.StyleJobs
+            .Include(j => j.StyleItem)
+            .FirstOrDefaultAsync(j => j.Id == jobId && j.UserId == userId, ct);
+
+        if (job is null)
+        {
+            return null;
+        }
+
+        job.StyleItem.IsResultPublic = isResultPublic;
+        await _db.SaveChangesAsync(ct);
+
+        return new UserJobSummaryResponse(
+            job.Id,
+            job.StyleItemId,
+            job.StyleItem.Name,
+            job.Status,
+            job.ResultImageUrl,
+            job.StyleItem.IsResultPublic,
+            job.CreatedAtUtc,
+            job.CompletedAtUtc);
+    }
 
     public async Task UpdateFromWebhookAsync(
         StyleJobEntity job,

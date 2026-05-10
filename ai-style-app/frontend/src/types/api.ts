@@ -68,6 +68,10 @@ export interface UserJobSummaryResponse {
   completedAtUtc: string | null
 }
 
+export interface UpdateJobVisibilityRequest {
+  isResultPublic: boolean
+}
+
 // ── Jobs ─────────────────────────────────────────────────────────────────────
 
 export type JobStatus = 'Queued' | 'Processing' | 'Succeeded' | 'Failed' | 'TimedOut' | 'Canceled'
