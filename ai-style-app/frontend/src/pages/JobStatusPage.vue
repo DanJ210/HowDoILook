@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useJobStore } from '@/stores/job'
 import { TERMINAL_STATUSES } from '@/types/api'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
+import { useJobResultViewModel } from '@/composables/useJobResultViewModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,6 +20,10 @@ const job = computed(() => jobStore.getJob(jobId.value))
 const isPolling = computed(() => jobStore.activePollingIds.has(jobId.value))
 const pollingState = computed(() => jobStore.getPollingState(jobId.value))
 const pollingError = computed(() => jobStore.getPollingError(jobId.value))
+const { parsedResult, resultImages } = useJobResultViewModel(
+  computed(() => job.value?.resultJson ?? null),
+  computed(() => job.value?.resultImageUrl ?? null)
+)
 
 onMounted(() => {
   if (!jobId.value) return
@@ -65,23 +70,6 @@ const statusColors: Record<string, string> = {
 function statusColor(status: string) {
   return statusColors[status] ?? 'bg-gray-100 text-gray-800'
 }
-
-function parsedResult(json: string | null) {
-  if (!json) return null
-  try { return JSON.parse(json) } catch { return json }
-}
-
-/** Extracts image URLs from a Replicate output (string[] | string | null). */
-const resultImages = computed<string[]>(() => {
-  if (!job.value?.resultJson) return []
-  try {
-    const parsed = JSON.parse(job.value.resultJson)
-    if (Array.isArray(parsed) && parsed.every((v: unknown) => typeof v === 'string'))
-      return parsed as string[]
-    if (typeof parsed === 'string') return [parsed]
-  } catch { /* fall through */ }
-  return []
-})
 
 function goBack() {
   if (window.history.length > 1) {
