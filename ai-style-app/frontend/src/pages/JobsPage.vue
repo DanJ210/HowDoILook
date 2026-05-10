@@ -5,11 +5,9 @@ import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { UserJobSummaryResponse, JobStatus } from '@/types/api'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
-import { useDevLoginAction } from '@/composables/useDevLoginAction'
 
 const router = useRouter()
 const authStore = useAuthStore()
-const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState({
   retryDelayMs: 3000,
   offlineMessage: 'Waiting for backend to come online…'
@@ -47,10 +45,6 @@ async function fetchJobs(isRetry = false) {
   }
 }
 
-async function handleSignIn() {
-  await loginDevAndRun(fetchJobs)
-}
-
 onMounted(fetchJobs)
 
 function openJob(jobId: string) {
@@ -78,14 +72,7 @@ const hasJobs = computed(() => jobs.value.length > 0)
 
     <div v-if="!authStore.isAuthenticated" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-center text-slate-200 shadow-xl shadow-black/10">
       <p class="text-lg font-medium">Sign in to view your jobs.</p>
-      <p class="mt-2 text-sm text-slate-400">Use your account to view and manage generated jobs.</p>
-      <button
-        type="button"
-        @click="handleSignIn"
-        class="mt-4 w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400 sm:w-auto"
-      >
-        Sign in
-      </button>
+      <p class="mt-2 text-sm text-slate-400">Use the sign-in control in the top-right corner to continue.</p>
     </div>
 
     <div v-else-if="isLoading || isWaitingForBackend" class="space-y-3 py-24 text-center text-slate-300">

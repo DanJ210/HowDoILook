@@ -30,6 +30,10 @@ export const useAuthStore = defineStore('auth', () => {
   if (authMode === 'dev') {
     const expiresAtRaw = localStorage.getItem('token_expires_at')
     expiresAt.value = expiresAtRaw ? new Date(expiresAtRaw) : null
+
+    if (accessToken.value) {
+      user.value = mapDevUserFromToken(accessToken.value)
+    }
   }
 
   const isAuthenticated = computed(
@@ -85,11 +89,21 @@ export const useAuthStore = defineStore('auth', () => {
 
     const resp = await response.json() as { accessToken: string; expiresAtUtc: string }
     setToken(resp.accessToken, resp.expiresAtUtc)
+    user.value = {
+      id: username,
+      name: username,
+      email: null,
+      picture: null
+    }
   }
 
   function setToken(token: string, expiresAtUtc: string) {
     accessToken.value = token
     expiresAt.value = new Date(expiresAtUtc)
+
+    if (authMode === 'dev') {
+      user.value = mapDevUserFromToken(token)
+    }
 
     if (authMode === 'dev') {
       localStorage.setItem('access_token', token)
@@ -192,6 +206,43 @@ export const useAuthStore = defineStore('auth', () => {
       name: auth0User.name ?? auth0User.nickname ?? 'User',
       email: auth0User.email ?? null,
       picture: auth0User.picture ?? null
+    }
+  }
+
+  function mapDevUserFromToken(token: string): AppUser {
+    const fallbackName = 'dev-user'
+
+    try {
+      const parts = token.split('.')
+      if (parts.length < 2) {
+        return {
+          id: fallbackName,
+          name: fallbackName,
+          email: null,
+          picture: null
+        }
+      }
+
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+      const name =
+        (typeof payload.unique_name === 'string' && payload.unique_name) ||
+        (typeof payload.name === 'string' && payload.name) ||
+        (typeof payload.sub === 'string' && payload.sub) ||
+        fallbackName
+
+      return {
+        id: typeof payload.sub === 'string' ? payload.sub : name,
+        name,
+        email: null,
+        picture: null
+      }
+    } catch {
+      return {
+        id: fallbackName,
+        name: fallbackName,
+        email: null,
+        picture: null
+      }
     }
   }
 

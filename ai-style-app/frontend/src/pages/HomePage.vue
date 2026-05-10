@@ -2,14 +2,10 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import { useAuthStore } from '@/stores/auth'
 import type { PublicFeedItemResponse, FeedPageResponse } from '@/types/api'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
-import { useDevLoginAction } from '@/composables/useDevLoginAction'
 
 const router = useRouter()
-const authStore = useAuthStore()
-const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState({
   retryDelayMs: 3000,
   offlineMessage: 'Waiting for backend to come online…'
@@ -111,10 +107,6 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-async function handleSignIn() {
-  await loginDevAndRun()
-}
-
 function openGenerate() {
   router.push({ name: 'style-generate' })
 }
@@ -140,14 +132,6 @@ function openJobs() {
         </div>
 
         <div class="flex flex-col gap-3 sm:flex-row lg:flex-col lg:justify-end">
-          <button
-            v-if="!authStore.isAuthenticated"
-            type="button"
-            @click="handleSignIn"
-            class="rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400"
-          >
-            Sign in
-          </button>
           <button
             type="button"
             @click="openGenerate"

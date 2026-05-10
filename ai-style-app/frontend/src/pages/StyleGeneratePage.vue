@@ -4,13 +4,11 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useStyleStore } from '@/stores/style'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
-import { useDevLoginAction } from '@/composables/useDevLoginAction'
 import { useImageFileInput } from '@/composables/useImageFileInput'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const styleStore = useStyleStore()
-const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState()
 const { selectedFile, previewUrl, onFileChange: onFileChangeFromInput, onDrop: onDropFromInput, removeFile } = useImageFileInput()
 
@@ -77,10 +75,6 @@ const buttonLabel = computed(() => {
   if (isSubmitting.value) return 'Submitting…'
   return 'Generate Style'
 })
-
-async function handleSignIn() {
-  await loginDevAndRun()
-}
 </script>
 
 <template>
@@ -100,14 +94,7 @@ async function handleSignIn() {
 
     <div v-if="!authStore.isAuthenticated" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-slate-200 shadow-xl shadow-black/10 backdrop-blur">
       <p class="text-lg font-medium">Sign in to generate a style.</p>
-      <p class="mt-2 text-sm text-slate-400">Create a look under your account and optionally publish the result.</p>
-      <button
-        type="button"
-        @click="handleSignIn"
-        class="mt-4 rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400"
-      >
-        Sign in
-      </button>
+      <p class="mt-2 text-sm text-slate-400">Use the sign-in control in the top-right corner, then return here to generate.</p>
     </div>
 
     <form v-else @submit.prevent="handleSubmit" class="space-y-6">

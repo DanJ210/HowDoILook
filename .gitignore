@@ -17,6 +17,7 @@ ai-style-app/frontend/.vite/
 # ── .NET build output & artifacts ────────────────────────────────
 **/bin/
 **/obj/
+**/bin_verify/
 **/packages/
 *.user
 *.suo
