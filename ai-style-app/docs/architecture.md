@@ -34,6 +34,8 @@ graph TD
 - `style` store: CRUD + `generate()` which enqueues a job and starts polling.
 - `job` store: Polls `GET /api/jobs/{id}` with exponential backoff (2 s → 10 s cap) until terminal.
 - Calls the backend via `fetch` proxied through Vite dev server (`/api → localhost:5000`).
+- **Public feed** (`HomePage`): anonymous infinite-scroll grid of public results using cursor-based pagination (`GET /api/style/feed?take=12&before=<ISO>`). The feed uses an `IntersectionObserver` sentinel to load the next page automatically as the user scrolls.
+- **`useBackendRequestState` composable**: shared loading/error/offline state across all data-fetching pages. Detects network failures (`statusCode: 0`) and schedules automatic retries for read operations. Submit flows use `handleError` without a retry function so errors surface immediately without re-submitting.
 
 ### Backend (`/backend`)
 - **ASP.NET Core Web API** on `http://localhost:5000` / `https://localhost:5001` in development.

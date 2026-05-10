@@ -37,8 +37,39 @@ In Swagger, click **Authorize** and paste only the JWT value from `accessToken`.
 |--------|------|------|--------------|----------|
 | `GET` | `/api/style` | Required | — | `StyleItemResponse[]` |
 | `GET` | `/api/style/{id}` | Required | — | `StyleItemResponse` |
+| `GET` | `/api/style/feed` | Not required | — | `FeedPageResponse` |
 | `POST` | `/api/style/generate` | Required | `GenerateStyleRequest` | `GenerateStyleResponse` (202) |
 | `DELETE` | `/api/style/{id}` | Required | — | 204 / 404 |
+
+### StyleItemResponse
+### FeedPageResponse
+
+Returned by `GET /api/style/feed`. Supports cursor-based pagination.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `take` | int | 12 | Number of items per page (max recommended: 50) |
+| `before` | ISO 8601 datetime | — | Cursor: only return items published before this timestamp |
+
+```json
+{
+  "items": [
+    {
+      "styleItemId": "uuid",
+      "jobId": "uuid",
+      "name": "string",
+      "description": "string",
+      "resultImageUrl": "string",
+      "publishedAtUtc": "ISO 8601 datetime"
+    }
+  ],
+  "hasMore": true
+}
+```
+
+Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the feed, ordered by `completedAtUtc` descending. To fetch the next page, pass the `publishedAtUtc` of the last item as the `before` cursor.
 
 ### StyleItemResponse
 
