@@ -215,16 +215,25 @@ public class StyleJobHandler : IMessageHandler
     private async Task EnsureImageUrlReachableAsync(string imageUrl, CancellationToken ct)
     {
         using var client = _httpClientFactory.CreateClient();
-        using var getRequest = new HttpRequestMessage(HttpMethod.Get, imageUrl);
-        using var getResponse = await client.SendAsync(getRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var headRequest = new HttpRequestMessage(HttpMethod.Head, imageUrl);
+        using var headResponse = await client.SendAsync(headRequest, HttpCompletionOption.ResponseHeadersRead, ct);
 
-        if (getResponse.IsSuccessStatusCode)
+        if (headResponse.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        using var getRequest = new HttpRequestMessage(HttpMethod.Get, imageUrl);
+        getRequest.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
+
+        using var getResponse = await client.SendAsync(getRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (getResponse.IsSuccessStatusCode || getResponse.StatusCode == HttpStatusCode.PartialContent)
         {
             return;
         }
 
         throw new InvalidOperationException(
-            $"input_image URL is not reachable (GET {(int)getResponse.StatusCode} {getResponse.ReasonPhrase}). URL: {imageUrl}");
+            $"input_image URL is not reachable (HEAD {(int)headResponse.StatusCode} {headResponse.ReasonPhrase}; GET {(int)getResponse.StatusCode} {getResponse.ReasonPhrase}). URL: {imageUrl}");
     }
 
     private string NormalizeHaircut(string? raw)
