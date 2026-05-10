@@ -5,9 +5,11 @@ import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { UserJobSummaryResponse, JobStatus } from '@/types/api'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
+import { useDevLoginAction } from '@/composables/useDevLoginAction'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState({
   retryDelayMs: 3000,
   offlineMessage: 'Waiting for backend to come online…'
@@ -46,8 +48,7 @@ async function fetchJobs(isRetry = false) {
 }
 
 async function handleDevLogin() {
-  await authStore.loginDev('dev-user')
-  await fetchJobs()
+  await loginDevAndRun(fetchJobs)
 }
 
 onMounted(fetchJobs)

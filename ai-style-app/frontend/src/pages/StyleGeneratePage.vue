@@ -4,15 +4,17 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useStyleStore } from '@/stores/style'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
+import { useDevLoginAction } from '@/composables/useDevLoginAction'
+import { useImageFileInput } from '@/composables/useImageFileInput'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const styleStore = useStyleStore()
+const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState()
+const { selectedFile, previewUrl, onFileChange: onFileChangeFromInput, onDrop: onDropFromInput, removeFile } = useImageFileInput()
 
 const form = ref({ name: '', description: '', haircut: 'No change', hairColor: 'No change', gender: 'none' })
-const selectedFile = ref<File | null>(null)
-const previewUrl = ref<string | null>(null)
 const isResultPublic = ref(false)
 const isUploading = ref(false)
 const isSubmitting = ref(false)
@@ -21,48 +23,29 @@ const lastErrorWasNetwork = ref(false)
 // Alias for convenience — composable owns the reactive ref
 const submitError = requestState.error
 
-const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-const MAX_SIZE_MB = 10
-
 function onFileChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  setFile(input.files?.[0] ?? null)
+  submitError.value = null
+  lastErrorWasNetwork.value = false
+  const fileError = onFileChangeFromInput(event)
+  if (fileError) {
+    submitError.value = fileError
+  }
 }
 
 function onDrop(event: DragEvent) {
-  event.preventDefault()
-  setFile(event.dataTransfer?.files?.[0] ?? null)
-}
-
-function setFile(file: File | null) {
   submitError.value = null
-
-  if (!file) return
-
-  if (!ACCEPTED_TYPES.includes(file.type)) {
-    submitError.value = 'Only JPEG, PNG, WebP, or GIF images are allowed.'
-    return
+  lastErrorWasNetwork.value = false
+  const fileError = onDropFromInput(event)
+  if (fileError) {
+    submitError.value = fileError
   }
-
-  if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-    submitError.value = `Image must be smaller than ${MAX_SIZE_MB} MB.`
-    return
-  }
-
-  selectedFile.value = file
-
-  // Revoke any previous object URL to avoid memory leaks
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-  previewUrl.value = URL.createObjectURL(file)
 }
 
-function removeFile() {
-  selectedFile.value = null
+function handleRemoveFile() {
+  removeFile()
   isResultPublic.value = false
-  if (previewUrl.value) {
-    URL.revokeObjectURL(previewUrl.value)
-    previewUrl.value = null
-  }
+  submitError.value = null
+  lastErrorWasNetwork.value = false
 }
 
 async function handleSubmit() {
@@ -96,7 +79,7 @@ const buttonLabel = computed(() => {
 })
 
 async function handleDevLogin() {
-  await authStore.loginDev('dev-user')
+  await loginDevAndRun()
 }
 </script>
 
@@ -153,7 +136,7 @@ async function handleDevLogin() {
           <img :src="previewUrl" alt="Selected photo" class="w-full max-h-64 object-cover" />
           <button
             type="button"
-            @click="removeFile"
+            @click="handleRemoveFile"
             class="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-full w-9 h-9 sm:w-7 sm:h-7 flex items-center justify-center text-sm transition"
             title="Remove photo"
           >✕</button>

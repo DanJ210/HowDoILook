@@ -5,9 +5,11 @@ import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { PublicFeedItemResponse, FeedPageResponse } from '@/types/api'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
+import { useDevLoginAction } from '@/composables/useDevLoginAction'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState({
   retryDelayMs: 3000,
   offlineMessage: 'Waiting for backend to come online…'
@@ -110,7 +112,7 @@ function formatDate(iso: string) {
 }
 
 async function handleDevLogin() {
-  await authStore.loginDev('dev-user')
+  await loginDevAndRun()
 }
 
 function openGenerate() {
