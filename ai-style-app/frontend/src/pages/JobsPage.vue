@@ -3,7 +3,7 @@ import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
-import type { UserJobSummaryResponse, JobStatus } from '@/types/api'
+import type { UserJobSummaryResponse, JobStatus, UpdateJobVisibilityRequest } from '@/types/api'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
 import { useDevLoginAction } from '@/composables/useDevLoginAction'
 
@@ -17,6 +17,7 @@ const requestState = useBackendRequestState({
 const { isLoading, isWaitingForBackend, error, offlineMessage } = requestState
 
 const jobs = ref<UserJobSummaryResponse[]>([])
+const savingVisibility = ref<Record<string, boolean>>({})
 
 const statusPillClass: Record<JobStatus, string> = {
   Queued: 'bg-amber-500/15 text-amber-200 border-amber-400/20',
@@ -55,6 +56,27 @@ onMounted(fetchJobs)
 
 function openJob(jobId: string) {
   router.push({ name: 'job-status', params: { id: jobId } })
+}
+
+async function toggleVisibility(job: UserJobSummaryResponse) {
+  const nextVisibility = !job.isResultPublic
+  const previousVisibility = job.isResultPublic
+
+  savingVisibility.value = { ...savingVisibility.value, [job.jobId]: true }
+  job.isResultPublic = nextVisibility
+
+  try {
+    const updated = await api.put<UserJobSummaryResponse>(
+      `/jobs/${job.jobId}/visibility`,
+      { isResultPublic: nextVisibility } satisfies UpdateJobVisibilityRequest
+    )
+
+    job.isResultPublic = updated.isResultPublic
+  } catch {
+    job.isResultPublic = previousVisibility
+  } finally {
+    savingVisibility.value = { ...savingVisibility.value, [job.jobId]: false }
+  }
 }
 
 const hasJobs = computed(() => jobs.value.length > 0)
@@ -113,57 +135,81 @@ const hasJobs = computed(() => jobs.value.length > 0)
         :key="job.jobId"
         class="overflow-hidden rounded-[1.75rem] border border-white/10 bg-white/5 shadow-xl shadow-black/10 backdrop-blur"
       >
-        <button
-          type="button"
-          class="block w-full text-left"
-          @click="openJob(job.jobId)"
-        >
-          <div class="grid gap-0 sm:grid-cols-[160px_1fr]">
-            <div class="relative aspect-[4/5] bg-slate-900/60 sm:aspect-auto">
-              <img
-                v-if="job.resultImageUrl"
-                :src="job.resultImageUrl"
-                :alt="job.styleName"
-                class="h-full w-full object-cover"
-              />
-              <div v-else class="flex h-full w-full items-center justify-center text-xs uppercase tracking-[0.28em] text-slate-500">
-                No preview
+        <div class="grid gap-0 sm:grid-cols-[160px_1fr]">
+          <div class="relative aspect-[4/5] bg-slate-900/60 sm:aspect-auto">
+            <img
+              v-if="job.resultImageUrl"
+              :src="job.resultImageUrl"
+              :alt="job.styleName"
+              class="h-full w-full object-cover"
+            />
+            <div v-else class="flex h-full w-full items-center justify-center text-xs uppercase tracking-[0.28em] text-slate-500">
+              No preview
+            </div>
+          </div>
+
+          <div class="flex flex-col justify-between gap-4 p-4 sm:p-5">
+            <div class="space-y-3">
+              <div class="flex flex-wrap items-center gap-2">
+                <span :class="['inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium', pillClass(job.status)]">
+                  {{ job.status }}
+                </span>
+                <span
+                  v-if="job.isResultPublic"
+                  class="inline-flex items-center rounded-full border border-sky-400/20 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-100"
+                >
+                  Public
+                </span>
+              </div>
+
+              <div>
+                <h2 class="text-xl font-semibold text-white">{{ job.styleName }}</h2>
+                <p class="mt-1 text-sm text-slate-300">
+                  Job created {{ new Date(job.createdAtUtc).toLocaleString() }}
+                </p>
               </div>
             </div>
 
-            <div class="flex flex-col justify-between gap-4 p-4 sm:p-5">
-              <div class="space-y-3">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span :class="['inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium', pillClass(job.status)]">
-                    {{ job.status }}
-                  </span>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-slate-400">
+                  {{ job.isResultPublic ? 'Public result' : 'Private result' }}
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="job.isResultPublic"
+                  :disabled="savingVisibility[job.jobId]"
+                  @click="toggleVisibility(job)"
+                  :class="[
+                    'relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:cursor-not-allowed disabled:opacity-60',
+                    job.isResultPublic ? 'bg-sky-500' : 'bg-slate-600'
+                  ]"
+                >
                   <span
-                    v-if="job.isResultPublic"
-                    class="inline-flex items-center rounded-full border border-sky-400/20 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-100"
-                  >
-                    Public
-                  </span>
-                </div>
-
-                <div>
-                  <h2 class="text-xl font-semibold text-white">{{ job.styleName }}</h2>
-                  <p class="mt-1 text-sm text-slate-300">
-                    Job created {{ new Date(job.createdAtUtc).toLocaleString() }}
-                  </p>
-                </div>
+                    :class="[
+                      'pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transform transition duration-200',
+                      job.isResultPublic ? 'translate-x-5' : 'translate-x-0'
+                    ]"
+                  />
+                </button>
               </div>
 
-              <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
                 <p class="text-xs text-slate-400">
                   {{ job.completedAtUtc ? `Completed ${new Date(job.completedAtUtc).toLocaleString()}` : 'Still in progress' }}
                 </p>
-                <span class="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 transition">
+                <button
+                  type="button"
+                  @click="openJob(job.jobId)"
+                  class="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-100 transition hover:bg-white/20"
+                >
                   Open
-                </span>
+                </button>
               </div>
             </div>
           </div>
-        </button>
+        </div>
       </article>
     </section>
   </main>

@@ -36,4 +36,15 @@ public class JobsController : ControllerBase
         if (job is null) return NotFound();
         return Ok(job);
     }
+
+    [HttpPut("{id:guid}/visibility")]
+    public async Task<ActionResult<UserJobSummaryResponse>> UpdateVisibility(
+        Guid id,
+        [FromBody] UpdateJobVisibilityRequest request,
+        CancellationToken ct)
+    {
+        var updated = await _jobs.UpdateVisibilityAsync(id, UserId, request.IsResultPublic, ct);
+        if (updated is null) return NotFound();
+        return Ok(updated);
+    }
 }

@@ -59,7 +59,7 @@ public class UploadController : ControllerBase
     /// In local development this bridges private Azurite URLs through the backend/ngrok URL.
     /// </summary>
     [AllowAnonymous]
-    [HttpGet("public/{userId}/{fileName}")]
+    [AcceptVerbs("GET", "HEAD", Route = "public/{userId}/{fileName}")]
     public async Task<IActionResult> GetPublicImage(string userId, string fileName, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(fileName))
@@ -68,6 +68,9 @@ public class UploadController : ControllerBase
         var downloaded = await _blobs.DownloadAsync(userId, fileName, ct);
         if (downloaded is null)
             return NotFound();
+
+        if (HttpMethods.IsHead(Request.Method))
+            return Ok();
 
         return File(downloaded.Value.Content, downloaded.Value.ContentType);
     }
