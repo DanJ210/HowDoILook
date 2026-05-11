@@ -95,6 +95,8 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "isResultPublic": false,
   "haircut": "No change | Bob | ...",
   "hairColor": "No change | Blonde | ...",
+  "beardStyle": "No change | Stubble | Full Beard | ...",
+  "beardColor": "No change | Black | Brown | ...",
   "gender": "none | male | female"
 }
 ```
@@ -111,6 +113,8 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "isResultPublic": true,
   "haircut": "Layered",
   "hairColor": "Honey Blonde",
+  "beardStyle": "Stubble",
+  "beardColor": "Dark Brown",
   "gender": "female"
 }
 ```
@@ -205,6 +209,8 @@ Messages enqueued to `style-jobs` follow this schema (v1):
   "imageUrl": "string | null",
   "haircut": "string | null",
   "hairColor": "string | null",
+  "beardStyle": "string | null",
+  "beardColor": "string | null",
   "gender": "string | null"
 }
 ```

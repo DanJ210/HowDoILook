@@ -29,6 +29,8 @@ export interface GenerateStyleRequest {
   isResultPublic?: boolean
   haircut?: string
   hairColor?: string
+  beardStyle?: string
+  beardColor?: string
   gender?: string
 }
 

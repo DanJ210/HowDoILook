@@ -14,7 +14,15 @@ const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState()
 const { selectedFile, previewUrl, onFileChange: onFileChangeFromInput, onDrop: onDropFromInput, removeFile } = useImageFileInput()
 
-const form = ref({ name: '', description: '', haircut: 'No change', hairColor: 'No change', gender: 'none' })
+const form = ref({
+  name: '',
+  description: '',
+  haircut: 'No change',
+  hairColor: 'No change',
+  beardStyle: 'No change',
+  beardColor: 'No change',
+  gender: 'none'
+})
 const isResultPublic = ref(false)
 const isUploading = ref(false)
 const isSubmitting = ref(false)
@@ -340,6 +348,66 @@ async function handleDevLogin() {
           <option value="Titanium">Titanium</option>
           <option value="Rose Gold">Rose Gold</option>
         </select>
+      </div>
+
+      <!-- Beard style -->
+      <div>
+        <label class="block text-sm font-medium mb-1" for="beardStyle">Beard style</label>
+        <select
+          id="beardStyle"
+          v-model="form.beardStyle"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="No change">No change</option>
+          <option value="Random">Random</option>
+          <option value="Clean Shaven">Clean Shaven</option>
+          <option value="Stubble">Stubble</option>
+          <option value="Heavy Stubble">Heavy Stubble</option>
+          <option value="Short Beard">Short Beard</option>
+          <option value="Medium Beard">Medium Beard</option>
+          <option value="Long Beard">Long Beard</option>
+          <option value="Full Beard">Full Beard</option>
+          <option value="Circle Beard">Circle Beard</option>
+          <option value="Goatee">Goatee</option>
+          <option value="Van Dyke">Van Dyke</option>
+          <option value="Balbo">Balbo</option>
+          <option value="Anchor">Anchor</option>
+          <option value="Ducktail">Ducktail</option>
+          <option value="Mutton Chops">Mutton Chops</option>
+          <option value="Chin Strap">Chin Strap</option>
+          <option value="Soul Patch">Soul Patch</option>
+          <option value="Mustache">Mustache</option>
+          <option value="Handlebar Mustache">Handlebar Mustache</option>
+          <option value="Chevron Mustache">Chevron Mustache</option>
+          <option value="Pencil Mustache">Pencil Mustache</option>
+        </select>
+      </div>
+
+      <!-- Beard color -->
+      <div>
+        <label class="block text-sm font-medium mb-1" for="beardColor">Beard color</label>
+        <select
+          id="beardColor"
+          v-model="form.beardColor"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="No change">No change</option>
+          <option value="Random">Random</option>
+          <option value="Black">Black</option>
+          <option value="Dark Brown">Dark Brown</option>
+          <option value="Medium Brown">Medium Brown</option>
+          <option value="Light Brown">Light Brown</option>
+          <option value="Blonde">Blonde</option>
+          <option value="Auburn">Auburn</option>
+          <option value="Red">Red</option>
+          <option value="Ginger">Ginger</option>
+          <option value="Gray">Gray</option>
+          <option value="Silver">Silver</option>
+          <option value="White">White</option>
+        </select>
+        <p class="mt-1 text-xs text-gray-400">
+          Beard edits are model-dependent and may have minimal effect if facial hair is not clearly visible.
+        </p>
       </div>
 
       <!-- Gender -->

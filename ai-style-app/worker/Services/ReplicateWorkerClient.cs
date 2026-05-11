@@ -13,6 +13,8 @@ public record HaircutStyleInput(
     string InputImageUrl,
     string Haircut = "No change",
     string HairColor = "No change",
+    string BeardStyle = "No change",
+    string BeardColor = "No change",
     string Gender = "none",
     string AspectRatio = "match_input_image"
 );
@@ -55,6 +57,8 @@ public class ReplicateWorkerClient : IReplicateWorkerClient
                 gender = input.Gender,
                 haircut = input.Haircut,
                 hair_color = input.HairColor,
+                beard_style = input.BeardStyle,
+                beard_color = input.BeardColor,
                 input_image = input.InputImageUrl,
                 aspect_ratio = input.AspectRatio
             },

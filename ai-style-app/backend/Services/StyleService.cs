@@ -122,6 +122,8 @@ public class StyleService : IStyleService
             ImageUrl: request.ImageUrl,
             Haircut: request.Haircut,
             HairColor: request.HairColor,
+            BeardStyle: request.BeardStyle,
+            BeardColor: request.BeardColor,
             Gender: request.Gender
         );
 
@@ -161,6 +163,8 @@ public class StyleService : IStyleService
         var parts = new List<string>();
         if (!string.IsNullOrWhiteSpace(r.Haircut)) parts.Add($"Haircut: {r.Haircut}");
         if (!string.IsNullOrWhiteSpace(r.HairColor)) parts.Add($"Hair color: {r.HairColor}");
+        if (!string.IsNullOrWhiteSpace(r.BeardStyle)) parts.Add($"Beard style: {r.BeardStyle}");
+        if (!string.IsNullOrWhiteSpace(r.BeardColor)) parts.Add($"Beard color: {r.BeardColor}");
         if (!string.IsNullOrWhiteSpace(r.Gender) && r.Gender != "none") parts.Add($"Gender: {r.Gender}");
         return parts.Count > 0 ? string.Join(", ", parts) : r.Description;
     }

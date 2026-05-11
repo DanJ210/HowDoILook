@@ -35,6 +35,18 @@ public class StyleJobHandler : IMessageHandler
         "Messy Bun with a Headband", "Messy Bun with a Scarf", "Messy Fishtail Braid", "Sideswept Pixie", "Mohawk Fade",
         "Zig-Zag Part", "Victory Rolls"
     };
+    private static readonly HashSet<string> AllowedBeardStyles = new(StringComparer.Ordinal)
+    {
+        "No change", "Random", "Clean Shaven", "Stubble", "Heavy Stubble", "Short Beard", "Medium Beard",
+        "Long Beard", "Full Beard", "Circle Beard", "Goatee", "Van Dyke", "Balbo", "Anchor", "Ducktail",
+        "Mutton Chops", "Chin Strap", "Soul Patch", "Mustache", "Handlebar Mustache", "Chevron Mustache",
+        "Pencil Mustache"
+    };
+    private static readonly HashSet<string> AllowedBeardColors = new(StringComparer.Ordinal)
+    {
+        "No change", "Random", "Black", "Dark Brown", "Medium Brown", "Light Brown", "Blonde", "Auburn",
+        "Red", "Ginger", "Gray", "Silver", "White"
+    };
     private static readonly Dictionary<string, string> HaircutAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Bob cut"] = "Bob",
@@ -56,6 +68,19 @@ public class StyleJobHandler : IMessageHandler
         ["Platinum"] = "Platinum Blonde",
         ["Gray"] = "Silver",
         ["Ginger"] = "Copper"
+    };
+    private static readonly Dictionary<string, string> BeardStyleAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["None"] = "Clean Shaven",
+        ["No beard"] = "Clean Shaven",
+        ["Five o clock shadow"] = "Stubble",
+        ["5 o'clock shadow"] = "Stubble",
+        ["Mustache only"] = "Mustache"
+    };
+    private static readonly Dictionary<string, string> BeardColorAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Brown"] = "Medium Brown",
+        ["Grey"] = "Gray"
     };
 
     private readonly ILogger<StyleJobHandler> _logger;
@@ -136,11 +161,15 @@ public class StyleJobHandler : IMessageHandler
 
             var normalizedHaircut = NormalizeHaircut(job.Haircut);
             var normalizedHairColor = NormalizeHairColor(job.HairColor);
+            var normalizedBeardStyle = NormalizeBeardStyle(job.BeardStyle);
+            var normalizedBeardColor = NormalizeBeardColor(job.BeardColor);
 
             var haircutInput = new HaircutStyleInput(
                 InputImageUrl: imageUrl,
                 Haircut: normalizedHaircut,
                 HairColor: normalizedHairColor,
+                BeardStyle: normalizedBeardStyle,
+                BeardColor: normalizedBeardColor,
                 Gender: job.Gender ?? "none"
             );
             var predictionId = await _replicate.CreatePredictionAsync(haircutInput, webhookUrl, cancellationToken);
@@ -279,6 +308,52 @@ public class StyleJobHandler : IMessageHandler
         }
 
         _logger.LogWarning("Unsupported hair color '{HairColor}'. Falling back to 'No change'.", value);
+        return "No change";
+    }
+
+    private string NormalizeBeardStyle(string? raw)
+    {
+        var value = (raw ?? "No change").Trim();
+        if (value.Length == 0)
+        {
+            return "No change";
+        }
+
+        if (AllowedBeardStyles.Contains(value))
+        {
+            return value;
+        }
+
+        if (BeardStyleAliases.TryGetValue(value, out var mapped) && AllowedBeardStyles.Contains(mapped))
+        {
+            _logger.LogInformation("Mapped unsupported beard style '{BeardStyle}' to '{MappedBeardStyle}'.", value, mapped);
+            return mapped;
+        }
+
+        _logger.LogWarning("Unsupported beard style '{BeardStyle}'. Falling back to 'No change'.", value);
+        return "No change";
+    }
+
+    private string NormalizeBeardColor(string? raw)
+    {
+        var value = (raw ?? "No change").Trim();
+        if (value.Length == 0)
+        {
+            return "No change";
+        }
+
+        if (AllowedBeardColors.Contains(value))
+        {
+            return value;
+        }
+
+        if (BeardColorAliases.TryGetValue(value, out var mapped) && AllowedBeardColors.Contains(mapped))
+        {
+            _logger.LogInformation("Mapped unsupported beard color '{BeardColor}' to '{MappedBeardColor}'.", value, mapped);
+            return mapped;
+        }
+
+        _logger.LogWarning("Unsupported beard color '{BeardColor}'. Falling back to 'No change'.", value);
         return "No change";
     }
 
