@@ -66,6 +66,14 @@ graph TD
 - PostgreSQL: `ai_style_app` database with `style_items` and `style_jobs` tables
 - Local emulation: Azurite (queue), PostgreSQL running on port 5432
 
+## Unit Testing Footprint
+
+- Backend unit tests use xUnit in `tests/AiStyleApp.Tests` with EF Core InMemory for service-level validation.
+- Frontend unit tests use Vitest with `src/**/*.test.ts` discovery.
+- Current test files:
+  - `tests/AiStyleApp.Tests/JobServiceTests.cs`
+  - `frontend/src/types/api.test.ts`
+
 ## Database Schema
 
 ### `style_items`
