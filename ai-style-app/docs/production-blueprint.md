@@ -358,9 +358,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Frontend unit tests
+        run: |
+          cd ai-style-app/frontend
+          npm ci
+          npm run test
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: '8.x' }
-      - run: dotnet test ai-style-app/HowDoILook.sln
+      - name: Backend unit tests
+        run: dotnet test ai-style-app/tests/AiStyleApp.Tests/AiStyleApp.Tests.csproj
 
   build-push:
     needs: test
