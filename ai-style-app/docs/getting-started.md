@@ -4,50 +4,36 @@
 
 - [Node.js](https://nodejs.org/) 20+
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [Docker](https://www.docker.com/) (for Azurite local storage emulation)
-- [PostgreSQL](https://www.postgresql.org/) 15+ running locally on port 5432
+- [Docker](https://www.docker.com/) (for local infrastructure containers)
 - A [Replicate](https://replicate.com/) account and API token
 
-## 1. Start Local Storage Emulator (Azurite)
+## 1. Start Local Infrastructure (PostgreSQL + Azurite)
 
-The worker and backend depend on Azure Storage Queue. Run Azurite locally before starting either .NET project:
-
-```bash
-docker run -d --name azurite -p 10000:10000 -p 10001:10001 -p 10002:10002 \
-  mcr.microsoft.com/azure-storage/azurite \
-  azurite --loose --skipApiVersionCheck --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
-```
-
-If you use Docker Desktop, ensure the daemon is running first. If `azurite` already exists from a previous run, use:
+Infrastructure is defined in `ai-style-app/docker-compose.yml`.
 
 ```bash
-docker start azurite
+cd ai-style-app
+docker compose up -d
 ```
 
-## 2. Start PostgreSQL
+This starts:
 
-The backend and worker both require a PostgreSQL database. The development defaults expect:
+- PostgreSQL (`postgres-dev`) on `localhost:5432`
+- Azurite (`azurite`) on `localhost:10000-10002`
 
-| Setting | Value |
-|---|---|
-| Host | `localhost` |
-| Port | `5432` |
-| Database | `ai_style_app` |
-| Username | `postgres` |
-| Password | `postgres` |
-
-Update `appsettings.Development.json` in `/backend` and `/worker` if your local PostgreSQL differs.
-
-The backend automatically runs `dotnet ef database update` on startup in the Development environment, so the schema will be created automatically the first time it starts.
-
-To run migrations manually:
+To stop:
 
 ```bash
-dotnet ef database update --project ai-style-app/data/AiStyleApp.Data.csproj \
-  --startup-project ai-style-app/backend/Backend.csproj
+docker compose down
 ```
 
-## 3. Configure Replicate API
+To stop and remove volumes:
+
+```bash
+docker compose down -v
+```
+
+## 2. Configure Replicate API
 
 Edit `ai-style-app/backend/appsettings.Development.json` and `ai-style-app/worker/appsettings.Development.json`:
 
@@ -58,14 +44,14 @@ Edit `ai-style-app/backend/appsettings.Development.json` and `ai-style-app/worke
 }
 ```
 
-For the worker, also set `WebhookBaseUrl` to your publicly reachable URL (see step below for ngrok).
+For the worker, also set `WebhookBaseUrl` to your publicly reachable URL (see ngrok step below).
 
 Current generation model behavior:
 
 - Worker uses Replicate model slug `flux-kontext-apps/change-haircut`.
 - Worker resolves `latest_version.id` dynamically from Replicate at runtime.
 
-## 4. Expose Webhook for Local Development (ngrok)
+## 3. Expose Webhook for Local Development (ngrok)
 
 Replicate sends webhook callbacks to your backend. In local dev, use [ngrok](https://ngrok.com/) to expose the backend:
 
@@ -81,7 +67,7 @@ Copy the `https://...ngrok.io` URL and set it in `ai-style-app/worker/appsetting
 }
 ```
 
-## 5. Frontend
+## 4. Run Frontend
 
 ```bash
 cd ai-style-app/frontend
@@ -89,40 +75,38 @@ npm install
 npm run dev
 ```
 
-Runs on `http://localhost:5173`. API calls are proxied to `http://localhost:5000`.
+Frontend runs on `http://localhost:5173`. API calls are proxied to `http://localhost:5000`.
 
-## 6. Backend (Web API)
+## 5. Run Backend (Web API)
 
 ```bash
 cd ai-style-app/backend
 dotnet run
 ```
 
-Runs on both `http://localhost:5000` and `https://localhost:5001` using `Properties/launchSettings.json` in development.
+Backend runs on both `http://localhost:5000` and `https://localhost:5001` using `Properties/launchSettings.json` in development.
 
-Swagger UI is available at:
+Swagger UI:
 
 - `http://localhost:5000/swagger`
 - `https://localhost:5001/swagger`
 
-If HTTPS is not trusted yet on your machine:
+If HTTPS is not trusted yet:
 
 ```bash
 dotnet dev-certs https --trust
 ```
 
-The development JWT key is pre-configured in `appsettings.Development.json`. **Replace it with a strong secret before deploying.**
+The backend auto-applies EF Core migrations on startup in Development.
 
-## 7. Worker
+## 6. Run Worker
 
 ```bash
 cd ai-style-app/worker
 DOTNET_ENVIRONMENT=Development dotnet run
 ```
 
-Connects to the local Azurite queue (`UseDevelopmentStorage=true`) and polls for `style-jobs` messages every 5 seconds.
-
-`DOTNET_ENVIRONMENT=Development` is required for the worker to load `appsettings.Development.json`.
+The worker connects to the local queue and polls `style-jobs` every 5 seconds.
 
 On Windows PowerShell, use:
 
@@ -131,9 +115,43 @@ $env:DOTNET_ENVIRONMENT="Development"
 dotnet run
 ```
 
-Using `ASPNETCORE_ENVIRONMENT` is not sufficient for the worker host.
+Using `ASPNETCORE_ENVIRONMENT` alone is not sufficient for the worker host.
 
-## 8. Environment Variables (Production)
+## 7. What Is Running Locally
+
+When local dev is fully started, these components should be running:
+
+| Component | How it runs | Expected endpoint / signal |
+|---|---|---|
+| PostgreSQL | `docker compose` container `postgres-dev` | `localhost:5432` |
+| Azurite | `docker compose` container `azurite` | `localhost:10000`, `10001`, `10002` |
+| Frontend | `npm run dev` in `ai-style-app/frontend` | `http://localhost:5173` |
+| Backend API | `dotnet run` in `ai-style-app/backend` | `http://localhost:5000` / `https://localhost:5001` |
+| Worker | `dotnet run` in `ai-style-app/worker` | Log contains `Worker started. Polling queue 'style-jobs'.` |
+
+## 8. Unit Testing
+
+The repository now includes unit tests for both backend and frontend.
+
+Backend tests (xUnit):
+
+```bash
+dotnet test ai-style-app/tests/AiStyleApp.Tests/AiStyleApp.Tests.csproj
+```
+
+Frontend tests (Vitest):
+
+```bash
+cd ai-style-app/frontend
+npm run test
+```
+
+Latest local baseline (May 11, 2026):
+
+- Backend tests: `2 passed, 0 failed` (`JobServiceTests`)
+- Frontend tests: `1 passed, 0 failed` (`src/types/api.test.ts`)
+
+## 9. Environment Variables (Production)
 
 Copy `infrastructure/local.env.example` to `.env` and fill in all values before deploying:
 
@@ -142,18 +160,18 @@ Copy `infrastructure/local.env.example` to `.env` and fill in all values before 
 | `QUEUE_CONNECTION_STRING` | Backend, Worker | Azure Storage Queue connection string |
 | `QUEUE_NAME` | Backend, Worker | Queue name (default: `style-jobs`) |
 | `ConnectionStrings__DefaultConnection` | Backend, Worker | PostgreSQL connection string |
-| `JWT_KEY` | Backend | Signing key — minimum 32 characters |
+| `JWT_KEY` | Backend | Signing key, minimum 32 characters |
 | `JWT_ISSUER` | Backend | Token issuer (default: `ai-style-app`) |
 | `JWT_AUDIENCE` | Backend | Token audience (default: `ai-style-app-client`) |
 | `Replicate__ApiToken` | Backend, Worker | Replicate API token |
 | `Replicate__WebhookSigningSecret` | Backend | HMAC secret for webhook verification |
 | `Replicate__WebhookBaseUrl` | Worker | Publicly reachable base URL for callbacks |
 
-Map these to .NET configuration using double-underscore notation, e.g. `Replicate__ApiToken`.
+Map these to .NET configuration using double-underscore notation, for example `Replicate__ApiToken`.
 
-> **Security**: Never commit `.env` or `appsettings.Development.json` with real secrets. Use Managed Identity in production instead of connection strings where possible.
+Security note: never commit `.env` or development appsettings files with real secrets.
 
-## 9. Quick Health Check
+## 10. Quick Health Check
 
 After starting all services:
 
@@ -162,9 +180,9 @@ After starting all services:
 - Backend API (HTTPS): `https://localhost:5001`
 - Swagger UI (HTTP): `http://localhost:5000/swagger`
 - Swagger UI (HTTPS): `https://localhost:5001/swagger`
-- Worker logs should include: `Worker started. Polling queue 'style-jobs'.`
+- Worker logs include: `Worker started. Polling queue 'style-jobs'.`
 
-## 10. Test Protected Endpoints in Swagger
+## 11. Test Protected Endpoints in Swagger
 
 `/api/style` endpoints require a Bearer token.
 
@@ -179,10 +197,10 @@ After starting all services:
 ```
 
 3. Copy `accessToken` from the response.
-4. Click **Authorize** in Swagger and paste the token value.
+4. Click Authorize in Swagger and paste the token value.
 5. Call `POST /api/style/generate` with an uploaded `imageUrl`.
 
-If no token is provided, the API correctly returns `401 Unauthorized` with `www-authenticate: Bearer`.
+If no token is provided, the API returns `401 Unauthorized` with `www-authenticate: Bearer`.
 
 ### Example request body for `POST /api/style/generate`
 
