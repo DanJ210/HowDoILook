@@ -66,7 +66,7 @@ Key Vault ←─ Managed Identity ─── both Container Apps                 
 Application Insights ←─────────── both Container Apps + Static Web Apps ────┘
 ```
 
-**Key difference from dev:** No ngrok. The worker's `WebhookBaseUrl` is the backend Container App's stable HTTPS URL. Azurite is replaced by real Azure Storage. Dev auth endpoint is removed or env-gated.
+**Key difference from dev:** No ngrok. The worker's `WebhookBaseUrl` is the backend Container App's stable HTTPS URL. Azurite is replaced by real Azure Storage. The current dev auth endpoint must be removed or explicitly env-gated before production deployment.
 
 ---
 
@@ -79,7 +79,7 @@ Application Insights ←─────────── both Container Apps + 
 **Options (choose one):**
 - Integrate Azure AD B2C or Microsoft Entra External ID.
 - Add a proper registration/login flow with password hashing (BCrypt + EF Core `Users` table).
-- Gate the dev endpoint strictly: `if (!_env.IsDevelopment()) return NotFound();` (already sufficient if the container runs `Production`).
+- Gate the dev endpoint strictly: `if (!_env.IsDevelopment()) return NotFound();` (this is not implemented in the current code yet, so do not rely on `Production` configuration alone).
 
 The dev endpoint is acceptable for `ASPNETCORE_ENVIRONMENT=Development` only. Ensure production containers set `ASPNETCORE_ENVIRONMENT=Production`.
 
@@ -500,10 +500,10 @@ jobs:
 
 ### Secrets
 
-- [ ] Rotate Replicate API token (`r8_VnE27...`) — the dev token is committed in `appsettings.Development.json` and must not reach production
+- [ ] Ensure all Replicate tokens are rotated and sourced from Key Vault or environment variables only; tracked `appsettings.json` files must keep placeholder values only
 - [ ] Generate a new JWT signing key: `openssl rand -base64 32`
 - [ ] Store all secrets in Key Vault; no secrets in `appsettings.json` or environment files
-- [ ] `.gitignore` must include `appsettings.Development.json` OR scrub tokens before any public push
+- [ ] `.gitignore` must exclude any local override settings files (`appsettings.Development.json`, `.env`, etc.) before any public push
 
 ### Endpoints
 

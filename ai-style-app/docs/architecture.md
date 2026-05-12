@@ -31,8 +31,10 @@ graph TD
 - **Tailwind CSS 4** via `@tailwindcss/vite` plugin (v4 `@import "tailwindcss"` syntax).
 - **Pinia** stores: `auth`, `style`, `job`.
 - `auth` store: Dev login via `POST /api/auth/token`, persists JWT to `localStorage`.
+- **Top auth bar + account route**: persistent header actions expose `Dev Login`, `Account`, and `Logout`, and `/account` shows the current session state plus shortcuts back to generation and job history.
 - `style` store: CRUD + `generate()` which enqueues a job and starts polling.
 - `job` store: Polls `GET /api/jobs/{id}` with exponential backoff (2 s → 10 s cap) until terminal.
+- **Jobs page** (`JobsPage`): authenticated job history powered by `GET /api/jobs`, with inline `PUT /api/jobs/{id}/visibility` toggles for public/private result sharing.
 - Calls the backend via `fetch` proxied through Vite dev server (`/api → localhost:5000`).
 - **Public feed** (`HomePage`): anonymous infinite-scroll grid of public results using cursor-based pagination (`GET /api/style/feed?take=12&before=<ISO>`). The feed uses an `IntersectionObserver` sentinel to load the next page automatically as the user scrolls.
 - **`useBackendRequestState` composable**: shared loading/error/offline state across all data-fetching pages. Detects network failures (`statusCode: 0`) and schedules automatic retries for read operations. Submit flows use `handleError` without a retry function so errors surface immediately without re-submitting.
@@ -51,7 +53,7 @@ graph TD
 ### Worker (`/worker`)
 - **BackgroundService** that polls the Azure Storage Queue every 5 seconds.
 - Deserializes each message as a `StyleJob` (from `AiStyleApp.Data.Queue` shared library).
-- Marks the job `Processing` in PostgreSQL, validates/normalizes image + haircut/color/beard inputs, submits a prediction to the Replicate API, stores the returned `external_prediction_id`.
+- Marks the job `Processing` in PostgreSQL, validates/normalizes image + haircut/color inputs, submits a prediction to the Replicate API, stores the returned `external_prediction_id`.
 - Retries up to 3 times on Replicate API failure; marks `Failed` on exhaustion.
 - Deletes the message from the queue only after successful processing.
 - Uses Replicate model slug `flux-kontext-apps/change-haircut` and resolves `latest_version.id` dynamically from Replicate.
@@ -73,7 +75,7 @@ graph TD
 - Current test files:
   - `tests/AiStyleApp.Tests/JobServiceTests.cs` — job enqueue and queue message contracts
   - `tests/AiStyleApp.Tests/AuthControllerTests.cs` — JWT token generation and expiration clamping
-  - `tests/AiStyleApp.Tests/StyleServiceTests.cs` — style generation including beard field propagation
+  - `tests/AiStyleApp.Tests/StyleServiceTests.cs` — style generation service coverage (currently stale: still references removed beard fields)
   - `frontend/src/types/api.test.ts` — API type shape validation
 
 ## Database Schema
@@ -117,13 +119,12 @@ graph TD
 
 ## Data Flow
 
-1. User uploads a photo (`POST /api/upload/image`) and fills out Generate Style fields (Name, Description, optional prompt, haircut, hair color, beard style, beard color, gender, visibility).
+1. User uploads a photo (`POST /api/upload/image`) and fills out Generate Style fields (Name, Description, optional prompt, haircut, hair color, gender, visibility).
 2. Frontend calls `POST /api/style/generate` with a JWT and the uploaded `imageUrl`.
-3. Backend creates a `StyleItemEntity` and `StyleJobEntity` (status `Queued`) in PostgreSQL, then enqueues a `StyleJob` message including image, hair, and beard parameters.
+3. Backend creates a `StyleItemEntity` and `StyleJobEntity` (status `Queued`) in PostgreSQL, then enqueues a `StyleJob` message including image and hair parameters.
 4. Backend returns `202 Accepted` with `jobId` and `statusEndpoint`.
-5. Frontend navigates to the job status page and begins polling `GET /api/jobs/{id}`.
+5. Frontend can review jobs with `GET /api/jobs`, toggle visibility with `PUT /api/jobs/{id}/visibility`, and navigates to the job status page for detailed polling via `GET /api/jobs/{id}`.
 6. Worker dequeues the message, marks the job `Processing`, verifies the image is externally reachable, and submits a prediction to Replicate (`flux-kontext-apps/change-haircut`).
 7. Replicate sends a webhook callback to `POST /api/webhooks/replicate`.
 8. Backend verifies the HMAC signature, updates the job to `Succeeded` (or `Failed`) with `result_json`, and asynchronously archives the generated image.
 9. Frontend polling detects the terminal status and displays the result (or error).
-

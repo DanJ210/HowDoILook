@@ -80,7 +80,9 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "description": "string",
   "imageUrl": "string | null",
   "isResultPublic": false,
-  "createdAt": "ISO 8601 datetime"
+  "createdAt": "ISO 8601 datetime",
+  "latestJobId": "uuid | null",
+  "latestJobStatus": "Queued | Processing | Succeeded | Failed | TimedOut | Canceled | null"
 }
 ```
 
@@ -132,7 +134,34 @@ The response is `202 Accepted`. Poll `statusEndpoint` to track progress.
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
+| `GET` | `/api/jobs` | Required | — | `UserJobSummaryResponse[]` |
 | `GET` | `/api/jobs/{id}` | Required | — | `JobStatusResponse` |
+| `PUT` | `/api/jobs/{id}/visibility` | Required | `UpdateJobVisibilityRequest` | `UserJobSummaryResponse` |
+
+### UserJobSummaryResponse
+
+Returned by `GET /api/jobs` and `PUT /api/jobs/{id}/visibility`.
+
+```json
+{
+  "jobId": "uuid",
+  "styleItemId": "uuid",
+  "styleName": "string",
+  "status": "Queued | Processing | Succeeded | Failed | TimedOut | Canceled",
+  "resultImageUrl": "string | null",
+  "isResultPublic": false,
+  "createdAtUtc": "ISO 8601 datetime",
+  "completedAtUtc": "ISO 8601 datetime | null"
+}
+```
+
+### UpdateJobVisibilityRequest
+
+```json
+{
+  "isResultPublic": true
+}
+```
 
 ### JobStatusResponse
 
@@ -218,4 +247,3 @@ Messages enqueued to `style-jobs` follow this schema (v1):
 | 403 | Forbidden |
 | 404 | Resource not found |
 | 500 | Internal server error |
-
