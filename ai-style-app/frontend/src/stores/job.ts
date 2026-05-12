@@ -9,6 +9,15 @@ export const useJobStore = defineStore('job', () => {
   const activePollingIds = ref<Set<string>>(new Set())
   const pollingState = ref<Record<string, 'polling' | 'stopped' | 'completed' | 'error'>>({})
   const pollingError = ref<Record<string, string | null>>({})
+  const pollingTimers = ref<Record<string, ReturnType<typeof setTimeout> | null>>({})
+
+  function clearPollingTimer(jobId: string) {
+    const timer = pollingTimers.value[jobId]
+    if (timer) {
+      clearTimeout(timer)
+    }
+    pollingTimers.value[jobId] = null
+  }
 
   function getJob(jobId: string): JobStatusResponse | undefined {
     return jobs.value[jobId]
@@ -26,16 +35,23 @@ export const useJobStore = defineStore('job', () => {
     activePollingIds.value.add(jobId)
     pollingState.value[jobId] = 'polling'
     pollingError.value[jobId] = null
+    clearPollingTimer(jobId)
 
     let intervalMs = 2000
     const maxIntervalMs = 10000
 
     const poll = async () => {
+      if (!activePollingIds.value.has(jobId)) {
+        clearPollingTimer(jobId)
+        return
+      }
+
       try {
         const job = await fetchJob(jobId)
 
         if (TERMINAL_STATUSES.includes(job.status)) {
           activePollingIds.value.delete(jobId)
+          clearPollingTimer(jobId)
           pollingState.value[jobId] = 'completed'
           onComplete?.(job)
           return
@@ -43,19 +59,21 @@ export const useJobStore = defineStore('job', () => {
 
         // Exponential backoff — cap at 10s
         intervalMs = Math.min(intervalMs * 1.5, maxIntervalMs)
-        setTimeout(poll, intervalMs)
+        pollingTimers.value[jobId] = setTimeout(poll, intervalMs)
       } catch (err: unknown) {
         activePollingIds.value.delete(jobId)
+        clearPollingTimer(jobId)
         pollingState.value[jobId] = 'error'
         pollingError.value[jobId] = (err as { message?: string })?.message ?? 'Failed to poll job status.'
       }
     }
 
-    setTimeout(poll, intervalMs)
+    pollingTimers.value[jobId] = setTimeout(poll, intervalMs)
   }
 
   function stopPolling(jobId: string) {
     activePollingIds.value.delete(jobId)
+    clearPollingTimer(jobId)
     pollingState.value[jobId] = 'stopped'
   }
 

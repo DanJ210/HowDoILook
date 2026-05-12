@@ -2,9 +2,11 @@
 import { onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useJobStore } from '@/stores/job'
-import { TERMINAL_STATUSES } from '@/types/api'
+import { TERMINAL_STATUSES, type JobStatus } from '@/types/api'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
 import { useJobResultViewModel } from '@/composables/useJobResultViewModel'
+import { getLightJobStatusPillClass } from '@/constants/jobStatusStyles'
+import StateCard from '@/components/StateCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,8 +29,6 @@ const { parsedResult, resultImages } = useJobResultViewModel(
 
 onMounted(() => {
   if (!jobId.value) return
-
-  requestState.beginInitialLoad()
 
   const loadJob = async (isRetry = false) => {
     try {
@@ -58,17 +58,8 @@ onUnmounted(() => {
   }
 })
 
-const statusColors: Record<string, string> = {
-  Queued:     'bg-yellow-100 text-yellow-800',
-  Processing: 'bg-blue-100 text-blue-800',
-  Succeeded:  'bg-green-100 text-green-800',
-  Failed:     'bg-red-100 text-red-800',
-  TimedOut:   'bg-gray-100 text-gray-800',
-  Canceled:   'bg-gray-100 text-gray-800',
-}
-
-function statusColor(status: string) {
-  return statusColors[status] ?? 'bg-gray-100 text-gray-800'
+function statusColor(status: JobStatus) {
+  return getLightJobStatusPillClass(status)
 }
 
 function goBack() {
@@ -101,9 +92,13 @@ function goBack() {
       <p v-else class="text-gray-500">Loading job…</p>
     </div>
 
-    <div v-else-if="error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
-      {{ error }}
-    </div>
+    <StateCard
+      v-else-if="error"
+      tone="error"
+      :title="error"
+      padding-class="p-4"
+      :centered="false"
+    />
 
     <div v-else-if="!job" class="text-gray-500">
       <span v-if="isPolling">Loading job…</span>
@@ -189,7 +184,7 @@ function goBack() {
         </div>
 
         <!-- Fallback for non-image results -->
-        <pre v-else class="bg-gray-50 border rounded p-3 text-xs overflow-auto max-h-64">{{ parsedResult(job.resultJson) }}</pre>
+        <pre v-else class="bg-gray-50 border rounded p-3 text-xs overflow-auto max-h-64">{{ parsedResult }}</pre>
       </div>
     </div>
   </main>

@@ -148,7 +148,10 @@ npm run test
 
 Latest local baseline (May 11, 2026):
 
-- Backend tests: `2 passed, 0 failed` (`JobServiceTests`)
+- Backend tests: `15 passed, 0 failed`
+  - `JobServiceTests.cs` (2 tests)
+  - `AuthControllerTests.cs` (11 tests)
+  - `StyleServiceTests.cs` (2 tests)
 - Frontend tests: `1 passed, 0 failed` (`src/types/api.test.ts`)
 
 ## 9. Environment Variables (Production)

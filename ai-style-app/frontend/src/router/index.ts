@@ -23,6 +23,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/pages/JobStatusPage.vue')
   },
   {
+    path: '/account',
+    name: 'account',
+    component: () => import('@/pages/AccountPage.vue')
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('@/pages/NotFoundPage.vue')

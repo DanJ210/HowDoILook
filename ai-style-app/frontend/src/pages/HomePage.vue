@@ -2,14 +2,11 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import { useAuthStore } from '@/stores/auth'
 import type { PublicFeedItemResponse, FeedPageResponse } from '@/types/api'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
-import { useDevLoginAction } from '@/composables/useDevLoginAction'
+import StateCard from '@/components/StateCard.vue'
 
 const router = useRouter()
-const authStore = useAuthStore()
-const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState({
   retryDelayMs: 3000,
   offlineMessage: 'Waiting for backend to come online…'
@@ -111,10 +108,6 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-async function handleDevLogin() {
-  await loginDevAndRun()
-}
-
 function openGenerate() {
   router.push({ name: 'style-generate' })
 }
@@ -140,14 +133,6 @@ function openJobs() {
         </div>
 
         <div class="flex flex-col gap-3 sm:flex-row lg:flex-col lg:justify-end">
-          <button
-            v-if="!authStore.isAuthenticated"
-            type="button"
-            @click="handleDevLogin"
-            class="rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400"
-          >
-            Dev Login
-          </button>
           <button
             type="button"
             @click="openGenerate"
@@ -182,15 +167,21 @@ function openJobs() {
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
-      {{ error }}
-    </div>
+    <StateCard
+      v-else-if="error"
+      tone="error"
+      :title="error"
+      padding-class="p-4"
+      :centered="false"
+    />
 
     <!-- Empty -->
-    <div v-else-if="feed.length === 0" class="rounded-3xl border border-white/10 bg-white/5 p-8 text-center text-slate-200 shadow-xl shadow-black/10">
-      <p class="text-lg font-medium">No public looks yet.</p>
-      <p class="mt-2 text-sm text-slate-400">When users mark results public, they will appear here.</p>
-    </div>
+    <StateCard
+      v-else-if="feed.length === 0"
+      title="No public looks yet."
+      description="When users mark results public, they will appear here."
+      padding-class="p-8"
+    />
 
     <!-- Instagram-style grid -->
     <section v-else>

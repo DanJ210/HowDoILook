@@ -4,13 +4,13 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useStyleStore } from '@/stores/style'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
-import { useDevLoginAction } from '@/composables/useDevLoginAction'
 import { useImageFileInput } from '@/composables/useImageFileInput'
+import { HAIRCUT_OPTIONS, HAIR_COLOR_OPTIONS } from '@/constants/styleOptions'
+import StateCard from '@/components/StateCard.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const styleStore = useStyleStore()
-const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState()
 const { selectedFile, previewUrl, onFileChange: onFileChangeFromInput, onDrop: onDropFromInput, removeFile } = useImageFileInput()
 
@@ -77,10 +77,6 @@ const buttonLabel = computed(() => {
   if (isSubmitting.value) return 'Submitting…'
   return 'Generate Style'
 })
-
-async function handleDevLogin() {
-  await loginDevAndRun()
-}
 </script>
 
 <template>
@@ -98,17 +94,13 @@ async function handleDevLogin() {
 
     <h1 class="mb-5 text-2xl font-bold text-white sm:mb-6">Generate Style</h1>
 
-    <div v-if="!authStore.isAuthenticated" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-slate-200 shadow-xl shadow-black/10 backdrop-blur">
-      <p class="text-lg font-medium">Sign in to generate a style.</p>
-      <p class="mt-2 text-sm text-slate-400">Use the dev login for local development.</p>
-      <button
-        type="button"
-        @click="handleDevLogin"
-        class="mt-4 rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400"
-      >
-        Dev Login
-      </button>
-    </div>
+    <StateCard
+      v-if="!authStore.isAuthenticated"
+      title="Sign in to generate a style."
+      description="Use the top-right auth controls to sign in."
+      :centered="false"
+      padding-class="p-6"
+    />
 
     <form v-else @submit.prevent="handleSubmit" class="space-y-6">
 
@@ -201,102 +193,7 @@ async function handleDevLogin() {
           v-model="form.haircut"
           class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="No change">No change</option>
-          <option value="Random">Random</option>
-          <option value="Straight">Straight</option>
-          <option value="Wavy">Wavy</option>
-          <option value="Curly">Curly</option>
-          <option value="Bob">Bob</option>
-          <option value="Pixie Cut">Pixie Cut</option>
-          <option value="Layered">Layered</option>
-          <option value="Messy Bun">Messy Bun</option>
-          <option value="High Ponytail">High Ponytail</option>
-          <option value="Low Ponytail">Low Ponytail</option>
-          <option value="Braided Ponytail">Braided Ponytail</option>
-          <option value="French Braid">French Braid</option>
-          <option value="Dutch Braid">Dutch Braid</option>
-          <option value="Fishtail Braid">Fishtail Braid</option>
-          <option value="Space Buns">Space Buns</option>
-          <option value="Top Knot">Top Knot</option>
-          <option value="Undercut">Undercut</option>
-          <option value="Mohawk">Mohawk</option>
-          <option value="Crew Cut">Crew Cut</option>
-          <option value="Faux Hawk">Faux Hawk</option>
-          <option value="Slicked Back">Slicked Back</option>
-          <option value="Side-Parted">Side-Parted</option>
-          <option value="Center-Parted">Center-Parted</option>
-          <option value="Blunt Bangs">Blunt Bangs</option>
-          <option value="Side-Swept Bangs">Side-Swept Bangs</option>
-          <option value="Shag">Shag</option>
-          <option value="Lob">Lob</option>
-          <option value="Angled Bob">Angled Bob</option>
-          <option value="A-Line Bob">A-Line Bob</option>
-          <option value="Asymmetrical Bob">Asymmetrical Bob</option>
-          <option value="Graduated Bob">Graduated Bob</option>
-          <option value="Inverted Bob">Inverted Bob</option>
-          <option value="Layered Shag">Layered Shag</option>
-          <option value="Choppy Layers">Choppy Layers</option>
-          <option value="Razor Cut">Razor Cut</option>
-          <option value="Perm">Perm</option>
-          <option value="Ombré">Ombré</option>
-          <option value="Straightened">Straightened</option>
-          <option value="Soft Waves">Soft Waves</option>
-          <option value="Glamorous Waves">Glamorous Waves</option>
-          <option value="Hollywood Waves">Hollywood Waves</option>
-          <option value="Finger Waves">Finger Waves</option>
-          <option value="Tousled">Tousled</option>
-          <option value="Feathered">Feathered</option>
-          <option value="Pageboy">Pageboy</option>
-          <option value="Pigtails">Pigtails</option>
-          <option value="Pin Curls">Pin Curls</option>
-          <option value="Rollerset">Rollerset</option>
-          <option value="Twist Out">Twist Out</option>
-          <option value="Bantu Knots">Bantu Knots</option>
-          <option value="Dreadlocks">Dreadlocks</option>
-          <option value="Cornrows">Cornrows</option>
-          <option value="Box Braids">Box Braids</option>
-          <option value="Crochet Braids">Crochet Braids</option>
-          <option value="Double Dutch Braids">Double Dutch Braids</option>
-          <option value="French Fishtail Braid">French Fishtail Braid</option>
-          <option value="Waterfall Braid">Waterfall Braid</option>
-          <option value="Rope Braid">Rope Braid</option>
-          <option value="Heart Braid">Heart Braid</option>
-          <option value="Halo Braid">Halo Braid</option>
-          <option value="Crown Braid">Crown Braid</option>
-          <option value="Braided Crown">Braided Crown</option>
-          <option value="Bubble Braid">Bubble Braid</option>
-          <option value="Bubble Ponytail">Bubble Ponytail</option>
-          <option value="Ballerina Braids">Ballerina Braids</option>
-          <option value="Milkmaid Braids">Milkmaid Braids</option>
-          <option value="Bohemian Braids">Bohemian Braids</option>
-          <option value="Flat Twist">Flat Twist</option>
-          <option value="Crown Twist">Crown Twist</option>
-          <option value="Twisted Bun">Twisted Bun</option>
-          <option value="Twisted Half-Updo">Twisted Half-Updo</option>
-          <option value="Twist and Pin Updo">Twist and Pin Updo</option>
-          <option value="Chignon">Chignon</option>
-          <option value="Simple Chignon">Simple Chignon</option>
-          <option value="Messy Chignon">Messy Chignon</option>
-          <option value="French Twist">French Twist</option>
-          <option value="French Twist Updo">French Twist Updo</option>
-          <option value="French Roll">French Roll</option>
-          <option value="Updo">Updo</option>
-          <option value="Messy Updo">Messy Updo</option>
-          <option value="Knotted Updo">Knotted Updo</option>
-          <option value="Ballerina Bun">Ballerina Bun</option>
-          <option value="Banana Clip Updo">Banana Clip Updo</option>
-          <option value="Beehive">Beehive</option>
-          <option value="Bouffant">Bouffant</option>
-          <option value="Hair Bow">Hair Bow</option>
-          <option value="Half-Up Top Knot">Half-Up Top Knot</option>
-          <option value="Half-Up, Half-Down">Half-Up, Half-Down</option>
-          <option value="Messy Bun with a Headband">Messy Bun with a Headband</option>
-          <option value="Messy Bun with a Scarf">Messy Bun with a Scarf</option>
-          <option value="Messy Fishtail Braid">Messy Fishtail Braid</option>
-          <option value="Sideswept Pixie">Sideswept Pixie</option>
-          <option value="Mohawk Fade">Mohawk Fade</option>
-          <option value="Zig-Zag Part">Zig-Zag Part</option>
-          <option value="Victory Rolls">Victory Rolls</option>
+          <option v-for="option in HAIRCUT_OPTIONS" :key="option" :value="option">{{ option }}</option>
         </select>
       </div>
 
@@ -308,37 +205,7 @@ async function handleDevLogin() {
           v-model="form.hairColor"
           class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="No change">No change</option>
-          <option value="Random">Random</option>
-          <option value="Blonde">Blonde</option>
-          <option value="Brunette">Brunette</option>
-          <option value="Black">Black</option>
-          <option value="Dark Brown">Dark Brown</option>
-          <option value="Medium Brown">Medium Brown</option>
-          <option value="Light Brown">Light Brown</option>
-          <option value="Chestnut">Chestnut</option>
-          <option value="Auburn">Auburn</option>
-          <option value="Copper">Copper</option>
-          <option value="Red">Red</option>
-          <option value="Strawberry Blonde">Strawberry Blonde</option>
-          <option value="Platinum Blonde">Platinum Blonde</option>
-          <option value="Silver">Silver</option>
-          <option value="White">White</option>
-          <option value="Blue">Blue</option>
-          <option value="Purple">Purple</option>
-          <option value="Pink">Pink</option>
-          <option value="Green">Green</option>
-          <option value="Blue-Black">Blue-Black</option>
-          <option value="Golden Blonde">Golden Blonde</option>
-          <option value="Honey Blonde">Honey Blonde</option>
-          <option value="Caramel">Caramel</option>
-          <option value="Mahogany">Mahogany</option>
-          <option value="Burgundy">Burgundy</option>
-          <option value="Jet Black">Jet Black</option>
-          <option value="Ash Brown">Ash Brown</option>
-          <option value="Ash Blonde">Ash Blonde</option>
-          <option value="Titanium">Titanium</option>
-          <option value="Rose Gold">Rose Gold</option>
+          <option v-for="option in HAIR_COLOR_OPTIONS" :key="option" :value="option">{{ option }}</option>
         </select>
       </div>
 

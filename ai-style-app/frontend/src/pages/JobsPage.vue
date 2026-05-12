@@ -5,11 +5,11 @@ import { api } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { UserJobSummaryResponse, JobStatus, UpdateJobVisibilityRequest } from '@/types/api'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
-import { useDevLoginAction } from '@/composables/useDevLoginAction'
+import { getDarkJobStatusPillClass } from '@/constants/jobStatusStyles'
+import StateCard from '@/components/StateCard.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
-const { loginDevAndRun } = useDevLoginAction()
 const requestState = useBackendRequestState({
   retryDelayMs: 3000,
   offlineMessage: 'Waiting for backend to come online…'
@@ -19,17 +19,8 @@ const { isLoading, isWaitingForBackend, error, offlineMessage } = requestState
 const jobs = ref<UserJobSummaryResponse[]>([])
 const savingVisibility = ref<Record<string, boolean>>({})
 
-const statusPillClass: Record<JobStatus, string> = {
-  Queued: 'bg-amber-500/15 text-amber-200 border-amber-400/20',
-  Processing: 'bg-sky-500/15 text-sky-200 border-sky-400/20',
-  Succeeded: 'bg-emerald-500/15 text-emerald-200 border-emerald-400/20',
-  Failed: 'bg-rose-500/15 text-rose-200 border-rose-400/20',
-  TimedOut: 'bg-slate-500/15 text-slate-200 border-slate-400/20',
-  Canceled: 'bg-slate-500/15 text-slate-200 border-slate-400/20'
-}
-
 function pillClass(status: JobStatus) {
-  return statusPillClass[status] ?? 'bg-slate-500/15 text-slate-200 border-slate-400/20'
+  return getDarkJobStatusPillClass(status)
 }
 
 async function fetchJobs(isRetry = false) {
@@ -46,10 +37,6 @@ async function fetchJobs(isRetry = false) {
   } finally {
     requestState.finishLoad()
   }
-}
-
-async function handleDevLogin() {
-  await loginDevAndRun(fetchJobs)
 }
 
 onMounted(fetchJobs)
@@ -98,17 +85,11 @@ const hasJobs = computed(() => jobs.value.length > 0)
       </button>
     </div>
 
-    <div v-if="!authStore.isAuthenticated" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-center text-slate-200 shadow-xl shadow-black/10">
-      <p class="text-lg font-medium">Sign in to view your jobs.</p>
-      <p class="mt-2 text-sm text-slate-400">Use the dev login to continue from local development.</p>
-      <button
-        type="button"
-        @click="handleDevLogin"
-        class="mt-4 w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400 sm:w-auto"
-      >
-        Dev Login
-      </button>
-    </div>
+    <StateCard
+      v-if="!authStore.isAuthenticated"
+      title="Sign in to view your jobs."
+      description="Use the top-right auth controls to sign in."
+    />
 
     <div v-else-if="isLoading || isWaitingForBackend" class="space-y-3 py-24 text-center text-slate-300">
       <div class="mx-auto grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
@@ -120,14 +101,19 @@ const hasJobs = computed(() => jobs.value.length > 0)
       <p v-else class="animate-pulse text-slate-300">Loading your jobs…</p>
     </div>
 
-    <div v-else-if="error" class="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-4 text-rose-100">
-      {{ error }}
-    </div>
+    <StateCard
+      v-else-if="error"
+      tone="error"
+      :title="error"
+      padding-class="p-4"
+      :centered="false"
+    />
 
-    <div v-else-if="!hasJobs" class="rounded-3xl border border-white/10 bg-white/5 p-6 text-center text-slate-200 shadow-xl shadow-black/10">
-      <p class="text-lg font-medium">No jobs yet.</p>
-      <p class="mt-2 text-sm text-slate-400">Create your first look from the Generate tab.</p>
-    </div>
+    <StateCard
+      v-else-if="!hasJobs"
+      title="No jobs yet."
+      description="Create your first look from the Generate tab."
+    />
 
     <section v-else class="grid gap-4">
       <article

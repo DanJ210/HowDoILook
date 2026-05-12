@@ -3,11 +3,6 @@ export interface ApiError {
   statusCode: number
 }
 
-export interface ApiResponse<T> {
-  data: T
-  success: boolean
-}
-
 // ── Style items ──────────────────────────────────────────────────────────────
 
 export interface StyleItemResponse {

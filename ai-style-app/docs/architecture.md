@@ -51,7 +51,7 @@ graph TD
 ### Worker (`/worker`)
 - **BackgroundService** that polls the Azure Storage Queue every 5 seconds.
 - Deserializes each message as a `StyleJob` (from `AiStyleApp.Data.Queue` shared library).
-- Marks the job `Processing` in PostgreSQL, validates/normalizes image + haircut/color inputs, submits a prediction to the Replicate API, stores the returned `external_prediction_id`.
+- Marks the job `Processing` in PostgreSQL, validates/normalizes image + haircut/color/beard inputs, submits a prediction to the Replicate API, stores the returned `external_prediction_id`.
 - Retries up to 3 times on Replicate API failure; marks `Failed` on exhaustion.
 - Deletes the message from the queue only after successful processing.
 - Uses Replicate model slug `flux-kontext-apps/change-haircut` and resolves `latest_version.id` dynamically from Replicate.
@@ -71,8 +71,10 @@ graph TD
 - Backend unit tests use xUnit in `tests/AiStyleApp.Tests` with EF Core InMemory for service-level validation.
 - Frontend unit tests use Vitest with `src/**/*.test.ts` discovery.
 - Current test files:
-  - `tests/AiStyleApp.Tests/JobServiceTests.cs`
-  - `frontend/src/types/api.test.ts`
+  - `tests/AiStyleApp.Tests/JobServiceTests.cs` — job enqueue and queue message contracts
+  - `tests/AiStyleApp.Tests/AuthControllerTests.cs` — JWT token generation and expiration clamping
+  - `tests/AiStyleApp.Tests/StyleServiceTests.cs` — style generation including beard field propagation
+  - `frontend/src/types/api.test.ts` — API type shape validation
 
 ## Database Schema
 
@@ -115,9 +117,9 @@ graph TD
 
 ## Data Flow
 
-1. User uploads a photo (`POST /api/upload/image`) and fills out Generate Style fields (Name, Description, optional prompt, haircut, hair color, gender, visibility).
+1. User uploads a photo (`POST /api/upload/image`) and fills out Generate Style fields (Name, Description, optional prompt, haircut, hair color, beard style, beard color, gender, visibility).
 2. Frontend calls `POST /api/style/generate` with a JWT and the uploaded `imageUrl`.
-3. Backend creates a `StyleItemEntity` and `StyleJobEntity` (status `Queued`) in PostgreSQL, then enqueues a `StyleJob` message including image and hair parameters.
+3. Backend creates a `StyleItemEntity` and `StyleJobEntity` (status `Queued`) in PostgreSQL, then enqueues a `StyleJob` message including image, hair, and beard parameters.
 4. Backend returns `202 Accepted` with `jobId` and `statusEndpoint`.
 5. Frontend navigates to the job status page and begins polling `GET /api/jobs/{id}`.
 6. Worker dequeues the message, marks the job `Processing`, verifies the image is externally reachable, and submits a prediction to Replicate (`flux-kontext-apps/change-haircut`).
