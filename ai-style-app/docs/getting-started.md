@@ -36,50 +36,54 @@ docker compose down -v
 ## 2. Configure Local Settings
 
 The repository ships placeholder settings in `ai-style-app/backend/appsettings.json` and `ai-style-app/worker/appsettings.json`.
-For local development, either edit those placeholders locally or provide the same values through environment variables using the .NET configuration keys shown below.
+Keep those committed files as placeholders only. For local development, prefer creating untracked `appsettings.Development.json` files (already gitignored) or provide the same values through environment variables using the .NET configuration keys shown below.
 
-Backend settings:
+Backend local override example (`ai-style-app/backend/appsettings.Development.json`):
 
 ```json
-"Jwt": {
-  "Key": "your-32-plus-character-local-jwt-key",
-  "Issuer": "ai-style-app",
-  "Audience": "ai-style-app-client"
-},
-"Queue": {
-  "ConnectionString": "UseDevelopmentStorage=true",
-  "QueueName": "style-jobs"
-},
-"ConnectionStrings": {
-  "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
-},
-"Replicate": {
-  "ApiToken": "r8_YOUR_REPLICATE_TOKEN",
-  "WebhookSigningSecret": "whsec_dev_webhook_secret"
-},
-"BlobStorage": {
-  "ConnectionString": "UseDevelopmentStorage=true",
-  "ContainerName": "user-uploads"
+{
+  "Jwt": {
+    "Key": "your-32-plus-character-local-jwt-key",
+    "Issuer": "ai-style-app",
+    "Audience": "ai-style-app-client"
+  },
+  "Queue": {
+    "ConnectionString": "UseDevelopmentStorage=true",
+    "QueueName": "style-jobs"
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
+  },
+  "Replicate": {
+    "ApiToken": "r8_YOUR_REPLICATE_TOKEN",
+    "WebhookSigningSecret": "whsec_dev_webhook_secret"
+  },
+  "BlobStorage": {
+    "ConnectionString": "UseDevelopmentStorage=true",
+    "ContainerName": "user-uploads"
+  }
 }
 ```
 
-Worker settings:
+Worker local override example (`ai-style-app/worker/appsettings.Development.json`):
 
 ```json
-"Queue": {
-  "ConnectionString": "UseDevelopmentStorage=true",
-  "QueueName": "style-jobs"
-},
-"ConnectionStrings": {
-  "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
-},
-"Replicate": {
-  "ApiToken": "r8_YOUR_REPLICATE_TOKEN",
-  "WebhookBaseUrl": "https://abc123.ngrok.io"
+{
+  "Queue": {
+    "ConnectionString": "UseDevelopmentStorage=true",
+    "QueueName": "style-jobs"
+  },
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
+  },
+  "Replicate": {
+    "ApiToken": "r8_YOUR_REPLICATE_TOKEN",
+    "WebhookBaseUrl": "https://abc123.ngrok.io"
+  }
 }
 ```
 
-For the worker, set `WebhookBaseUrl` to your publicly reachable URL (see ngrok step below).
+For the worker, set `WebhookBaseUrl` to your publicly reachable URL (see ngrok step below). If you prefer not to create local override files, use environment variables or `dotnet user-secrets` instead.
 
 Current generation model behavior:
 
@@ -94,11 +98,13 @@ Replicate sends webhook callbacks to your backend. In local dev, use [ngrok](htt
 ngrok http 5000
 ```
 
-Copy the `https://...ngrok.io` URL and set it in `ai-style-app/worker/appsettings.json` (or via `Replicate__WebhookBaseUrl`):
+Copy the `https://...ngrok.io` URL and set it in `ai-style-app/worker/appsettings.Development.json` (or via `Replicate__WebhookBaseUrl`):
 
 ```json
-"Replicate": {
-  "WebhookBaseUrl": "https://abc123.ngrok.io"
+{
+  "Replicate": {
+    "WebhookBaseUrl": "https://abc123.ngrok.io"
+  }
 }
 ```
 
