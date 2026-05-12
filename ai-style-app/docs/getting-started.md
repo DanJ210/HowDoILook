@@ -33,18 +33,53 @@ To stop and remove volumes:
 docker compose down -v
 ```
 
-## 2. Configure Replicate API
+## 2. Configure Local Settings
 
-Edit `ai-style-app/backend/appsettings.Development.json` and `ai-style-app/worker/appsettings.Development.json`:
+The repository ships placeholder settings in `ai-style-app/backend/appsettings.json` and `ai-style-app/worker/appsettings.json`.
+For local development, either edit those placeholders locally or provide the same values through environment variables using the .NET configuration keys shown below.
+
+Backend settings:
 
 ```json
+"Jwt": {
+  "Key": "your-32-plus-character-local-jwt-key",
+  "Issuer": "ai-style-app",
+  "Audience": "ai-style-app-client"
+},
+"Queue": {
+  "ConnectionString": "UseDevelopmentStorage=true",
+  "QueueName": "style-jobs"
+},
+"ConnectionStrings": {
+  "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
+},
 "Replicate": {
   "ApiToken": "r8_YOUR_REPLICATE_TOKEN",
   "WebhookSigningSecret": "whsec_dev_webhook_secret"
+},
+"BlobStorage": {
+  "ConnectionString": "UseDevelopmentStorage=true",
+  "ContainerName": "user-uploads"
 }
 ```
 
-For the worker, also set `WebhookBaseUrl` to your publicly reachable URL (see ngrok step below).
+Worker settings:
+
+```json
+"Queue": {
+  "ConnectionString": "UseDevelopmentStorage=true",
+  "QueueName": "style-jobs"
+},
+"ConnectionStrings": {
+  "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
+},
+"Replicate": {
+  "ApiToken": "r8_YOUR_REPLICATE_TOKEN",
+  "WebhookBaseUrl": "https://abc123.ngrok.io"
+}
+```
+
+For the worker, set `WebhookBaseUrl` to your publicly reachable URL (see ngrok step below).
 
 Current generation model behavior:
 
@@ -59,7 +94,7 @@ Replicate sends webhook callbacks to your backend. In local dev, use [ngrok](htt
 ngrok http 5000
 ```
 
-Copy the `https://...ngrok.io` URL and set it in `ai-style-app/worker/appsettings.Development.json`:
+Copy the `https://...ngrok.io` URL and set it in `ai-style-app/worker/appsettings.json` (or via `Replicate__WebhookBaseUrl`):
 
 ```json
 "Replicate": {
@@ -146,26 +181,22 @@ cd ai-style-app/frontend
 npm run test
 ```
 
-Latest local baseline (May 11, 2026):
-
-- Backend tests: `15 passed, 0 failed`
-  - `JobServiceTests.cs` (2 tests)
-  - `AuthControllerTests.cs` (11 tests)
-  - `StyleServiceTests.cs` (2 tests)
-- Frontend tests: `1 passed, 0 failed` (`src/types/api.test.ts`)
+Use the command output as the current source of truth instead of relying on hard-coded pass counts in this document.
 
 ## 9. Environment Variables (Production)
 
-Copy `infrastructure/local.env.example` to `.env` and fill in all values before deploying:
+If you deploy with environment variables, use the .NET configuration keys below:
 
 | Variable | Used By | Description |
 |---|---|---|
-| `QUEUE_CONNECTION_STRING` | Backend, Worker | Azure Storage Queue connection string |
-| `QUEUE_NAME` | Backend, Worker | Queue name (default: `style-jobs`) |
+| `Queue__ConnectionString` | Backend, Worker | Azure Storage Queue connection string |
+| `Queue__QueueName` | Backend, Worker | Queue name (default: `style-jobs`) |
 | `ConnectionStrings__DefaultConnection` | Backend, Worker | PostgreSQL connection string |
-| `JWT_KEY` | Backend | Signing key, minimum 32 characters |
-| `JWT_ISSUER` | Backend | Token issuer (default: `ai-style-app`) |
-| `JWT_AUDIENCE` | Backend | Token audience (default: `ai-style-app-client`) |
+| `Jwt__Key` | Backend | Signing key, minimum 32 characters |
+| `Jwt__Issuer` | Backend | Token issuer (default: `ai-style-app`) |
+| `Jwt__Audience` | Backend | Token audience (default: `ai-style-app-client`) |
+| `BlobStorage__ConnectionString` | Backend | Azure Blob Storage connection string |
+| `BlobStorage__ContainerName` | Backend | Blob container name (default: `user-uploads`) |
 | `Replicate__ApiToken` | Backend, Worker | Replicate API token |
 | `Replicate__WebhookSigningSecret` | Backend | HMAC secret for webhook verification |
 | `Replicate__WebhookBaseUrl` | Worker | Publicly reachable base URL for callbacks |
