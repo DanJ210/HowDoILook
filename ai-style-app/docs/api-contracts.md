@@ -95,6 +95,8 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "isResultPublic": false,
   "haircut": "No change | Bob | ...",
   "hairColor": "No change | Blonde | ...",
+  "beardStyle": "No change | Stubble | Goatee | ...",
+  "beardColor": "No change | Black | Dark Brown | ...",
   "gender": "none | male | female"
 }
 ```
@@ -111,6 +113,8 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "isResultPublic": true,
   "haircut": "Layered",
   "hairColor": "Honey Blonde",
+  "beardStyle": "Short Beard",
+  "beardColor": "Dark Brown",
   "gender": "female"
 }
 ```
@@ -218,4 +222,3 @@ Messages enqueued to `style-jobs` follow this schema (v1):
 | 403 | Forbidden |
 | 404 | Resource not found |
 | 500 | Internal server error |
-

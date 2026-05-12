@@ -24,6 +24,8 @@ export interface GenerateStyleRequest {
   isResultPublic?: boolean
   haircut?: string
   hairColor?: string
+  beardStyle?: string
+  beardColor?: string
   gender?: string
 }
 
@@ -101,4 +103,3 @@ export interface TokenResponse {
   tokenType: string
   expiresAtUtc: string
 }
-

@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useStyleStore } from '@/stores/style'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
 import { useImageFileInput } from '@/composables/useImageFileInput'
-import { HAIRCUT_OPTIONS, HAIR_COLOR_OPTIONS } from '@/constants/styleOptions'
+import { BEARD_COLOR_OPTIONS, BEARD_STYLE_OPTIONS, HAIRCUT_OPTIONS, HAIR_COLOR_OPTIONS } from '@/constants/styleOptions'
 import StateCard from '@/components/StateCard.vue'
 
 const router = useRouter()
@@ -14,7 +14,15 @@ const styleStore = useStyleStore()
 const requestState = useBackendRequestState()
 const { selectedFile, previewUrl, onFileChange: onFileChangeFromInput, onDrop: onDropFromInput, removeFile } = useImageFileInput()
 
-const form = ref({ name: '', description: '', haircut: 'No change', hairColor: 'No change', gender: 'none' })
+const form = ref({
+  name: '',
+  description: '',
+  haircut: 'No change',
+  hairColor: 'No change',
+  beardStyle: 'No change',
+  beardColor: 'No change',
+  gender: 'none'
+})
 const isResultPublic = ref(false)
 const isUploading = ref(false)
 const isSubmitting = ref(false)
@@ -206,6 +214,30 @@ const buttonLabel = computed(() => {
           class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           <option v-for="option in HAIR_COLOR_OPTIONS" :key="option" :value="option">{{ option }}</option>
+        </select>
+      </div>
+
+      <!-- Beard style -->
+      <div>
+        <label class="block text-sm font-medium mb-1" for="beardStyle">Beard style</label>
+        <select
+          id="beardStyle"
+          v-model="form.beardStyle"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option v-for="option in BEARD_STYLE_OPTIONS" :key="option" :value="option">{{ option }}</option>
+        </select>
+      </div>
+
+      <!-- Beard color -->
+      <div>
+        <label class="block text-sm font-medium mb-1" for="beardColor">Beard color</label>
+        <select
+          id="beardColor"
+          v-model="form.beardColor"
+          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option v-for="option in BEARD_COLOR_OPTIONS" :key="option" :value="option">{{ option }}</option>
         </select>
       </div>
 
