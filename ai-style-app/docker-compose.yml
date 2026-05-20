@@ -34,5 +34,4 @@ services:
 volumes:
   ai_style_app_pgdata:
     name: ai_style_app_pgdata
-    external: true   # uses the existing named volume created previously
   azurite_data:
