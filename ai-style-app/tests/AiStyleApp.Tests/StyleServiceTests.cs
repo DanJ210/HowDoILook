@@ -23,8 +23,6 @@ public class StyleServiceTests
             IsResultPublic: true,
             Haircut: "No change",
             HairColor: "No change",
-            BeardStyle: "Stubble",
-            BeardColor: "Dark Brown",
             Gender: "male");
 
         var (item, jobId) = await service.CreateAndEnqueueAsync(request, "user-1");
@@ -33,8 +31,6 @@ public class StyleServiceTests
         Assert.NotEqual(Guid.Empty, jobId);
 
         var message = Assert.IsType<StyleJob>(queue.LastMessage);
-        Assert.Equal("Stubble", message.BeardStyle);
-        Assert.Equal("Dark Brown", message.BeardColor);
         Assert.Equal("No change", message.Haircut);
         Assert.Equal("No change", message.HairColor);
         Assert.Equal("male", message.Gender);
@@ -55,8 +51,6 @@ public class StyleServiceTests
             IsResultPublic: false,
             Haircut: "Layered",
             HairColor: "Honey Blonde",
-            BeardStyle: "Goatee",
-            BeardColor: "Black",
             Gender: "none");
 
         var (item, _) = await service.CreateAndEnqueueAsync(request, "user-2");
@@ -64,8 +58,6 @@ public class StyleServiceTests
         var persisted = await db.StyleItems.FirstAsync(x => x.Id == item.Id);
         Assert.Contains("Haircut: Layered", persisted.Prompt);
         Assert.Contains("Hair color: Honey Blonde", persisted.Prompt);
-        Assert.Contains("Beard style: Goatee", persisted.Prompt);
-        Assert.Contains("Beard color: Black", persisted.Prompt);
         Assert.DoesNotContain("Gender:", persisted.Prompt);
     }
 
