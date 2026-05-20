@@ -32,7 +32,19 @@ public class AuthController : ControllerBase
         }
 
         var username = string.IsNullOrWhiteSpace(request.Username) ? "dev-user" : request.Username.Trim();
-        var expiresMinutes = request.ExpiresInMinutes is > 0 and <= 1440 ? request.ExpiresInMinutes : 60;
+        int expiresMinutes;
+        if (request.ExpiresInMinutes <= 0)
+        {
+            expiresMinutes = 60;
+        }
+        else if (request.ExpiresInMinutes > 1440)
+        {
+            expiresMinutes = 1440;
+        }
+        else
+        {
+            expiresMinutes = request.ExpiresInMinutes;
+        }
 
         var claims = new[]
         {
