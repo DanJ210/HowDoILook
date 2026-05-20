@@ -21,6 +21,16 @@ This starts:
 - PostgreSQL (`postgres-dev`) on `localhost:5432`
 - Azurite (`azurite`) on `localhost:10000-10002`
 
+On a new developer machine, this step is required before running the backend. The backend and worker both expect PostgreSQL and Azurite to be available.
+
+Quick check:
+
+```bash
+docker compose ps
+```
+
+Expected: both `postgres-dev` and `azurite` are in a running state.
+
 To stop:
 
 ```bash
@@ -138,7 +148,36 @@ If HTTPS is not trusted yet:
 dotnet dev-certs https --trust
 ```
 
-The backend auto-applies EF Core migrations on startup in Development.
+The backend auto-applies EF Core migrations on startup in Development. On first run, this creates/updates the local database schema automatically.
+
+### 5.1 Optional: Manual EF migration (fallback/troubleshooting)
+
+You normally do not need this because Development startup runs migrations automatically.
+Use this only if you need to apply migrations manually (for example, troubleshooting startup issues).
+
+Install EF CLI once (if needed):
+
+```bash
+dotnet tool install --global dotnet-ef
+```
+
+Apply migrations from repository root:
+
+```bash
+dotnet ef database update --project ai-style-app/data/AiStyleApp.Data.csproj --startup-project ai-style-app/backend/Backend.csproj
+```
+
+### 5.2 Reset local DB state (optional)
+
+If your local database state is broken and you want a clean reset:
+
+```bash
+cd ai-style-app
+docker compose down -v
+docker compose up -d
+```
+
+Then restart the backend so Development auto-migration can recreate the schema.
 
 ## 6. Run Worker
 
