@@ -104,8 +104,23 @@ public class StyleService : IStyleService
             StyleItemId = item.Id,
             Prompt = normalizedRequest.Prompt ?? BuildPromptSummary(normalizedRequest),
             ImageUrl = normalizedRequest.ImageUrl,
-            CorrelationId = Guid.NewGuid().ToString()
+            CorrelationId = Guid.NewGuid().ToString(),
+            Haircut = normalizedRequest.Haircut,
+            HairColor = normalizedRequest.HairColor,
+            BeardStyle = normalizedRequest.BeardStyle,
+            BeardColor = normalizedRequest.BeardColor,
+            Gender = normalizedRequest.Gender,
+            PipelineMode = StyleJobRouting.DeterminePipelineMode(
+                normalizedRequest.Haircut,
+                normalizedRequest.HairColor,
+                normalizedRequest.BeardStyle,
+                normalizedRequest.BeardColor,
+                normalizedRequest.Gender),
+            CurrentStage = StyleJobStage.Queued,
+            IsBeardStagePending = false
         };
+
+        job.IsBeardStagePending = job.PipelineMode == StyleJobPipelineMode.HairThenBeard;
 
         item.Jobs.Add(job);
         _db.StyleItems.Add(item);
@@ -120,13 +135,14 @@ public class StyleService : IStyleService
             EnqueuedAtUtc: DateTimeOffset.UtcNow,
             CorrelationId: job.CorrelationId ?? Guid.NewGuid().ToString(),
             Attempt: 0,
-            SchemaVersion: 1,
+            SchemaVersion: 2,
             ImageUrl: normalizedRequest.ImageUrl,
             Haircut: normalizedRequest.Haircut,
             HairColor: normalizedRequest.HairColor,
             BeardStyle: normalizedRequest.BeardStyle,
             BeardColor: normalizedRequest.BeardColor,
-            Gender: normalizedRequest.Gender
+            Gender: normalizedRequest.Gender,
+            Stage: null
         );
 
         await _queue.PublishAsync(queueMessage, ct);
@@ -173,7 +189,7 @@ public class StyleService : IStyleService
 
     private static GenerateStyleRequest NormalizeRequest(GenerateStyleRequest request)
     {
-        var allowsBeardSelection = string.Equals(request.Gender, "male", StringComparison.OrdinalIgnoreCase);
+        var allowsBeardSelection = StyleJobRouting.AllowsBeard(request.Gender);
 
         return request with
         {

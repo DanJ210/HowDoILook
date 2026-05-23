@@ -163,11 +163,13 @@ The response is `202 Accepted`. Poll `statusEndpoint` to track progress.
 
 ```
 Queued → Processing → Succeeded
+  ↑        ↓
+  └──── Queued (intermediate beard stage enqueue)
                     → Failed
                     → TimedOut
 ```
 
-Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Canceled`) it will not transition further.
+`externalPredictionId` always represents the active Replicate prediction for the current stage and may change between the hair and beard stages. Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Canceled`) it will not transition further.
 
 ## Webhooks
 

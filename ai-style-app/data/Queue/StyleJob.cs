@@ -16,5 +16,6 @@ public record StyleJob(
     string? HairColor = null,
     string? BeardStyle = null,
     string? BeardColor = null,
-    string? Gender = null
+    string? Gender = null,
+    string? Stage = null
 );

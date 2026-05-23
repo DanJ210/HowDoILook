@@ -33,11 +33,16 @@ public class StyleServiceTests
         Assert.NotEqual(Guid.Empty, jobId);
 
         var message = Assert.IsType<StyleJob>(queue.LastMessage);
+        var persistedJob = await db.StyleJobs.FirstAsync(x => x.Id == jobId);
         Assert.Equal("Stubble", message.BeardStyle);
         Assert.Equal("Dark Brown", message.BeardColor);
         Assert.Equal("No change", message.Haircut);
         Assert.Equal("No change", message.HairColor);
         Assert.Equal("male", message.Gender);
+        Assert.Equal(StyleJobPipelineMode.BeardOnly, persistedJob.PipelineMode);
+        Assert.Equal(StyleJobStage.Queued, persistedJob.CurrentStage);
+        Assert.Equal("Stubble", persistedJob.BeardStyle);
+        Assert.Equal("Dark Brown", persistedJob.BeardColor);
     }
 
     [Fact]
@@ -59,10 +64,11 @@ public class StyleServiceTests
             BeardColor: "Black",
             Gender: "none");
 
-        var (item, _) = await service.CreateAndEnqueueAsync(request, "user-2");
+        var (item, jobId) = await service.CreateAndEnqueueAsync(request, "user-2");
 
         var persisted = await db.StyleItems.FirstAsync(x => x.Id == item.Id);
         var message = Assert.IsType<StyleJob>(queue.LastMessage);
+        var persistedJob = await db.StyleJobs.FirstAsync(x => x.Id == jobId);
 
         Assert.Contains("Haircut: Layered", persisted.Prompt);
         Assert.Contains("Hair color: Honey Blonde", persisted.Prompt);
@@ -71,6 +77,7 @@ public class StyleServiceTests
         Assert.DoesNotContain("Gender:", persisted.Prompt);
         Assert.Null(message.BeardStyle);
         Assert.Null(message.BeardColor);
+        Assert.Equal(StyleJobPipelineMode.HairOnly, persistedJob.PipelineMode);
     }
 
     private static AppDbContext CreateDbContext()

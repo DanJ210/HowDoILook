@@ -43,18 +43,18 @@ graph TD
 - Persists style items and job records to PostgreSQL via EF Core 8.
 - Enqueues `StyleJob` messages to Azure Storage Queue.
 - Accepts image uploads via `POST /api/upload/image` and exposes `GET /api/upload/public/{userId}/{fileName}` for external model fetches.
-- Receives Replicate webhook callbacks (`POST /api/webhooks/replicate`), verifies HMAC-SHA256 signature, updates job status and result in the database.
-- On successful webhook callbacks, archives generated images to blob storage and stores a permanent `result_image_url`.
+- Receives Replicate webhook callbacks (`POST /api/webhooks/replicate`), verifies HMAC-SHA256 signature, updates job status and result in the database, and can enqueue a follow-up beard stage for multi-step jobs.
+- On the final successful webhook callback, archives the generated image to blob storage and stores a permanent `result_image_url`.
 - Exposes Swagger at `/swagger` in development.
 - Auto-applies EF Core migrations on startup in Development.
 
 ### Worker (`/worker`)
 - **BackgroundService** that polls the Azure Storage Queue every 5 seconds.
 - Deserializes each message as a `StyleJob` (from `AiStyleApp.Data.Queue` shared library).
-- Marks the job `Processing` in PostgreSQL, validates/normalizes image + haircut/color/beard inputs, submits a prediction to the Replicate API, stores the returned `external_prediction_id`.
+- Marks the job `Processing` in PostgreSQL, validates/normalizes image + haircut/color/beard inputs, chooses the current pipeline stage (`Hair` or `Beard`), submits the stage prediction to Replicate, and stores the active `external_prediction_id`.
 - Retries up to 3 times on Replicate API failure; marks `Failed` on exhaustion.
 - Deletes the message from the queue only after successful processing.
-- Uses Replicate model slug `flux-kontext-apps/change-haircut` and resolves `latest_version.id` dynamically from Replicate.
+- Uses `flux-kontext-apps/change-haircut` for hair edits and a separately configured beard-edit model for beard stages, resolving `latest_version.id` dynamically from Replicate.
 
 ### Shared Data Library (`/data`)
 - **`AiStyleApp.Data`** class library referenced by both Backend and Worker.
@@ -103,7 +103,16 @@ graph TD
 | `status` | varchar(50) | indexed; default `Queued` |
 | `prompt` | varchar(4000) | |
 | `image_url` | varchar(2048) | source user image URL |
-| `external_prediction_id` | varchar(200) | Replicate prediction ID |
+| `haircut` | varchar(200) | normalized haircut selection |
+| `hair_color` | varchar(200) | normalized hair color selection |
+| `beard_style` | varchar(200) | optional beard selection |
+| `beard_color` | varchar(200) | optional beard color selection |
+| `gender` | varchar(50) | used for beard eligibility |
+| `pipeline_mode` | varchar(50) | `HairOnly`, `BeardOnly`, or `HairThenBeard` |
+| `current_stage` | varchar(50) | current stage: `Queued`, `Hair`, or `Beard` |
+| `is_beard_stage_pending` | boolean | whether a successful hair stage should enqueue beard processing |
+| `intermediate_image_url` | varchar(2048) | temporary hair-stage output reused by the beard stage |
+| `external_prediction_id` | varchar(200) | active Replicate prediction ID for the current stage |
 | `result_json` | jsonb | null until Succeeded |
 | `result_image_url` | varchar(2048) | permanent archived blob URL for generated image |
 | `error_code` | varchar(100) | |
@@ -122,8 +131,8 @@ graph TD
 3. Backend creates a `StyleItemEntity` and `StyleJobEntity` (status `Queued`) in PostgreSQL, then enqueues a `StyleJob` message including image, hair, and beard parameters.
 4. Backend returns `202 Accepted` with `jobId` and `statusEndpoint`.
 5. Frontend navigates to the job status page and begins polling `GET /api/jobs/{id}`.
-6. Worker dequeues the message, marks the job `Processing`, verifies the image is externally reachable, and submits a prediction to Replicate (`flux-kontext-apps/change-haircut`).
+6. Worker dequeues the message, marks the job `Processing`, verifies the image is externally reachable, and submits either the hair stage or beard stage prediction to Replicate.
 7. Replicate sends a webhook callback to `POST /api/webhooks/replicate`.
-8. Backend verifies the HMAC signature, updates the job to `Succeeded` (or `Failed`) with `result_json`, and asynchronously archives the generated image.
-9. Frontend polling detects the terminal status and displays the result (or error).
-
+8. For `HairThenBeard` jobs, a successful hair-stage webhook stores the intermediate image, clears the finished prediction ID, and enqueues a beard-stage queue message instead of finalizing the job.
+9. The final successful stage updates `result_json`, and the backend asynchronously archives only that final image.
+10. Frontend polling detects the terminal status and displays the result (or error).

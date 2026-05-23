@@ -195,7 +195,7 @@ Keep non-secret defaults in `appsettings.json`. Secrets come exclusively from en
 }
 ```
 
-Model selection is code-driven in the worker (`flux-kontext-apps/change-haircut`) and resolves `latest_version.id` at runtime via Replicate API.
+Model selection is code-driven in the worker. Hair edits use `flux-kontext-apps/change-haircut`, beard edits use the configured `Replicate:BeardModelName`, and both resolve `latest_version.id` at runtime via the Replicate API.
 
 ---
 
