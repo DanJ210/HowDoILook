@@ -41,7 +41,7 @@ public class StyleServiceTests
     }
 
     [Fact]
-    public async Task CreateAndEnqueueAsync_WithoutPrompt_IncludesBeardDetailsInPersistedPrompt()
+    public async Task CreateAndEnqueueAsync_WithoutMaleGender_IgnoresBeardSelections()
     {
         await using var db = CreateDbContext();
         var queue = new TestQueuePublisher();
@@ -62,11 +62,15 @@ public class StyleServiceTests
         var (item, _) = await service.CreateAndEnqueueAsync(request, "user-2");
 
         var persisted = await db.StyleItems.FirstAsync(x => x.Id == item.Id);
+        var message = Assert.IsType<StyleJob>(queue.LastMessage);
+
         Assert.Contains("Haircut: Layered", persisted.Prompt);
         Assert.Contains("Hair color: Honey Blonde", persisted.Prompt);
-        Assert.Contains("Beard style: Goatee", persisted.Prompt);
-        Assert.Contains("Beard color: Black", persisted.Prompt);
+        Assert.DoesNotContain("Beard style:", persisted.Prompt);
+        Assert.DoesNotContain("Beard color:", persisted.Prompt);
         Assert.DoesNotContain("Gender:", persisted.Prompt);
+        Assert.Null(message.BeardStyle);
+        Assert.Null(message.BeardColor);
     }
 
     private static AppDbContext CreateDbContext()

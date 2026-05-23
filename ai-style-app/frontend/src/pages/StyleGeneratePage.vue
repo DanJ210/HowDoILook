@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useStyleStore } from '@/stores/style'
@@ -27,9 +27,20 @@ const isResultPublic = ref(false)
 const isUploading = ref(false)
 const isSubmitting = ref(false)
 const lastErrorWasNetwork = ref(false)
+const isBeardAvailable = computed(() => form.value.gender === 'male')
 
 // Alias for convenience — composable owns the reactive ref
 const submitError = requestState.error
+
+watch(
+  () => form.value.gender,
+  (gender) => {
+    if (gender === 'male') return
+
+    form.value.beardStyle = 'No change'
+    form.value.beardColor = 'No change'
+  }
+)
 
 function onFileChange(event: Event) {
   submitError.value = null
@@ -217,30 +228,6 @@ const buttonLabel = computed(() => {
         </select>
       </div>
 
-      <!-- Beard style -->
-      <div>
-        <label class="block text-sm font-medium mb-1" for="beardStyle">Beard style</label>
-        <select
-          id="beardStyle"
-          v-model="form.beardStyle"
-          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option v-for="option in BEARD_STYLE_OPTIONS" :key="option" :value="option">{{ option }}</option>
-        </select>
-      </div>
-
-      <!-- Beard color -->
-      <div>
-        <label class="block text-sm font-medium mb-1" for="beardColor">Beard color</label>
-        <select
-          id="beardColor"
-          v-model="form.beardColor"
-          class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option v-for="option in BEARD_COLOR_OPTIONS" :key="option" :value="option">{{ option }}</option>
-        </select>
-      </div>
-
       <!-- Gender -->
       <div>
         <label class="block text-sm font-medium mb-1" for="gender">Gender <span class="text-gray-400 font-normal">(optional, helps model accuracy)</span></label>
@@ -253,6 +240,35 @@ const buttonLabel = computed(() => {
           <option value="male">Male</option>
           <option value="female">Female</option>
         </select>
+      </div>
+
+      <div v-if="isBeardAvailable" class="space-y-6">
+        <!-- Beard style -->
+        <div>
+          <label class="block text-sm font-medium mb-1" for="beardStyle">Beard style <span class="text-gray-400 font-normal">(optional)</span></label>
+          <select
+            id="beardStyle"
+            v-model="form.beardStyle"
+            class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option v-for="option in BEARD_STYLE_OPTIONS" :key="option" :value="option">{{ option }}</option>
+          </select>
+        </div>
+
+        <!-- Beard color -->
+        <div>
+          <label class="block text-sm font-medium mb-1" for="beardColor">Beard color <span class="text-gray-400 font-normal">(optional)</span></label>
+          <select
+            id="beardColor"
+            v-model="form.beardColor"
+            class="w-full border rounded px-3 py-3 sm:py-2 text-base sm:text-sm bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option v-for="option in BEARD_COLOR_OPTIONS" :key="option" :value="option">{{ option }}</option>
+          </select>
+        </div>
+      </div>
+      <div v-else class="rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+        Beard options appear when gender is set to Male.
       </div>
 
       <div v-if="submitError" class="space-y-2">

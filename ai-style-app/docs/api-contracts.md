@@ -102,6 +102,7 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
 ```
 
 `imageUrl` is required by the current hairstyle-generation flow.
+`beardStyle` and `beardColor` are optional and only applied when `gender` is `male`.
 
 ### Example GenerateStyleRequest
 

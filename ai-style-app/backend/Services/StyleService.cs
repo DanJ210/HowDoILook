@@ -81,7 +81,9 @@ public class StyleService : IStyleService
         string userId,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(request.ImageUrl))
+        var normalizedRequest = NormalizeRequest(request);
+
+        if (string.IsNullOrWhiteSpace(normalizedRequest.ImageUrl))
         {
             throw new ArgumentException("ImageUrl is required for hairstyle generation.", nameof(request));
         }
@@ -89,19 +91,19 @@ public class StyleService : IStyleService
         var item = new StyleItemEntity
         {
             UserId = userId,
-            Name = request.Name,
-            Description = request.Description,
-            Prompt = request.Prompt ?? BuildPromptSummary(request),
-            ImageUrl = request.ImageUrl,
-            IsResultPublic = request.IsResultPublic
+            Name = normalizedRequest.Name,
+            Description = normalizedRequest.Description,
+            Prompt = normalizedRequest.Prompt ?? BuildPromptSummary(normalizedRequest),
+            ImageUrl = normalizedRequest.ImageUrl,
+            IsResultPublic = normalizedRequest.IsResultPublic
         };
 
         var job = new StyleJobEntity
         {
             UserId = userId,
             StyleItemId = item.Id,
-            Prompt = request.Prompt ?? BuildPromptSummary(request),
-            ImageUrl = request.ImageUrl,
+            Prompt = normalizedRequest.Prompt ?? BuildPromptSummary(normalizedRequest),
+            ImageUrl = normalizedRequest.ImageUrl,
             CorrelationId = Guid.NewGuid().ToString()
         };
 
@@ -114,17 +116,17 @@ public class StyleService : IStyleService
             StyleItemId: item.Id,
             UserId: userId,
             JobType: job.JobType,
-            Prompt: request.Prompt ?? BuildPromptSummary(request),
+            Prompt: normalizedRequest.Prompt ?? BuildPromptSummary(normalizedRequest),
             EnqueuedAtUtc: DateTimeOffset.UtcNow,
             CorrelationId: job.CorrelationId ?? Guid.NewGuid().ToString(),
             Attempt: 0,
             SchemaVersion: 1,
-            ImageUrl: request.ImageUrl,
-            Haircut: request.Haircut,
-            HairColor: request.HairColor,
-            BeardStyle: request.BeardStyle,
-            BeardColor: request.BeardColor,
-            Gender: request.Gender
+            ImageUrl: normalizedRequest.ImageUrl,
+            Haircut: normalizedRequest.Haircut,
+            HairColor: normalizedRequest.HairColor,
+            BeardStyle: normalizedRequest.BeardStyle,
+            BeardColor: normalizedRequest.BeardColor,
+            Gender: normalizedRequest.Gender
         );
 
         await _queue.PublishAsync(queueMessage, ct);
@@ -167,5 +169,16 @@ public class StyleService : IStyleService
         if (!string.IsNullOrWhiteSpace(r.BeardColor)) parts.Add($"Beard color: {r.BeardColor}");
         if (!string.IsNullOrWhiteSpace(r.Gender) && r.Gender != "none") parts.Add($"Gender: {r.Gender}");
         return parts.Count > 0 ? string.Join(", ", parts) : r.Description;
+    }
+
+    private static GenerateStyleRequest NormalizeRequest(GenerateStyleRequest request)
+    {
+        var allowsBeardSelection = string.Equals(request.Gender, "male", StringComparison.OrdinalIgnoreCase);
+
+        return request with
+        {
+            BeardStyle = allowsBeardSelection ? request.BeardStyle : null,
+            BeardColor = allowsBeardSelection ? request.BeardColor : null
+        };
     }
 }
