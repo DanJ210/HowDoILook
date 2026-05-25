@@ -97,7 +97,8 @@ For the worker, set `WebhookBaseUrl` to your publicly reachable URL (see ngrok s
 
 Current generation model behavior:
 
-- Worker uses Replicate model slug `flux-kontext-apps/change-haircut`.
+- Worker uses `flux-kontext-apps/change-haircut` for the hair stage.
+- Worker uses `Replicate:BeardModelName` for the beard stage.
 - Worker resolves `latest_version.id` dynamically from Replicate at runtime.
 
 ## 3. Expose Webhook for Local Development (ngrok)
@@ -111,10 +112,8 @@ ngrok http 5000
 Copy the `https://...ngrok.io` URL and set it in `ai-style-app/worker/appsettings.Development.json` (or via `Replicate__WebhookBaseUrl`):
 
 ```json
-{
-  "Replicate": {
-    "WebhookBaseUrl": "https://abc123.ngrok.io"
-  }
+"Replicate": {
+  "WebhookBaseUrl": "https://abc123.ngrok.io"
 }
 ```
 

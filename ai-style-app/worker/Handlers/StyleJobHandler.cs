@@ -128,29 +128,24 @@ public class StyleJobHandler : IMessageHandler
         try
         {
             var webhookUrl = $"{_webhookBaseUrl}/api/webhooks/replicate";
-            var imageUrl = GetReplicateAccessibleImageUrl(job.ImageUrl)
-                ?? throw new InvalidOperationException($"Job {job.JobId} has no input_image URL; cannot call change-haircut model.");
+            var stage = ResolveStage(job, entity);
+            var imageUrl = GetReplicateAccessibleImageUrl(job.ImageUrl ?? entity.IntermediateImageUrl)
+                ?? throw new InvalidOperationException($"Job {job.JobId} has no input_image URL; cannot call Replicate.");
 
             EnsureReplicateCanFetchImage(imageUrl);
             await EnsureImageUrlReachableAsync(imageUrl, cancellationToken);
 
-            var normalizedHaircut = NormalizeHaircut(job.Haircut);
-            var normalizedHairColor = NormalizeHairColor(job.HairColor);
+            var predictionId = await SubmitStageAsync(stage, job, entity, imageUrl, webhookUrl, cancellationToken);
 
-            var haircutInput = new HaircutStyleInput(
-                InputImageUrl: imageUrl,
-                Haircut: normalizedHaircut,
-                HairColor: normalizedHairColor,
-                Gender: job.Gender ?? "none"
-            );
-            var predictionId = await _replicate.CreatePredictionAsync(haircutInput, webhookUrl, cancellationToken);
-
+            entity.CurrentStage = stage;
             entity.ExternalPredictionId = predictionId;
+            entity.ErrorCode = null;
+            entity.ErrorMessage = null;
             await _db.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
-                "Created Replicate prediction {PredictionId} for job {JobId}.",
-                predictionId, entity.Id);
+                "Created Replicate prediction {PredictionId} for job {JobId} stage {Stage}.",
+                predictionId, entity.Id, stage);
         }
         catch (ReplicateApiException ex) when (
             ex.StatusCode is HttpStatusCode.PaymentRequired
@@ -282,6 +277,102 @@ public class StyleJobHandler : IMessageHandler
         return "No change";
     }
 
+    private string ResolveStage(StyleJob job, Data.Entities.StyleJobEntity entity)
+    {
+        if (string.Equals(job.Stage, StyleJobStage.Beard, StringComparison.OrdinalIgnoreCase))
+        {
+            return StyleJobStage.Beard;
+        }
+
+        if (string.Equals(job.Stage, StyleJobStage.Hair, StringComparison.OrdinalIgnoreCase))
+        {
+            return StyleJobStage.Hair;
+        }
+
+        if (string.Equals(entity.CurrentStage, StyleJobStage.Beard, StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(entity.IntermediateImageUrl))
+        {
+            return StyleJobStage.Beard;
+        }
+
+        return StyleJobRouting.DeterminePipelineMode(
+            entity.Haircut ?? job.Haircut,
+            entity.HairColor ?? job.HairColor,
+            entity.BeardStyle ?? job.BeardStyle,
+            entity.BeardColor ?? job.BeardColor,
+            entity.Gender ?? job.Gender) switch
+        {
+            StyleJobPipelineMode.BeardOnly => StyleJobStage.Beard,
+            _ => StyleJobStage.Hair
+        };
+    }
+
+    private async Task<string> SubmitStageAsync(
+        string stage,
+        StyleJob job,
+        Data.Entities.StyleJobEntity entity,
+        string imageUrl,
+        string webhookUrl,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(stage, StyleJobStage.Beard, StringComparison.OrdinalIgnoreCase))
+        {
+            var beardPrompt = BuildBeardPrompt(entity.BeardStyle ?? job.BeardStyle, entity.BeardColor ?? job.BeardColor);
+            if (string.IsNullOrWhiteSpace(beardPrompt))
+            {
+                throw new InvalidOperationException($"Job {job.JobId} has no beard change to submit.");
+            }
+
+            var beardInput = new BeardStyleInput(
+                InputImageUrl: imageUrl,
+                Prompt: beardPrompt
+            );
+
+            return await _replicate.CreateBeardPredictionAsync(beardInput, webhookUrl, cancellationToken);
+        }
+
+        var normalizedHaircut = NormalizeHaircut(entity.Haircut ?? job.Haircut);
+        var normalizedHairColor = NormalizeHairColor(entity.HairColor ?? job.HairColor);
+
+        var haircutInput = new HaircutStyleInput(
+            InputImageUrl: imageUrl,
+            Haircut: normalizedHaircut,
+            HairColor: normalizedHairColor,
+            Gender: entity.Gender ?? job.Gender ?? "none"
+        );
+
+        return await _replicate.CreateHairPredictionAsync(haircutInput, webhookUrl, cancellationToken);
+    }
+
+    private static string BuildBeardPrompt(string? beardStyle, string? beardColor)
+    {
+        var instructions = new List<string>
+        {
+            "Edit only the subject's facial hair.",
+            "Preserve identity, scalp hair, hair color, face shape, pose, expression, lighting, clothing, and background."
+        };
+
+        if (StyleJobRouting.HasMeaningfulSelection(beardStyle))
+        {
+            instructions.Add(
+                string.Equals(beardStyle?.Trim(), "Random", StringComparison.OrdinalIgnoreCase)
+                    ? "Choose a flattering beard style."
+                    : $"Set the beard or facial hair style to {beardStyle!.Trim()}.");
+        }
+
+        if (StyleJobRouting.HasMeaningfulSelection(beardColor))
+        {
+            instructions.Add(
+                string.Equals(beardColor?.Trim(), "Random", StringComparison.OrdinalIgnoreCase)
+                    ? "Choose a natural-looking facial hair color."
+                    : $"Set the beard or facial hair color to {beardColor!.Trim()}.");
+        }
+
+        return instructions.Count > 2
+            ? string.Join(" ", instructions)
+            : string.Empty;
+    }
+
     private static string TruncateForDb(string? value)
     {
         if (string.IsNullOrEmpty(value) || value.Length <= ErrorMessageMaxLength)
@@ -355,4 +446,3 @@ public class StyleJobHandler : IMessageHandler
         }
     }
 }
-

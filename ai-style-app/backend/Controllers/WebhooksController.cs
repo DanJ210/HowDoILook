@@ -10,19 +10,19 @@ namespace AiStyleApp.Api.Controllers;
 [Route("api/webhooks")]
 public class WebhooksController : ControllerBase
 {
-    private readonly IJobService _jobs;
     private readonly IReplicateSignatureVerifier _verifier;
+    private readonly IReplicateWebhookProcessor _processor;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<WebhooksController> _logger;
 
     public WebhooksController(
-        IJobService jobs,
         IReplicateSignatureVerifier verifier,
+        IReplicateWebhookProcessor processor,
         IServiceScopeFactory scopeFactory,
         ILogger<WebhooksController> logger)
     {
-        _jobs = jobs;
         _verifier = verifier;
+        _processor = processor;
         _scopeFactory = scopeFactory;
         _logger = logger;
     }
@@ -80,90 +80,38 @@ public class WebhooksController : ControllerBase
         if (payload is null)
             return BadRequest("Empty payload.");
 
-        var job = await _jobs.GetByExternalIdAsync(payload.Id, ct);
-        if (job is null)
+        var result = await _processor.ProcessAsync(payload, ct);
+        if (!result.IsKnownPrediction)
         {
             _logger.LogWarning("Received webhook for unknown prediction {PredictionId}.", payload.Id);
             return Ok(); // Idempotent — don't fail for unknown predictions
         }
 
-        // Map Replicate status to our domain status
-        var status = payload.Status switch
-        {
-            "starting"   => JobStatus.Processing,
-            "processing" => JobStatus.Processing,
-            "succeeded"  => JobStatus.Succeeded,
-            "failed"     => JobStatus.Failed,
-            "canceled"   => JobStatus.Canceled,
-            _            => job.Status // Unknown — keep current
-        };
-
-        // Don't regress a terminal state
-        if (JobStatus.IsTerminal(job.Status))
-        {
-            _logger.LogInformation(
-                "Webhook for job {JobId} arrived after terminal state {Status}; ignored.",
-                job.Id, job.Status);
-            return Ok();
-        }
-
-        var resultJson = payload.Output is not null
-            ? JsonSerializer.Serialize(payload.Output)
-            : null;
-
-        await _jobs.UpdateFromWebhookAsync(
-            job, status, resultJson,
-            payload.Error is not null ? "replicate_error" : null,
-            payload.Error,
-            ct);
-
-        _logger.LogInformation(
-            "Job {JobId} transitioned to {Status} via Replicate webhook.",
-            job.Id, status);
-
         // Fire-and-forget: archive the generated image to permanent blob storage.
         // We do this after returning OK so Replicate isn't kept waiting.
-        if (status == JobStatus.Succeeded
-            && payload.Output is JsonElement outputElement)
+        if (!string.IsNullOrWhiteSpace(result.ArchiveImageUrl)
+            && result.JobId.HasValue
+            && !string.IsNullOrWhiteSpace(result.UserId))
         {
-            string? firstUrl = null;
-
-            if (outputElement.ValueKind == JsonValueKind.Array)
+            var jobId = result.JobId.Value;
+            var userId = result.UserId!;
+            var archiveUrl = result.ArchiveImageUrl!;
+            _ = Task.Run(async () =>
             {
-                // Legacy flux-dev model — array of URLs
-                firstUrl = outputElement.EnumerateArray()
-                    .Where(e => e.ValueKind == JsonValueKind.String)
-                    .Select(e => e.GetString())
-                    .OfType<string>()
-                    .FirstOrDefault();
-            }
-            else if (outputElement.ValueKind == JsonValueKind.String)
-            {
-                // flux-kontext change-haircut model — single URI
-                firstUrl = outputElement.GetString();
-            }
-
-            if (firstUrl is not null)
-            {
-                var jobId = job.Id;
-                var userId = job.UserId;
-                _ = Task.Run(async () =>
+                try
                 {
-                    try
-                    {
-                        using var scope = _scopeFactory.CreateScope();
-                        var archiver = scope.ServiceProvider
-                            .GetRequiredService<IGeneratedImageArchiver>();
-                        await archiver.ArchiveAsync(jobId, firstUrl, userId, CancellationToken.None);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Archive failure is non-fatal: resultJson still holds the Replicate URL
-                        _logger.LogError(ex,
-                            "Failed to archive generated image for job {JobId}.", jobId);
-                    }
-                });
-            }
+                    using var scope = _scopeFactory.CreateScope();
+                    var archiver = scope.ServiceProvider
+                        .GetRequiredService<IGeneratedImageArchiver>();
+                    await archiver.ArchiveAsync(jobId, archiveUrl, userId, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    // Archive failure is non-fatal: resultJson still holds the Replicate URL
+                    _logger.LogError(ex,
+                        "Failed to archive generated image for job {JobId}.", jobId);
+                }
+            });
         }
 
         return Ok();

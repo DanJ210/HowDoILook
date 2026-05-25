@@ -97,11 +97,14 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "isResultPublic": false,
   "haircut": "No change | Bob | ...",
   "hairColor": "No change | Blonde | ...",
+  "beardStyle": "No change | Stubble | Goatee | ...",
+  "beardColor": "No change | Black | Dark Brown | ...",
   "gender": "none | male | female"
 }
 ```
 
 `imageUrl` is required by the current hairstyle-generation flow.
+`beardStyle` and `beardColor` are optional and only applied when `gender` is `male`.
 
 ### Example GenerateStyleRequest
 
@@ -113,6 +116,8 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "isResultPublic": true,
   "haircut": "Layered",
   "hairColor": "Honey Blonde",
+  "beardStyle": "Short Beard",
+  "beardColor": "Dark Brown",
   "gender": "female"
 }
 ```
@@ -187,11 +192,13 @@ Returned by `GET /api/jobs` and `PUT /api/jobs/{id}/visibility`.
 
 ```
 Queued → Processing → Succeeded
+  ↑        ↓
+  └──── Queued (intermediate beard stage enqueue)
                     → Failed
                     → TimedOut
 ```
 
-Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Canceled`) it will not transition further.
+`externalPredictionId` always represents the active Replicate prediction for the current stage and may change between the hair and beard stages. Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Canceled`) it will not transition further.
 
 ## Webhooks
 
