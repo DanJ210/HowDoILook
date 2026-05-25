@@ -23,6 +23,8 @@ public class StyleServiceTests
             IsResultPublic: true,
             Haircut: "No change",
             HairColor: "No change",
+            BeardStyle: "Stubble",
+            BeardColor: "Dark Brown",
             Gender: "male");
 
         var (item, jobId) = await service.CreateAndEnqueueAsync(request, "user-1");
