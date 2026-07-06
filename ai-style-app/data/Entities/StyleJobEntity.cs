@@ -33,6 +33,41 @@ public class StyleJobEntity
     [MaxLength(2048)]
     public string? ImageUrl { get; set; }
 
+    [Column("haircut")]
+    [MaxLength(200)]
+    public string? Haircut { get; set; }
+
+    [Column("hair_color")]
+    [MaxLength(200)]
+    public string? HairColor { get; set; }
+
+    [Column("beard_style")]
+    [MaxLength(200)]
+    public string? BeardStyle { get; set; }
+
+    [Column("beard_color")]
+    [MaxLength(200)]
+    public string? BeardColor { get; set; }
+
+    [Column("gender")]
+    [MaxLength(50)]
+    public string? Gender { get; set; }
+
+    [Column("pipeline_mode")]
+    [MaxLength(50)]
+    public string PipelineMode { get; set; } = "HairOnly";
+
+    [Column("current_stage")]
+    [MaxLength(50)]
+    public string CurrentStage { get; set; } = "Queued";
+
+    [Column("is_beard_stage_pending")]
+    public bool IsBeardStagePending { get; set; }
+
+    [Column("intermediate_image_url")]
+    [MaxLength(2048)]
+    public string? IntermediateImageUrl { get; set; }
+
     [Column("external_prediction_id")]
     [MaxLength(200)]
     public string? ExternalPredictionId { get; set; }

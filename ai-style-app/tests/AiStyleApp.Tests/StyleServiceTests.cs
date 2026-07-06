@@ -23,6 +23,8 @@ public class StyleServiceTests
             IsResultPublic: true,
             Haircut: "No change",
             HairColor: "No change",
+            BeardStyle: "Stubble",
+            BeardColor: "Dark Brown",
             Gender: "male");
 
         var (item, jobId) = await service.CreateAndEnqueueAsync(request, "user-1");
@@ -31,13 +33,20 @@ public class StyleServiceTests
         Assert.NotEqual(Guid.Empty, jobId);
 
         var message = Assert.IsType<StyleJob>(queue.LastMessage);
+        var persistedJob = await db.StyleJobs.FirstAsync(x => x.Id == jobId);
+        Assert.Equal("Stubble", message.BeardStyle);
+        Assert.Equal("Dark Brown", message.BeardColor);
         Assert.Equal("No change", message.Haircut);
         Assert.Equal("No change", message.HairColor);
         Assert.Equal("male", message.Gender);
+        Assert.Equal(StyleJobPipelineMode.BeardOnly, persistedJob.PipelineMode);
+        Assert.Equal(StyleJobStage.Queued, persistedJob.CurrentStage);
+        Assert.Equal("Stubble", persistedJob.BeardStyle);
+        Assert.Equal("Dark Brown", persistedJob.BeardColor);
     }
 
     [Fact]
-    public async Task CreateAndEnqueueAsync_WithoutPrompt_IncludesBeardDetailsInPersistedPrompt()
+    public async Task CreateAndEnqueueAsync_WithoutMaleGender_IgnoresBeardSelections()
     {
         await using var db = CreateDbContext();
         var queue = new TestQueuePublisher();
@@ -53,12 +62,20 @@ public class StyleServiceTests
             HairColor: "Honey Blonde",
             Gender: "none");
 
-        var (item, _) = await service.CreateAndEnqueueAsync(request, "user-2");
+        var (item, jobId) = await service.CreateAndEnqueueAsync(request, "user-2");
 
         var persisted = await db.StyleItems.FirstAsync(x => x.Id == item.Id);
+        var message = Assert.IsType<StyleJob>(queue.LastMessage);
+        var persistedJob = await db.StyleJobs.FirstAsync(x => x.Id == jobId);
+
         Assert.Contains("Haircut: Layered", persisted.Prompt);
         Assert.Contains("Hair color: Honey Blonde", persisted.Prompt);
+        Assert.DoesNotContain("Beard style:", persisted.Prompt);
+        Assert.DoesNotContain("Beard color:", persisted.Prompt);
         Assert.DoesNotContain("Gender:", persisted.Prompt);
+        Assert.Null(message.BeardStyle);
+        Assert.Null(message.BeardColor);
+        Assert.Equal(StyleJobPipelineMode.HairOnly, persistedJob.PipelineMode);
     }
 
     private static AppDbContext CreateDbContext()

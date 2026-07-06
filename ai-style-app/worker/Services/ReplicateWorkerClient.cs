@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Net;
@@ -17,25 +18,35 @@ public record HaircutStyleInput(
     string AspectRatio = "match_input_image"
 );
 
+public record BeardStyleInput(
+    string InputImageUrl,
+    string Prompt,
+    string AspectRatio = "match_input_image"
+);
+
 public interface IReplicateWorkerClient
 {
-    Task<string> CreatePredictionAsync(HaircutStyleInput input, string webhookUrl, CancellationToken ct = default);
+    Task<string> CreateHairPredictionAsync(HaircutStyleInput input, string webhookUrl, CancellationToken ct = default);
+    Task<string> CreateBeardPredictionAsync(BeardStyleInput input, string webhookUrl, CancellationToken ct = default);
 }
 
 public class ReplicateWorkerClient : IReplicateWorkerClient
 {
     private readonly HttpClient _http;
     private readonly ILogger<ReplicateWorkerClient> _logger;
+    private readonly string _hairModelName;
+    private readonly string _beardModelName;
 
     private const string PredictionsPath = "v1/predictions";
-    private const string ModelName = "flux-kontext-apps/change-haircut";
     private static readonly SemaphoreSlim VersionLock = new(1, 1);
-    private string? _cachedVersion;
+    private readonly ConcurrentDictionary<string, string> _cachedVersions = new();
 
     public ReplicateWorkerClient(HttpClient http, IConfiguration config, ILogger<ReplicateWorkerClient> logger)
     {
         _http = http;
         _logger = logger;
+        _hairModelName = config["Replicate:HairModelName"] ?? "flux-kontext-apps/change-haircut";
+        _beardModelName = config["Replicate:BeardModelName"] ?? "black-forest-labs/flux-kontext-pro";
 
         var token = config["Replicate:ApiToken"] ?? string.Empty;
         _http.BaseAddress = new Uri("https://api.replicate.com/");
@@ -43,14 +54,10 @@ public class ReplicateWorkerClient : IReplicateWorkerClient
             new AuthenticationHeaderValue("Bearer", token);
     }
 
-    public async Task<string> CreatePredictionAsync(HaircutStyleInput input, string webhookUrl, CancellationToken ct = default)
-    {
-        var version = await GetModelVersionAsync(ct);
-
-        var body = new
-        {
-            version,
-            input = new
+    public Task<string> CreateHairPredictionAsync(HaircutStyleInput input, string webhookUrl, CancellationToken ct = default)
+        => CreatePredictionAsync(
+            _hairModelName,
+            new
             {
                 gender = input.Gender,
                 haircut = input.Haircut,
@@ -58,6 +65,29 @@ public class ReplicateWorkerClient : IReplicateWorkerClient
                 input_image = input.InputImageUrl,
                 aspect_ratio = input.AspectRatio
             },
+            webhookUrl,
+            ct);
+
+    public Task<string> CreateBeardPredictionAsync(BeardStyleInput input, string webhookUrl, CancellationToken ct = default)
+        => CreatePredictionAsync(
+            _beardModelName,
+            new
+            {
+                prompt = input.Prompt,
+                input_image = input.InputImageUrl,
+                aspect_ratio = input.AspectRatio
+            },
+            webhookUrl,
+            ct);
+
+    private async Task<string> CreatePredictionAsync(string modelName, object input, string webhookUrl, CancellationToken ct = default)
+    {
+        var version = await GetModelVersionAsync(modelName, ct);
+
+        var body = new
+        {
+            version,
+            input,
             webhook = webhookUrl,
             webhook_events_filter = new[] { "start", "completed" }
         };
@@ -90,22 +120,24 @@ public class ReplicateWorkerClient : IReplicateWorkerClient
         return result?.Id ?? throw new InvalidOperationException("Replicate did not return a prediction ID.");
     }
 
-    private async Task<string> GetModelVersionAsync(CancellationToken ct)
+    private async Task<string> GetModelVersionAsync(string modelName, CancellationToken ct)
     {
-        if (!string.IsNullOrWhiteSpace(_cachedVersion))
+        if (_cachedVersions.TryGetValue(modelName, out var cachedVersion)
+            && !string.IsNullOrWhiteSpace(cachedVersion))
         {
-            return _cachedVersion;
+            return cachedVersion;
         }
 
         await VersionLock.WaitAsync(ct);
         try
         {
-            if (!string.IsNullOrWhiteSpace(_cachedVersion))
+            if (_cachedVersions.TryGetValue(modelName, out cachedVersion)
+                && !string.IsNullOrWhiteSpace(cachedVersion))
             {
-                return _cachedVersion;
+                return cachedVersion;
             }
 
-            var response = await _http.GetAsync($"v1/models/{ModelName}", ct);
+            var response = await _http.GetAsync($"v1/models/{modelName}", ct);
             var body = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode)
@@ -118,11 +150,11 @@ public class ReplicateWorkerClient : IReplicateWorkerClient
 
             if (string.IsNullOrWhiteSpace(version))
             {
-                throw new InvalidOperationException($"Replicate model '{ModelName}' did not return latest_version.id.");
+                throw new InvalidOperationException($"Replicate model '{modelName}' did not return latest_version.id.");
             }
 
-            _cachedVersion = version;
-            _logger.LogInformation("Resolved Replicate model version {Version} for {ModelName}.", version, ModelName);
+            _cachedVersions[modelName] = version;
+            _logger.LogInformation("Resolved Replicate model version {Version} for {ModelName}.", version, modelName);
             return version;
         }
         finally

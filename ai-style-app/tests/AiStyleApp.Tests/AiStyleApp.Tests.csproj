@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\backend\Backend.csproj" />
     <ProjectReference Include="..\..\data\AiStyleApp.Data.csproj" />
+    <ProjectReference Include="..\..\worker\Worker.csproj" />
   </ItemGroup>
 
   <ItemGroup>

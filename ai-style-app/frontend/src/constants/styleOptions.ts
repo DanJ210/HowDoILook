@@ -130,3 +130,22 @@ export const HAIR_COLOR_OPTIONS = [
   'Titanium',
   'Rose Gold'
 ] as const
+
+export const BEARD_STYLE_OPTIONS = [
+  'No change',
+  'Clean Shaven',
+  'Stubble',
+  'Short Beard',
+  'Full Beard',
+  'Goatee',
+  'Van Dyke',
+  'Circle Beard',
+  'Mustache',
+  'Handlebar Mustache',
+  'Chevron Mustache',
+  'Anchor Beard',
+  'Balbo Beard',
+  'Mutton Chops'
+] as const
+
+export const BEARD_COLOR_OPTIONS = HAIR_COLOR_OPTIONS
