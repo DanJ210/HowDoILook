@@ -97,7 +97,7 @@ For the worker, set `WebhookBaseUrl` to your publicly reachable URL (see ngrok s
 
 Current generation model behavior:
 
-- Worker uses `flux-kontext-apps/change-haircut` for the hair stage.
+- Worker uses `Replicate:HairModelName` (default `flux-kontext-apps/change-haircut`) for the hair stage.
 - Worker uses `Replicate:BeardModelName` for the beard stage.
 - Worker resolves `latest_version.id` dynamically from Replicate at runtime.
 
