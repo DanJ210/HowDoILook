@@ -118,7 +118,7 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "hairColor": "Honey Blonde",
   "beardStyle": "Short Beard",
   "beardColor": "Dark Brown",
-  "gender": "female"
+  "gender": "male"
 }
 ```
 
