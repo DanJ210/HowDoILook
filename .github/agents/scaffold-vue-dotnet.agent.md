@@ -14,8 +14,8 @@ Always scaffold within this structure:
 ```
 /ai-style-app
   /frontend        → Vue 3 + Vite (TypeScript)
-  /backend         → .NET 8 Web API
-  /worker          → .NET 8 Background Worker
+  /backend         → .NET 10 Web API
+  /worker          → .NET 10 Background Worker
   /infrastructure  → Queue + storage config (e.g., Azure Storage, Service Bus)
   /docs            → Architecture diagrams, API contracts, prompt docs
 ```
