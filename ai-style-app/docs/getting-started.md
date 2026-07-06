@@ -112,8 +112,10 @@ ngrok http 5000
 Copy the `https://...ngrok.io` URL and set it in `ai-style-app/worker/appsettings.Development.json` (or via `Replicate__WebhookBaseUrl`):
 
 ```json
-"Replicate": {
-  "WebhookBaseUrl": "https://abc123.ngrok.io"
+{
+  "Replicate": {
+    "WebhookBaseUrl": "https://abc123.ngrok.io"
+  }
 }
 ```
 
