@@ -143,10 +143,10 @@ public class AuthControllerTests
         // Assert
         var handler = new JwtSecurityTokenHandler();
         var token = handler.ReadToken(tokenValue) as JwtSecurityToken;
-        var subClaim = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub);
+        var subClaim = token?.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub);
 
         Assert.NotNull(subClaim);
-        Assert.Equal("dev-user", subClaim.Value);
+        Assert.Equal("dev-user", subClaim?.Value);
     }
 
     [Fact]
@@ -169,9 +169,9 @@ public class AuthControllerTests
         // Assert
         var handler = new JwtSecurityTokenHandler();
         var token = handler.ReadToken(tokenValue) as JwtSecurityToken;
-        var subClaim = token.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub);
+        var subClaim = token?.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub);
 
-        Assert.Equal("dev-user", subClaim.Value);
+        Assert.Equal("dev-user", subClaim?.Value);
     }
 
     [Fact]

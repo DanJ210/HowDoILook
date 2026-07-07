@@ -27,6 +27,7 @@ public record GenerateStyleRequest(
     string? Haircut = null,
     string? HairColor = null,
     string? BeardStyle = null,
+    string? BeardColor = null,
     string? Gender = null
 );
 
