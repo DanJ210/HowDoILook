@@ -200,7 +200,7 @@ Queued → Processing → Succeeded
 
 `externalPredictionId` always represents the active Replicate prediction for the current stage and may change between the hair and beard stages. Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Canceled`) it will not transition further.
 
-## Recommendations (Planned V1)
+## Recommendations (V1 Baseline Implemented)
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
@@ -249,12 +249,7 @@ The response is `202 Accepted`. Poll `statusEndpoint` to track analysis completi
     "message": "string | null"
   },
   "analysisSummary": {
-    "faceShapeDistribution": {
-      "oval": 0.1,
-      "round": 0.2,
-      "square": 0.6,
-      "oblong": 0.1
-    },
+    "faceShapeDistribution": "object | null",
     "confidence": 0.87
   },
   "recommendations": [
@@ -275,6 +270,10 @@ The response is `202 Accepted`. Poll `statusEndpoint` to track analysis completi
   "errorMessage": "string | null"
 }
 ```
+
+Current implementation note:
+- The worker currently writes a deterministic placeholder analysis output and recommendation list so the end-to-end async flow is functional.
+- Full model-backed landmark and segmentation analysis is not implemented yet.
 
 ### SubmitRecommendationFeedbackRequest
 
@@ -316,9 +315,9 @@ The webhook verifies Replicate signature headers (`webhook-id`, `webhook-timesta
 
 ## Queue Message Contract
 
-Messages enqueued to `style-jobs` currently follow schema v1 for style generation and will be extended to schema v2 for recommendations.
+Messages enqueued to `style-jobs` are currently emitted in schema v2 for style generation and recommendations.
 
-### Schema v1 (Current)
+### Schema v1 (Legacy)
 
 ```json
 {
@@ -338,9 +337,9 @@ Messages enqueued to `style-jobs` currently follow schema v1 for style generatio
 }
 ```
 
-### Schema v2 (Planned)
+### Schema v2 (Current)
 
-V2 extends the existing contract to support recommendation analysis jobs while keeping style-generation fields for backward compatibility.
+V2 supports recommendation analysis jobs while keeping style-generation fields for backward compatibility.
 
 ```json
 {

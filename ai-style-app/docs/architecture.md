@@ -138,28 +138,27 @@ graph TD
 8. Backend verifies the HMAC signature, updates the job to `Succeeded` (or `Failed`) with `result_json`, and asynchronously archives the generated image.
 9. Frontend polling detects the terminal status and displays the result (or error).
 
-## Appendix: Face Analysis and Recommendations (Planned V1)
+## Appendix: Face Analysis and Recommendations (V1 Baseline)
 
-This appendix describes the planned architecture for accurate face analysis and intelligent recommendation while preserving the current async style-generation flow.
+This appendix describes the current baseline architecture for face analysis and recommendation while preserving the async style-generation flow.
 
-### Planned Component Additions
+### Current Baseline Components
 
 - **Backend**
-  - New recommendations endpoints under `/api/recommendations`.
-  - New analysis job persistence (`face_analysis_jobs`) and feedback persistence (`recommendation_feedback`).
-  - Queue publish support for a new `jobType` value (`FaceAnalysis`).
+  - Recommendations endpoints under `/api/recommendations` are implemented.
+  - Analysis job persistence (`face_analysis_jobs`) and feedback persistence (`recommendation_feedback`) are implemented.
+  - Queue publish support for `jobType = face-analysis` is implemented.
 
 - **Worker**
-  - New face-analysis handler that routes by `jobType`.
-  - Stage pipeline: quality gate -> single-face detection -> landmark extraction -> segmentation metrics -> recommendation ranking.
-  - Structured stage errors for user-actionable retry guidance.
+  - Face-analysis handler routing by `jobType` is implemented.
+  - Initial baseline validates image reachability and writes deterministic placeholder analysis/recommendations.
+  - Structured failure codes are partially implemented (`ANALYSIS_IMAGE_UNREACHABLE`, `ANALYSIS_INTERNAL_ERROR`).
 
 - **Frontend**
-  - Recommendation request and polling flow that mirrors existing async job UX.
-  - Ranked recommendation cards with short reasons and confidence indicator.
-  - Feedback submission endpoint integration after user selection.
+  - Backend contracts for request, polling, and feedback are available.
+  - Frontend page/store integration is still pending.
 
-### Planned Data Model Additions
+### Data Model Additions
 
 - `face_analysis_jobs`
   - Tracks async analysis lifecycle (`Queued`, `Processing`, `Succeeded`, `Failed`).
@@ -168,9 +167,9 @@ This appendix describes the planned architecture for accurate face analysis and 
 - `recommendation_feedback`
   - Stores selected style, rating, tags, and optional comment for learning loops.
 
-### Planned EF Core Entity and Migration Shape
+### EF Core Entity and Migration Shape
 
-Recommended entity names and table mapping in `AiStyleApp.Data`:
+Implemented entity names and table mapping in `AiStyleApp.Data`:
 
 - `FaceAnalysisJobEntity` -> `face_analysis_jobs`
 - `RecommendationFeedbackEntity` -> `recommendation_feedback`
@@ -206,12 +205,12 @@ Recommended `RecommendationFeedbackEntity` properties:
 - `Comment` (`string?`, max 1000) -> `comment`
 - `CreatedAtUtc` (`DateTimeOffset`) -> `created_at_utc`
 
-Recommended relational configuration:
+Implemented relational configuration:
 
 - One `FaceAnalysisJobEntity` to many `RecommendationFeedbackEntity`.
 - FK: `recommendation_feedback.analysis_job_id` -> `face_analysis_jobs.id` with cascade delete.
 
-Recommended indexes:
+Implemented indexes:
 
 - `face_analysis_jobs (user_id)`
 - `face_analysis_jobs (status)`
@@ -220,38 +219,35 @@ Recommended indexes:
 
 Migration notes:
 
-- Keep migration additive only.
-- Do not alter existing `style_items` or `style_jobs` tables for V1.
-- Add non-null defaults only when required by runtime behavior.
-- Use explicit column lengths to prevent provider defaults from drifting.
+- Migration `AddFaceAnalysisRecommendations` is applied by EF tooling.
+- Existing `style_items` and `style_jobs` tables remain unchanged by this feature migration.
 
-### Planned Queue Contract Evolution
+### Queue Contract Evolution
 
-- Continue using queue `style-jobs`.
-- Extend schema version from `1` to `2`.
-- Add `jobType = FaceAnalysis` and `preferencesJson` while preserving existing fields used by style generation.
+- Queue `style-jobs` remains the transport.
+- Schema version `2` with `jobType` and `preferencesJson` is implemented.
 
-### Planned Recommendation Data Flow
+### Recommendation Data Flow (Current Baseline)
 
 1. User submits recommendation request with image URL and preferences.
 2. Backend writes `face_analysis_jobs` row with `Queued` status.
 3. Backend enqueues queue message (`jobType = FaceAnalysis`, `schemaVersion = 2`).
 4. Worker dequeues message and marks analysis job `Processing`.
-5. Worker runs quality gate and single-face validation.
-6. Worker extracts landmarks/segmentation metrics, builds feature vector, and ranks recommendations.
+5. Worker validates image URL format/reachability.
+6. Worker writes placeholder feature vector, confidence, and recommendation payload.
 7. Worker persists recommendation payload and marks analysis job terminal status.
 8. Frontend polls status endpoint and renders either recommendations or retry guidance.
 9. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
 
-### Planned Error Codes (Worker)
+### Error Codes (Worker Baseline)
 
 - `ANALYSIS_IMAGE_UNREACHABLE`
-- `ANALYSIS_MULTI_FACE_NOT_SUPPORTED`
-- `ANALYSIS_NO_FACE_DETECTED`
-- `ANALYSIS_QUALITY_TOO_BLURRY`
-- `ANALYSIS_QUALITY_BAD_EXPOSURE`
-- `ANALYSIS_POOR_POSE`
-- `ANALYSIS_SEGMENTATION_FAILED`
+- `ANALYSIS_MULTI_FACE_NOT_SUPPORTED` (reserved)
+- `ANALYSIS_NO_FACE_DETECTED` (reserved)
+- `ANALYSIS_QUALITY_TOO_BLURRY` (reserved)
+- `ANALYSIS_QUALITY_BAD_EXPOSURE` (reserved)
+- `ANALYSIS_POOR_POSE` (reserved)
+- `ANALYSIS_SEGMENTATION_FAILED` (reserved)
 - `ANALYSIS_INTERNAL_ERROR`
 
 ### Cross-Cutting Constraints
