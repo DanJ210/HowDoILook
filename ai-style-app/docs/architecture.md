@@ -168,6 +168,63 @@ This appendix describes the planned architecture for accurate face analysis and 
 - `recommendation_feedback`
   - Stores selected style, rating, tags, and optional comment for learning loops.
 
+### Planned EF Core Entity and Migration Shape
+
+Recommended entity names and table mapping in `AiStyleApp.Data`:
+
+- `FaceAnalysisJobEntity` -> `face_analysis_jobs`
+- `RecommendationFeedbackEntity` -> `recommendation_feedback`
+
+Recommended `FaceAnalysisJobEntity` properties:
+
+- `Id` (`Guid`) -> `id`
+- `UserId` (`string`, max 128) -> `user_id`
+- `ImageUrl` (`string`, max 2048) -> `image_url`
+- `Gender` (`string?`, max 50) -> `gender`
+- `PreferencesJson` (`string?` or JSON-mapped type) -> `preferences_json` (`jsonb`)
+- `Status` (`string`, max 50) -> `status`
+- `QualityPassed` (`bool?`) -> `quality_passed`
+- `QualityFailureCode` (`string?`, max 100) -> `quality_failure_code`
+- `QualityMessage` (`string?`, max 1000) -> `quality_message`
+- `FeatureVectorJson` (`string?` or JSON-mapped type) -> `feature_vector_json` (`jsonb`)
+- `AnalysisConfidence` (`double?`) -> `analysis_confidence`
+- `RecommendationsJson` (`string?` or JSON-mapped type) -> `recommendations_json` (`jsonb`)
+- `ErrorCode` (`string?`, max 100) -> `error_code`
+- `ErrorMessage` (`string?`, max 2000) -> `error_message`
+- `CreatedAtUtc` (`DateTimeOffset`) -> `created_at_utc`
+- `StartedAtUtc` (`DateTimeOffset?`) -> `started_at_utc`
+- `CompletedAtUtc` (`DateTimeOffset?`) -> `completed_at_utc`
+
+Recommended `RecommendationFeedbackEntity` properties:
+
+- `Id` (`Guid`) -> `id`
+- `AnalysisJobId` (`Guid`) -> `analysis_job_id`
+- `UserId` (`string`, max 128) -> `user_id`
+- `SelectedStyleId` (`string?`, max 100) -> `selected_style_id`
+- `Rating` (`int?`) -> `rating`
+- `FeedbackTagsJson` (`string?` or JSON-mapped type) -> `feedback_tags_json` (`jsonb`)
+- `Comment` (`string?`, max 1000) -> `comment`
+- `CreatedAtUtc` (`DateTimeOffset`) -> `created_at_utc`
+
+Recommended relational configuration:
+
+- One `FaceAnalysisJobEntity` to many `RecommendationFeedbackEntity`.
+- FK: `recommendation_feedback.analysis_job_id` -> `face_analysis_jobs.id` with cascade delete.
+
+Recommended indexes:
+
+- `face_analysis_jobs (user_id)`
+- `face_analysis_jobs (status)`
+- `recommendation_feedback (user_id)`
+- `recommendation_feedback (analysis_job_id)`
+
+Migration notes:
+
+- Keep migration additive only.
+- Do not alter existing `style_items` or `style_jobs` tables for V1.
+- Add non-null defaults only when required by runtime behavior.
+- Use explicit column lengths to prevent provider defaults from drifting.
+
 ### Planned Queue Contract Evolution
 
 - Continue using queue `style-jobs`.
