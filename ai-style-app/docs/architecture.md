@@ -138,3 +138,69 @@ graph TD
 8. Backend verifies the HMAC signature, updates the job to `Succeeded` (or `Failed`) with `result_json`, and asynchronously archives the generated image.
 9. Frontend polling detects the terminal status and displays the result (or error).
 
+## Appendix: Face Analysis and Recommendations (Planned V1)
+
+This appendix describes the planned architecture for accurate face analysis and intelligent recommendation while preserving the current async style-generation flow.
+
+### Planned Component Additions
+
+- **Backend**
+  - New recommendations endpoints under `/api/recommendations`.
+  - New analysis job persistence (`face_analysis_jobs`) and feedback persistence (`recommendation_feedback`).
+  - Queue publish support for a new `jobType` value (`FaceAnalysis`).
+
+- **Worker**
+  - New face-analysis handler that routes by `jobType`.
+  - Stage pipeline: quality gate -> single-face detection -> landmark extraction -> segmentation metrics -> recommendation ranking.
+  - Structured stage errors for user-actionable retry guidance.
+
+- **Frontend**
+  - Recommendation request and polling flow that mirrors existing async job UX.
+  - Ranked recommendation cards with short reasons and confidence indicator.
+  - Feedback submission endpoint integration after user selection.
+
+### Planned Data Model Additions
+
+- `face_analysis_jobs`
+  - Tracks async analysis lifecycle (`Queued`, `Processing`, `Succeeded`, `Failed`).
+  - Stores quality-gate outcomes, feature vector JSON, recommendation JSON, and analysis confidence.
+
+- `recommendation_feedback`
+  - Stores selected style, rating, tags, and optional comment for learning loops.
+
+### Planned Queue Contract Evolution
+
+- Continue using queue `style-jobs`.
+- Extend schema version from `1` to `2`.
+- Add `jobType = FaceAnalysis` and `preferencesJson` while preserving existing fields used by style generation.
+
+### Planned Recommendation Data Flow
+
+1. User submits recommendation request with image URL and preferences.
+2. Backend writes `face_analysis_jobs` row with `Queued` status.
+3. Backend enqueues queue message (`jobType = FaceAnalysis`, `schemaVersion = 2`).
+4. Worker dequeues message and marks analysis job `Processing`.
+5. Worker runs quality gate and single-face validation.
+6. Worker extracts landmarks/segmentation metrics, builds feature vector, and ranks recommendations.
+7. Worker persists recommendation payload and marks analysis job terminal status.
+8. Frontend polls status endpoint and renders either recommendations or retry guidance.
+9. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
+
+### Planned Error Codes (Worker)
+
+- `ANALYSIS_IMAGE_UNREACHABLE`
+- `ANALYSIS_MULTI_FACE_NOT_SUPPORTED`
+- `ANALYSIS_NO_FACE_DETECTED`
+- `ANALYSIS_QUALITY_TOO_BLURRY`
+- `ANALYSIS_QUALITY_BAD_EXPOSURE`
+- `ANALYSIS_POOR_POSE`
+- `ANALYSIS_SEGMENTATION_FAILED`
+- `ANALYSIS_INTERNAL_ERROR`
+
+### Cross-Cutting Constraints
+
+- Maintain queue-driven async processing to protect API responsiveness.
+- Keep beard-related suggestions optional and only applicable when `gender` is `male`.
+- Do not infer or persist sensitive traits.
+- Keep analysis features scoped to authenticated user ownership.
+
