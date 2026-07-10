@@ -14,7 +14,9 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 builder.Services.AddHttpClient<IReplicateWorkerClient, ReplicateWorkerClient>();
 
 builder.Services.AddHostedService<JobWorker>();
-builder.Services.AddScoped<IMessageHandler, StyleJobHandler>();
+builder.Services.AddScoped<StyleJobHandler>();
+builder.Services.AddScoped<FaceAnalysisJobHandler>();
+builder.Services.AddScoped<IMessageHandler, MessageRouterHandler>();
 
 var host = builder.Build();
 host.Run();
