@@ -45,6 +45,58 @@ public interface IFaceAnalysisPipeline
     Task<FaceAnalysisPipelineResult> AnalyzeAsync(string imageUrl, string? gender, CancellationToken ct);
 }
 
+public interface IFaceQualityStage
+{
+    QualityMetrics Evaluate(Image<Rgba32> image);
+}
+
+public interface IFaceLandmarkStage
+{
+    LandmarkFeatures Extract(Image<Rgba32> image);
+}
+
+public interface IFaceSegmentationStage
+{
+    SegmentationFeatures Extract(Image<Rgba32> image, string? gender);
+}
+
+public interface IRecommendationStage
+{
+    IReadOnlyList<object> Rank(
+        LandmarkFeatures landmarks,
+        SegmentationFeatures segmentation,
+        QualityMetrics quality,
+        double confidence,
+        string? gender);
+}
+
+public class HeuristicFaceQualityStage : IFaceQualityStage
+{
+    public QualityMetrics Evaluate(Image<Rgba32> image) => FaceAnalysisPipeline.ComputeQuality(image);
+}
+
+public class HeuristicFaceLandmarkStage : IFaceLandmarkStage
+{
+    public LandmarkFeatures Extract(Image<Rgba32> image) => FaceAnalysisPipeline.ComputeLandmarkFeatures(image);
+}
+
+public class HeuristicFaceSegmentationStage : IFaceSegmentationStage
+{
+    public SegmentationFeatures Extract(Image<Rgba32> image, string? gender)
+        => FaceAnalysisPipeline.ComputeSegmentationFeatures(image, gender);
+}
+
+public class RuleBasedRecommendationStage : IRecommendationStage
+{
+    public IReadOnlyList<object> Rank(
+        LandmarkFeatures landmarks,
+        SegmentationFeatures segmentation,
+        QualityMetrics quality,
+        double confidence,
+        string? gender)
+        => FaceAnalysisPipeline.BuildRecommendations(landmarks, segmentation, quality, confidence, gender);
+}
+
 public class FaceAnalysisPipeline : IFaceAnalysisPipeline
 {
     private const int MinWidth = 768;
@@ -55,11 +107,25 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
     private const double MaxCenterOffset = 0.22;
 
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IFaceQualityStage _qualityStage;
+    private readonly IFaceLandmarkStage _landmarkStage;
+    private readonly IFaceSegmentationStage _segmentationStage;
+    private readonly IRecommendationStage _recommendationStage;
     private readonly ILogger<FaceAnalysisPipeline> _logger;
 
-    public FaceAnalysisPipeline(IHttpClientFactory httpClientFactory, ILogger<FaceAnalysisPipeline> logger)
+    public FaceAnalysisPipeline(
+        IHttpClientFactory httpClientFactory,
+        IFaceQualityStage qualityStage,
+        IFaceLandmarkStage landmarkStage,
+        IFaceSegmentationStage segmentationStage,
+        IRecommendationStage recommendationStage,
+        ILogger<FaceAnalysisPipeline> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _qualityStage = qualityStage;
+        _landmarkStage = landmarkStage;
+        _segmentationStage = segmentationStage;
+        _recommendationStage = recommendationStage;
         _logger = logger;
     }
 
@@ -68,14 +134,14 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         var imageBytes = await DownloadImageBytesAsync(imageUrl, ct);
         using var image = Image.Load<Rgba32>(imageBytes);
 
-        var quality = ComputeQuality(image);
+        var quality = _qualityStage.Evaluate(image);
         if (!quality.Passed)
         {
             throw new FaceAnalysisException(quality.FailureCode!, quality.Message!);
         }
 
-        var landmarks = ComputeLandmarkFeatures(image);
-        var segmentation = ComputeSegmentationFeatures(image, gender);
+        var landmarks = _landmarkStage.Extract(image);
+        var segmentation = _segmentationStage.Extract(image, gender);
 
         var confidence = ComputeConfidence(quality, landmarks, segmentation);
         var featureVector = new
@@ -87,7 +153,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             segmentation
         };
 
-        var recommendations = BuildRecommendations(landmarks, segmentation, quality, confidence, gender);
+        var recommendations = _recommendationStage.Rank(landmarks, segmentation, quality, confidence, gender);
 
         return new FaceAnalysisPipelineResult(
             QualityPassed: true,
@@ -106,7 +172,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         return await response.Content.ReadAsByteArrayAsync(ct);
     }
 
-    private static QualityMetrics ComputeQuality(Image<Rgba32> image)
+    internal static QualityMetrics ComputeQuality(Image<Rgba32> image)
     {
         var width = image.Width;
         var height = image.Height;
@@ -205,7 +271,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             CenterOffset: centerOffset);
     }
 
-    private static LandmarkFeatures ComputeLandmarkFeatures(Image<Rgba32> image)
+    internal static LandmarkFeatures ComputeLandmarkFeatures(Image<Rgba32> image)
     {
         var width = image.Width;
         var height = image.Height;
@@ -225,7 +291,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             FaceElongation: faceElongation);
     }
 
-    private static SegmentationFeatures ComputeSegmentationFeatures(Image<Rgba32> image, string? gender)
+    internal static SegmentationFeatures ComputeSegmentationFeatures(Image<Rgba32> image, string? gender)
     {
         var width = image.Width;
         var height = image.Height;
@@ -260,7 +326,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         return Math.Round(Clamp01(confidence), 3);
     }
 
-    private static IReadOnlyList<object> BuildRecommendations(
+    internal static IReadOnlyList<object> BuildRecommendations(
         LandmarkFeatures landmarks,
         SegmentationFeatures segmentation,
         QualityMetrics quality,
