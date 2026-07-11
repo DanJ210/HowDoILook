@@ -343,20 +343,23 @@ V2 supports recommendation analysis jobs while keeping style-generation fields f
 
 ```json
 {
-  "jobId": "uuid",
-  "styleItemId": "uuid",
-  "userId": "string",
-  "jobType": "StyleGeneration | FaceAnalysis",
-  "prompt": "string",
-  "enqueuedAtUtc": "ISO 8601 datetime",
-  "correlationId": "string",
-  "attempt": 1,
-  "schemaVersion": 2,
-  "imageUrl": "string | null",
-  "haircut": "string | null",
-  "hairColor": "string | null",
-  "gender": "string | null",
-  "preferencesJson": "string | null"
+  "JobId": "uuid",
+  "StyleItemId": "uuid",
+  "UserId": "string",
+  "JobType": "generate-style | face-analysis",
+  "Prompt": "string",
+  "EnqueuedAtUtc": "ISO 8601 datetime",
+  "CorrelationId": "string",
+  "Attempt": 0,
+  "SchemaVersion": 2,
+  "ImageUrl": "string | null",
+  "Haircut": "string | null",
+  "HairColor": "string | null",
+  "BeardStyle": "string | null",
+  "BeardColor": "string | null",
+  "Gender": "string | null",
+  "Stage": "string | null",
+  "PreferencesJson": "string | null"
 }
 ```
 
