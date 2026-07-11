@@ -42,7 +42,7 @@ public record SegmentationFeatures(
 
 public interface IFaceAnalysisPipeline
 {
-    Task<FaceAnalysisPipelineResult> AnalyzeAsync(string imageUrl, string? gender, CancellationToken ct);
+    Task<FaceAnalysisPipelineResult> AnalyzeAsync(string imageUrl, string? gender, string? preferencesJson, CancellationToken ct);
 }
 
 public interface IFaceQualityStage
@@ -67,7 +67,8 @@ public interface IRecommendationStage
         SegmentationFeatures segmentation,
         QualityMetrics quality,
         double confidence,
-        string? gender);
+    string? gender,
+    bool allowBeardSuggestions);
 }
 
 public class HeuristicFaceQualityStage : IFaceQualityStage
@@ -93,12 +94,18 @@ public class RuleBasedRecommendationStage : IRecommendationStage
         SegmentationFeatures segmentation,
         QualityMetrics quality,
         double confidence,
-        string? gender)
-        => FaceAnalysisPipeline.BuildRecommendations(landmarks, segmentation, quality, confidence, gender);
+    string? gender,
+    bool allowBeardSuggestions)
+    => FaceAnalysisPipeline.BuildRecommendations(landmarks, segmentation, quality, confidence, gender, allowBeardSuggestions);
 }
 
 public class FaceAnalysisPipeline : IFaceAnalysisPipeline
 {
+        private static readonly JsonSerializerOptions PreferencesJsonOptions = new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
     private const int MinWidth = 768;
     private const int MinHeight = 768;
     private const double MinBlurScore = 8.0;
@@ -129,10 +136,12 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         _logger = logger;
     }
 
-    public async Task<FaceAnalysisPipelineResult> AnalyzeAsync(string imageUrl, string? gender, CancellationToken ct)
+    public async Task<FaceAnalysisPipelineResult> AnalyzeAsync(string imageUrl, string? gender, string? preferencesJson, CancellationToken ct)
     {
         var imageBytes = await DownloadImageBytesAsync(imageUrl, ct);
         using var image = Image.Load<Rgba32>(imageBytes);
+
+        var preferences = ParsePreferences(preferencesJson);
 
         var quality = _qualityStage.Evaluate(image);
         if (!quality.Passed)
@@ -153,7 +162,13 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             segmentation
         };
 
-        var recommendations = _recommendationStage.Rank(landmarks, segmentation, quality, confidence, gender);
+        var recommendations = _recommendationStage.Rank(
+            landmarks,
+            segmentation,
+            quality,
+            confidence,
+            gender,
+            preferences.AllowBeardSuggestions);
 
         return new FaceAnalysisPipelineResult(
             QualityPassed: true,
@@ -331,7 +346,8 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         SegmentationFeatures segmentation,
         QualityMetrics quality,
         double confidence,
-        string? gender)
+        string? gender,
+        bool allowBeardSuggestions)
     {
         var jaw = landmarks.JawWidthRatio;
         var forehead = landmarks.ForeheadHeightRatio;
@@ -376,7 +392,9 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             )
         };
 
-        if (string.Equals(gender, "male", StringComparison.OrdinalIgnoreCase) && beardDensity > 0.25)
+        if (allowBeardSuggestions
+            && string.Equals(gender, "male", StringComparison.OrdinalIgnoreCase)
+            && beardDensity > 0.25)
         {
             candidates.Add(
                 (
@@ -479,4 +497,26 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
     }
 
     private static double Clamp01(double value) => Math.Clamp(value, 0.0, 1.0);
+
+    private static StoredRecommendationPreferences ParsePreferences(string? preferencesJson)
+    {
+        if (string.IsNullOrWhiteSpace(preferencesJson))
+        {
+            return new StoredRecommendationPreferences();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<StoredRecommendationPreferences>(preferencesJson, PreferencesJsonOptions)
+                ?? new StoredRecommendationPreferences();
+        }
+        catch (JsonException)
+        {
+            return new StoredRecommendationPreferences();
+        }
+    }
+
+    private sealed record StoredRecommendationPreferences(
+        bool AllowHairColorChange = true,
+        bool AllowBeardSuggestions = true);
 }

@@ -95,7 +95,11 @@ public class FaceAnalysisJobHandler : IMessageHandler
 
             await EnsureImageUrlReachableAsync(analysisJob.ImageUrl, cancellationToken);
 
-            var pipelineResult = await _pipeline.AnalyzeAsync(analysisJob.ImageUrl, analysisJob.Gender, cancellationToken);
+            var pipelineResult = await _pipeline.AnalyzeAsync(
+                analysisJob.ImageUrl,
+                analysisJob.Gender,
+                analysisJob.PreferencesJson,
+                cancellationToken);
 
             analysisJob.QualityPassed = pipelineResult.QualityPassed;
             analysisJob.QualityFailureCode = pipelineResult.QualityFailureCode;
