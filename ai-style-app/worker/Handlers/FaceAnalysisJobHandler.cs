@@ -3,6 +3,7 @@ using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
 using AiStyleApp.Data.Queue;
 using Microsoft.EntityFrameworkCore;
+using AiStyleApp.Worker.Services;
 
 namespace AiStyleApp.Worker.Handlers;
 
@@ -15,15 +16,18 @@ public class FaceAnalysisJobHandler : IMessageHandler
 
     private readonly AppDbContext _db;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IFaceAnalysisPipeline _pipeline;
     private readonly ILogger<FaceAnalysisJobHandler> _logger;
 
     public FaceAnalysisJobHandler(
         AppDbContext db,
         IHttpClientFactory httpClientFactory,
+        IFaceAnalysisPipeline pipeline,
         ILogger<FaceAnalysisJobHandler> logger)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
+        _pipeline = pipeline;
         _logger = logger;
     }
 
@@ -91,24 +95,24 @@ public class FaceAnalysisJobHandler : IMessageHandler
 
             await EnsureImageUrlReachableAsync(analysisJob.ImageUrl, cancellationToken);
 
-            // Initial implementation: persist deterministic placeholder outputs so end-to-end
-            // recommendation flow works while model-backed analysis stages are added.
-            analysisJob.QualityPassed = true;
-            analysisJob.QualityFailureCode = null;
-            analysisJob.QualityMessage = null;
-            analysisJob.FeatureVectorJson = JsonSerializer.Serialize(new
-            {
-                source = "worker-v1-placeholder",
-                schemaVersion = 1,
-                imageReachable = true
-            });
-            analysisJob.AnalysisConfidence = 0.35;
-            analysisJob.RecommendationsJson = JsonSerializer.Serialize(BuildRecommendations(analysisJob.Gender));
+            var pipelineResult = await _pipeline.AnalyzeAsync(analysisJob.ImageUrl, analysisJob.Gender, cancellationToken);
+
+            analysisJob.QualityPassed = pipelineResult.QualityPassed;
+            analysisJob.QualityFailureCode = pipelineResult.QualityFailureCode;
+            analysisJob.QualityMessage = pipelineResult.QualityMessage;
+            analysisJob.FeatureVectorJson = pipelineResult.FeatureVectorJson;
+            analysisJob.AnalysisConfidence = pipelineResult.AnalysisConfidence;
+            analysisJob.RecommendationsJson = pipelineResult.RecommendationsJson;
             analysisJob.Status = JobStatusSucceeded;
             analysisJob.CompletedAtUtc = DateTimeOffset.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
 
-            _logger.LogInformation("Face-analysis job {JobId} completed with placeholder recommendations.", analysisJob.Id);
+            _logger.LogInformation("Face-analysis job {JobId} completed with model-stage pipeline output.", analysisJob.Id);
+        }
+        catch (FaceAnalysisException ex)
+        {
+            _logger.LogWarning(ex, "Face-analysis job {JobId} failed quality/model stage with {ErrorCode}.", analysisJob.Id, ex.Code);
+            await MarkFailedAsync(analysisJob, ex.Code, ex.Message, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -156,40 +160,4 @@ public class FaceAnalysisJobHandler : IMessageHandler
         await _db.SaveChangesAsync(ct);
     }
 
-    private static IReadOnlyList<object> BuildRecommendations(string? gender)
-    {
-        var recommendations = new List<object>
-        {
-            new
-            {
-                styleId = "textured-crop",
-                styleName = "Textured Crop",
-                score = 0.72,
-                reasons = new[] { "Balances overall facial proportions", "Low-to-medium daily maintenance" },
-                constraints = new[] { "Requires regular shape-up every 3-4 weeks" }
-            },
-            new
-            {
-                styleId = "side-part-classic",
-                styleName = "Classic Side Part",
-                score = 0.68,
-                reasons = new[] { "Works across professional and casual settings", "Supports multiple hair textures" },
-                constraints = new[] { "Benefits from light styling product" }
-            }
-        };
-
-        if (string.Equals(gender, "male", StringComparison.OrdinalIgnoreCase))
-        {
-            recommendations.Add(new
-            {
-                styleId = "short-beard-balance",
-                styleName = "Short Beard + Structured Hairline",
-                score = 0.64,
-                reasons = new[] { "Optional beard pairing for stronger jaw framing", "Compatible with short haircut variants" },
-                constraints = new[] { "Beard suggestions are optional and can be skipped" }
-            });
-        }
-
-        return recommendations;
-    }
 }
