@@ -223,7 +223,7 @@ Queued → Processing → Succeeded
 }
 ```
 
-`allowBeardSuggestions` is only applied when `gender` is `male`.
+Beard suggestions are only considered when `gender` is `male`. The baseline worker does not yet enforce `preferences.allowBeardSuggestions`.
 
 ### CreateRecommendationsResponse
 
