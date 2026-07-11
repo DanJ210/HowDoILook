@@ -108,7 +108,8 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
 
     private const int MinWidth = 768;
     private const int MinHeight = 768;
-    private const double MinBlurScore = 8.0;
+    // Blur is computed from normalized luminance deltas (0..1), so practical values are small.
+    private const double MinBlurScore = 0.08;
     private const double MinBrightness = 0.18;
     private const double MaxBrightness = 0.90;
     private const double MaxCenterOffset = 0.22;
@@ -333,7 +334,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         var hair = segmentation.HairDensityEstimate;
 
         var confidence = 0.45
-            + Math.Min(0.25, blur / 80.0)
+            + Math.Min(0.25, blur / 0.8)
             + (0.15 * (1.0 - Math.Min(1.0, centerOffset * 3.0)))
             + (0.10 * jaw)
             + (0.05 * hair);

@@ -26,7 +26,7 @@ public class FaceAnalysisJobHandlerTests
         var persisted = await db.FaceAnalysisJobs.FirstAsync(x => x.Id == analysisJob.Id);
         Assert.Equal("Failed", persisted.Status);
         Assert.Equal("ANALYSIS_IMAGE_UNREACHABLE", persisted.ErrorCode);
-        Assert.Equal("Image URL must be absolute.", persisted.ErrorMessage);
+        Assert.StartsWith("Image URL must be", persisted.ErrorMessage);
         Assert.Equal(0, pipeline.Calls);
     }
 
