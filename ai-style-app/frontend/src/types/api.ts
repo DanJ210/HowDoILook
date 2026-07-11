@@ -91,6 +91,64 @@ export interface JobStatusResponse {
   attemptCount: number
 }
 
+// ── Recommendations ──────────────────────────────────────────────────────────
+
+export interface RecommendationPreferences {
+  maintenanceLevel?: 'low' | 'medium' | 'high'
+  styleVibe?: 'professional' | 'casual' | 'trendy'
+  allowHairColorChange?: boolean
+  allowBeardSuggestions?: boolean
+}
+
+export interface CreateRecommendationsRequest {
+  imageUrl: string
+  gender?: 'none' | 'male' | 'female'
+  preferences?: RecommendationPreferences
+}
+
+export interface CreateRecommendationsResponse {
+  analysisJobId: string
+  status: JobStatus
+  statusEndpoint: string
+}
+
+export interface RecommendationQualityGate {
+  passed: boolean | null
+  failureCode: string | null
+  message: string | null
+}
+
+export interface RecommendationAnalysisSummary {
+  faceShapeDistribution: Record<string, number> | null
+  confidence: number | null
+}
+
+export interface RecommendationItem {
+  styleId: string
+  styleName: string
+  score: number
+  reasons: string[]
+  constraints: string[]
+}
+
+export interface RecommendationJobStatusResponse {
+  analysisJobId: string
+  status: JobStatus
+  qualityGate: RecommendationQualityGate
+  analysisSummary: RecommendationAnalysisSummary
+  recommendations: RecommendationItem[]
+  errorCode: string | null
+  errorMessage: string | null
+}
+
+export interface SubmitRecommendationFeedbackRequest {
+  analysisJobId: string
+  selectedStyleId: string | null
+  rating: number | null
+  feedbackTags: string[] | null
+  comment: string | null
+}
+
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
 export interface DevTokenRequest {

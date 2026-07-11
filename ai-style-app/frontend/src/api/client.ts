@@ -35,10 +35,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw error
   }
 
-  // 204 No Content — return undefined cast to T
+  // Some successful endpoints (for example 202 Accepted) return no response body.
   if (response.status === 204) return undefined as T
 
-  return response.json() as Promise<T>
+  const text = await response.text()
+  if (!text) return undefined as T
+
+  return JSON.parse(text) as T
 }
 
 async function uploadFile<T>(path: string, file: File): Promise<T> {

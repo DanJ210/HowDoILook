@@ -115,6 +115,10 @@ function openGenerate() {
 function openJobs() {
   router.push({ name: 'jobs' })
 }
+
+function openRecommendations() {
+  router.push({ name: 'recommendations' })
+}
 </script>
 
 <template>
@@ -139,6 +143,13 @@ function openJobs() {
             class="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
           >
             Generate a look
+          </button>
+          <button
+            type="button"
+            @click="openRecommendations"
+            class="rounded-2xl border border-white/10 bg-sky-500/20 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/30"
+          >
+            Get recommendations
           </button>
           <button
             type="button"
