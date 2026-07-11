@@ -109,11 +109,15 @@ public class FaceAnalysisJobHandler : IMessageHandler
 
             _logger.LogInformation("Face-analysis job {JobId} completed with model-stage pipeline output.", analysisJob.Id);
         }
-        catch (FaceAnalysisException ex)
-        {
-            _logger.LogWarning(ex, "Face-analysis job {JobId} failed quality/model stage with {ErrorCode}.", analysisJob.Id, ex.Code);
-            await MarkFailedAsync(analysisJob, ex.Code, ex.Message, cancellationToken);
-        }
+catch (FaceAnalysisException ex)
+{
+    analysisJob.QualityPassed = false;
+    analysisJob.QualityFailureCode = ex.Code;
+    analysisJob.QualityMessage = ex.Message;
+
+    _logger.LogWarning(ex, "Face-analysis job {JobId} failed quality/model stage with {ErrorCode}.", analysisJob.Id, ex.Code);
+    await MarkFailedAsync(analysisJob, ex.Code, ex.Message, cancellationToken);
+}
         catch (Exception ex)
         {
             _logger.LogError(ex, "Face-analysis job {JobId} failed with unhandled exception.", analysisJob.Id);
