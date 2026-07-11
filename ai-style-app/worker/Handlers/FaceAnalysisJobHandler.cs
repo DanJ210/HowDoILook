@@ -83,15 +83,16 @@ public class FaceAnalysisJobHandler : IMessageHandler
                 return;
             }
 
-            if (!Uri.TryCreate(analysisJob.ImageUrl, UriKind.Absolute, out _))
-            {
-                await MarkFailedAsync(
-                    analysisJob,
-                    "ANALYSIS_IMAGE_UNREACHABLE",
-                    "Image URL must be absolute.",
-                    cancellationToken);
-                return;
-            }
+if (!Uri.TryCreate(analysisJob.ImageUrl, UriKind.Absolute, out var uri) ||
+    (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+{
+    await MarkFailedAsync(
+        analysisJob,
+        "ANALYSIS_IMAGE_UNREACHABLE",
+        "Image URL must be an absolute http/https URL.",
+        cancellationToken);
+    return;
+}
 
             await EnsureImageUrlReachableAsync(analysisJob.ImageUrl, cancellationToken);
 
