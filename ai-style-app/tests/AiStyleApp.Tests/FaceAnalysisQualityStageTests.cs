@@ -42,4 +42,29 @@ public class FaceAnalysisQualityStageTests
         Assert.Equal("ANALYSIS_QUALITY_TOO_BLURRY", result.FailureCode);
         Assert.True(result.BlurScore < 0.08, $"Expected blur score below threshold but got {result.BlurScore}");
     }
+
+    [Fact]
+    public void Evaluate_BlurredBackgroundWithSharpCenter_DoesNotFailBlurGate()
+    {
+        using var image = new Image<Rgba32>(1024, 1024, new Rgba32(128, 128, 128));
+
+        // Simulate portrait mode: soft background with a sharp center subject region.
+        for (var y = 220; y < 860; y++)
+        {
+            for (var x = 320; x < 704; x++)
+            {
+                var cell = ((x / 6) + (y / 6)) % 2 == 0;
+                image[x, y] = cell
+                    ? new Rgba32(225, 225, 225)
+                    : new Rgba32(35, 35, 35);
+            }
+        }
+
+        var stage = new HeuristicFaceQualityStage();
+        var result = stage.Evaluate(image);
+
+        Assert.True(result.Passed, $"Expected quality pass but got {result.FailureCode} with blur {result.BlurScore}");
+        Assert.NotEqual("ANALYSIS_QUALITY_TOO_BLURRY", result.FailureCode);
+        Assert.True(result.BlurScore >= 0.08, $"Expected blur score above threshold but got {result.BlurScore}");
+    }
 }

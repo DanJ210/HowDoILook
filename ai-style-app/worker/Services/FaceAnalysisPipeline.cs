@@ -233,7 +233,15 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         var mean = luminanceSum / Math.Max(1, count);
         var variance = (luminanceSqSum / Math.Max(1, count)) - (mean * mean);
         var contrast = Math.Sqrt(Math.Max(0.0, variance));
-        var blurScore = edgeSum / Math.Max(1, count);
+        var globalBlurScore = edgeSum / Math.Max(1, count);
+        var centerBlurScore = EdgeScoreInRegion(
+            image,
+            sampleStep,
+            xStartFactor: 0.25,
+            xEndFactor: 0.75,
+            yStartFactor: 0.15,
+            yEndFactor: 0.85);
+        var blurScore = Math.Max(globalBlurScore, centerBlurScore);
 
         var centerX = weightedX / Math.Max(0.0001, luminanceSum);
         var centerY = weightedY / Math.Max(0.0001, luminanceSum);
@@ -449,6 +457,37 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
                 var current = Luminance(image[x, y]);
                 var left = Luminance(image[x - xStep, y]);
                 edgeSum += Math.Abs(current - left);
+                count++;
+            }
+        }
+
+        return edgeSum / Math.Max(1, count);
+    }
+
+    private static double EdgeScoreInRegion(
+        Image<Rgba32> image,
+        int sampleStep,
+        double xStartFactor,
+        double xEndFactor,
+        double yStartFactor,
+        double yEndFactor)
+    {
+        var xStart = Math.Clamp((int)(image.Width * xStartFactor), sampleStep, image.Width - sampleStep - 1);
+        var xEnd = Math.Clamp((int)(image.Width * xEndFactor), xStart + 1, image.Width - sampleStep);
+        var yStart = Math.Clamp((int)(image.Height * yStartFactor), sampleStep, image.Height - sampleStep - 1);
+        var yEnd = Math.Clamp((int)(image.Height * yEndFactor), yStart + 1, image.Height - sampleStep);
+
+        double edgeSum = 0;
+        int count = 0;
+
+        for (var y = yStart; y < yEnd; y += sampleStep)
+        {
+            for (var x = xStart; x < xEnd; x += sampleStep)
+            {
+                var current = Luminance(image[x, y]);
+                var left = Luminance(image[x - sampleStep, y]);
+                var up = Luminance(image[x, y - sampleStep]);
+                edgeSum += Math.Abs(current - left) + Math.Abs(current - up);
                 count++;
             }
         }

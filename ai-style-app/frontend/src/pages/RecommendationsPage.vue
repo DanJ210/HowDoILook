@@ -296,7 +296,7 @@ onUnmounted(() => {
 
           <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             <dt class="text-slate-400">Job ID</dt>
-            <dd class="truncate font-mono text-slate-200 sm:text-right">{{ activeJob.analysisJobId }}</dd>
+            <dd class="break-all font-mono text-slate-200 sm:text-right">{{ activeJob.analysisJobId }}</dd>
             <dt class="text-slate-400">Quality gate</dt>
             <dd class="sm:text-right">{{ activeJob.qualityGate.passed === null ? 'Pending' : activeJob.qualityGate.passed ? 'Passed' : 'Failed' }}</dd>
             <dt class="text-slate-400">Confidence</dt>
