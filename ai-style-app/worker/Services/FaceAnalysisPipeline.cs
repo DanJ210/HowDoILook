@@ -196,7 +196,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         {
             return new QualityMetrics(
                 Passed: false,
-                FailureCode: "ANALYSIS_QUALITY_TOO_BLURRY",
+                FailureCode: "ANALYSIS_QUALITY_TOO_LOW_RESOLUTION",
                 Message: $"Image resolution is too low. Minimum required is {MinWidth}x{MinHeight}.",
                 Brightness: 0.0,
                 Contrast: 0.0,
@@ -413,14 +413,14 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         return candidates
             .OrderByDescending(c => c.score)
             .Take(5)
-            .Select(c => new
-            {
-                styleId = c.id,
-                styleName = c.name,
-                score = Math.Round(c.score, 3),
-                reasons = c.reasons,
-                constraints = c.constraints
-            })
+.Select(c => new
+{
+    StyleId = c.id,
+    StyleName = c.name,
+    Score = Math.Round(c.score, 3),
+    Reasons = c.reasons,
+    Constraints = c.constraints
+})
             .Cast<object>()
             .ToList();
     }
