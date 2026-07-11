@@ -58,6 +58,7 @@ builder.Services.Configure<BlobStorageOptions>(
 // Application services
 builder.Services.AddScoped<IStyleService, StyleService>();
 builder.Services.AddScoped<IJobService, JobService>();
+builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 builder.Services.AddScoped<IReplicateWebhookProcessor, ReplicateWebhookProcessor>();
 builder.Services.AddScoped<IQueuePublisher, QueuePublisher>();
 builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();

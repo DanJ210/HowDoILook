@@ -18,6 +18,12 @@
 - Keep shared request and queue contract changes aligned across frontend types, backend models/services, worker handlers, and `ai-style-app/docs/api-contracts.md`.
 - Beard changes are optional and should only be applied when `gender` is `male`.
 
+## Recommendations flow
+
+- Treat recommendations as one async flow moving through backend endpoints, queue, worker processing, and status polling.
+- Keep shared request and queue contract changes aligned across backend models/services, worker handlers, and `ai-style-app/docs/api-contracts.md`.
+- When recommendations behavior changes, update both `ai-style-app/docs/architecture.md` and `ai-style-app/docs/face-analysis-recommendation-spec.md` in the same PR.
+
 ## Validation
 
 - Backend tests: `dotnet test ai-style-app/tests/AiStyleApp.Tests/AiStyleApp.Tests.csproj`

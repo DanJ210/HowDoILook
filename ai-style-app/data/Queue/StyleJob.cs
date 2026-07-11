@@ -1,6 +1,6 @@
 namespace AiStyleApp.Data.Queue;
 
-/// <summary>Queue message contract v1 for style generation jobs.</summary>
+/// <summary>Queue message contract for style generation and face-analysis jobs.</summary>
 public record StyleJob(
     Guid JobId,
     Guid StyleItemId,
@@ -10,12 +10,13 @@ public record StyleJob(
     DateTimeOffset EnqueuedAtUtc,
     string CorrelationId,
     int Attempt,
-    int SchemaVersion = 1,
+    int SchemaVersion = 2,
     string? ImageUrl = null,
     string? Haircut = null,
     string? HairColor = null,
     string? BeardStyle = null,
     string? BeardColor = null,
     string? Gender = null,
-    string? Stage = null
+    string? Stage = null,
+    string? PreferencesJson = null
 );

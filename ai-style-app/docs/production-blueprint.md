@@ -331,6 +331,72 @@ scale:
             triggerParameter: connection
 ```
 
+### Recommendations V1 Implementation Checklist
+
+> Use this section as the execution checklist for implementing planned face analysis and recommendation capabilities.
+
+### Data Layer (data)
+
+- [ ] Add `FaceAnalysisJobEntity` in `ai-style-app/data/Entities`.
+- [ ] Add `RecommendationFeedbackEntity` in `ai-style-app/data/Entities`.
+- [ ] Register both entities in `AppDbContext` with explicit table names.
+- [ ] Configure indexes:
+  - [ ] `face_analysis_jobs.user_id`
+  - [ ] `face_analysis_jobs.status`
+  - [ ] `recommendation_feedback.user_id`
+  - [ ] `recommendation_feedback.analysis_job_id`
+- [ ] Add EF migration for both tables and indexes.
+
+### Shared Queue Contract (data)
+
+- [ ] Extend `StyleJob` queue contract to support `jobType = FaceAnalysis`.
+- [ ] Add `preferencesJson` and update `schemaVersion` handling for v2.
+- [ ] Keep backward compatibility for style-generation fields.
+
+### Backend API (backend)
+
+- [ ] Add `RecommendationsController` with:
+  - [ ] `POST /api/recommendations`
+  - [ ] `GET /api/recommendations/jobs/{id}`
+  - [ ] `POST /api/recommendations/feedback`
+- [ ] Add request/response models in `backend/Models`.
+- [ ] Add service layer interfaces/implementations in `backend/Services`.
+- [ ] Enforce user ownership checks on recommendation job and feedback access.
+- [ ] Publish queue message for `FaceAnalysis` jobs.
+
+### Worker (worker)
+
+- [ ] Add face-analysis job routing in worker message dispatch.
+- [ ] Add handler for staged pipeline:
+  - [ ] quality gate
+  - [ ] single-face validation
+  - [ ] landmark and segmentation feature extraction
+  - [ ] recommendation ranking
+- [ ] Persist intermediate status and terminal result.
+- [ ] Return standardized analysis error codes.
+
+### Frontend (frontend)
+
+- [ ] Add recommendation API client in `frontend/src/api`.
+- [ ] Add recommendation types in `frontend/src/types`.
+- [ ] Add recommendation store in `frontend/src/stores`.
+- [ ] Add recommendation page and polling UX.
+- [ ] Add feedback submission flow after style selection.
+
+### Documentation and Contracts
+
+- [ ] Keep `docs/api-contracts.md` aligned with implementation payloads.
+- [ ] Keep `docs/architecture.md` appendix aligned with final table/index names.
+- [ ] Keep beard suggestion behavior constrained to `gender = male`.
+
+### Validation and Release Gate
+
+- [ ] Run backend tests: `dotnet test ai-style-app/tests/AiStyleApp.Tests/AiStyleApp.Tests.csproj`
+- [ ] Run frontend tests: `cd ai-style-app/frontend && npm test`
+- [ ] Run backend build: `cd ai-style-app/backend && dotnet build`
+- [ ] Run worker build: `cd ai-style-app/worker && dotnet build`
+- [ ] Smoke-test recommendation flow end to end in local environment.
+
 ---
 
 ## 7. CI/CD Pipeline (GitHub Actions)

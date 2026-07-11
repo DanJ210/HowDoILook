@@ -200,6 +200,96 @@ Queued → Processing → Succeeded
 
 `externalPredictionId` always represents the active Replicate prediction for the current stage and may change between the hair and beard stages. Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Canceled`) it will not transition further.
 
+## Recommendations (V1 Baseline Implemented)
+
+| Method | Path | Auth | Request Body | Response |
+|--------|------|------|--------------|----------|
+| `POST` | `/api/recommendations` | Required | `CreateRecommendationsRequest` | `CreateRecommendationsResponse` (202) |
+| `GET` | `/api/recommendations/jobs/{id}` | Required | — | `RecommendationJobStatusResponse` |
+| `POST` | `/api/recommendations/feedback` | Required | `SubmitRecommendationFeedbackRequest` | 202 |
+
+### CreateRecommendationsRequest
+
+```json
+{
+  "imageUrl": "https://...",
+  "gender": "none | male | female",
+  "preferences": {
+    "maintenanceLevel": "low | medium | high",
+    "styleVibe": "professional | casual | trendy",
+    "allowHairColorChange": true,
+    "allowBeardSuggestions": true
+  }
+}
+```
+
+Beard suggestions are only considered when `gender` is `male`. The baseline worker does not yet enforce `preferences.allowBeardSuggestions`.
+
+### CreateRecommendationsResponse
+
+```json
+{
+  "analysisJobId": "uuid",
+  "status": "Queued",
+  "statusEndpoint": "/api/recommendations/jobs/{analysisJobId}"
+}
+```
+
+The response is `202 Accepted`. Poll `statusEndpoint` to track analysis completion.
+
+### RecommendationJobStatusResponse
+
+```json
+{
+  "analysisJobId": "uuid",
+  "status": "Queued | Processing | Succeeded | Failed",
+  "qualityGate": {
+    "passed": true,
+    "failureCode": "string | null",
+    "message": "string | null"
+  },
+  "analysisSummary": {
+    "faceShapeDistribution": "object | null",
+    "confidence": 0.87
+  },
+  "recommendations": [
+    {
+      "styleId": "string",
+      "styleName": "string",
+      "score": 0.92,
+      "reasons": [
+        "Balances jaw width",
+        "Fits medium maintenance preference"
+      ],
+      "constraints": [
+        "Requires moderate top volume"
+      ]
+    }
+  ],
+  "errorCode": "string | null",
+  "errorMessage": "string | null"
+}
+```
+
+Current implementation note:
+- The worker currently writes a deterministic placeholder analysis output and recommendation list so the end-to-end async flow is functional.
+- Full model-backed landmark and segmentation analysis is not implemented yet.
+
+### SubmitRecommendationFeedbackRequest
+
+```json
+{
+  "analysisJobId": "uuid",
+  "selectedStyleId": "string | null",
+  "rating": 1,
+  "feedbackTags": [
+    "tooBold",
+    "notMyStyle"
+  ],
+  "comment": "string | null"
+}
+```
+
 ## Webhooks
 
 | Method | Path | Auth | Description |
@@ -225,7 +315,9 @@ The webhook verifies Replicate signature headers (`webhook-id`, `webhook-timesta
 
 ## Queue Message Contract
 
-Messages enqueued to `style-jobs` follow this schema (v1):
+Messages enqueued to `style-jobs` are currently emitted in schema v2 for style generation and recommendations.
+
+### Schema v1 (Legacy)
 
 ```json
 {
@@ -242,6 +334,32 @@ Messages enqueued to `style-jobs` follow this schema (v1):
   "haircut": "string | null",
   "hairColor": "string | null",
   "gender": "string | null"
+}
+```
+
+### Schema v2 (Current)
+
+V2 supports recommendation analysis jobs while keeping style-generation fields for backward compatibility.
+
+```json
+{
+  "JobId": "uuid",
+  "StyleItemId": "uuid",
+  "UserId": "string",
+  "JobType": "generate-style | face-analysis",
+  "Prompt": "string",
+  "EnqueuedAtUtc": "ISO 8601 datetime",
+  "CorrelationId": "string",
+  "Attempt": 0,
+  "SchemaVersion": 2,
+  "ImageUrl": "string | null",
+  "Haircut": "string | null",
+  "HairColor": "string | null",
+  "BeardStyle": "string | null",
+  "BeardColor": "string | null",
+  "Gender": "string | null",
+  "Stage": "string | null",
+  "PreferencesJson": "string | null"
 }
 ```
 

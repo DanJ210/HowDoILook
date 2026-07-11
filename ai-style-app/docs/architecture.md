@@ -138,3 +138,123 @@ graph TD
 8. Backend verifies the HMAC signature, updates the job to `Succeeded` (or `Failed`) with `result_json`, and asynchronously archives the generated image.
 9. Frontend polling detects the terminal status and displays the result (or error).
 
+## Appendix: Face Analysis and Recommendations (V1 Baseline)
+
+This appendix describes the current baseline architecture for face analysis and recommendation while preserving the async style-generation flow.
+
+### Current Baseline Components
+
+- **Backend**
+  - Recommendations endpoints under `/api/recommendations` are implemented.
+  - Analysis job persistence (`face_analysis_jobs`) and feedback persistence (`recommendation_feedback`) are implemented.
+  - Queue publish support for `jobType = face-analysis` is implemented.
+
+- **Worker**
+  - Face-analysis handler routing by `jobType` is implemented.
+  - Initial baseline validates image reachability and writes deterministic placeholder analysis/recommendations.
+  - Structured failure codes are partially implemented (`ANALYSIS_IMAGE_UNREACHABLE`, `ANALYSIS_INTERNAL_ERROR`).
+
+- **Frontend**
+  - Backend contracts for request, polling, and feedback are available.
+  - Frontend page/store integration is still pending.
+
+### Data Model Additions
+
+- `face_analysis_jobs`
+  - Tracks async analysis lifecycle (`Queued`, `Processing`, `Succeeded`, `Failed`).
+  - Stores quality-gate outcomes, feature vector JSON, recommendation JSON, and analysis confidence.
+
+- `recommendation_feedback`
+  - Stores selected style, rating, tags, and optional comment for learning loops.
+
+### EF Core Entity and Migration Shape
+
+Implemented entity names and table mapping in `AiStyleApp.Data`:
+
+- `FaceAnalysisJobEntity` -> `face_analysis_jobs`
+- `RecommendationFeedbackEntity` -> `recommendation_feedback`
+
+Recommended `FaceAnalysisJobEntity` properties:
+
+- `Id` (`Guid`) -> `id`
+- `UserId` (`string`, max 128) -> `user_id`
+- `ImageUrl` (`string`, max 2048) -> `image_url`
+- `Gender` (`string?`, max 50) -> `gender`
+- `PreferencesJson` (`string?` or JSON-mapped type) -> `preferences_json` (`jsonb`)
+- `Status` (`string`, max 50) -> `status`
+- `QualityPassed` (`bool?`) -> `quality_passed`
+- `QualityFailureCode` (`string?`, max 100) -> `quality_failure_code`
+- `QualityMessage` (`string?`, max 1000) -> `quality_message`
+- `FeatureVectorJson` (`string?` or JSON-mapped type) -> `feature_vector_json` (`jsonb`)
+- `AnalysisConfidence` (`double?`) -> `analysis_confidence`
+- `RecommendationsJson` (`string?` or JSON-mapped type) -> `recommendations_json` (`jsonb`)
+- `ErrorCode` (`string?`, max 100) -> `error_code`
+- `ErrorMessage` (`string?`, max 2000) -> `error_message`
+- `CreatedAtUtc` (`DateTimeOffset`) -> `created_at_utc`
+- `StartedAtUtc` (`DateTimeOffset?`) -> `started_at_utc`
+- `CompletedAtUtc` (`DateTimeOffset?`) -> `completed_at_utc`
+
+Recommended `RecommendationFeedbackEntity` properties:
+
+- `Id` (`Guid`) -> `id`
+- `AnalysisJobId` (`Guid`) -> `analysis_job_id`
+- `UserId` (`string`, max 128) -> `user_id`
+- `SelectedStyleId` (`string?`, max 100) -> `selected_style_id`
+- `Rating` (`int?`) -> `rating`
+- `FeedbackTagsJson` (`string?` or JSON-mapped type) -> `feedback_tags_json` (`jsonb`)
+- `Comment` (`string?`, max 1000) -> `comment`
+- `CreatedAtUtc` (`DateTimeOffset`) -> `created_at_utc`
+
+Implemented relational configuration:
+
+- One `FaceAnalysisJobEntity` to many `RecommendationFeedbackEntity`.
+- FK: `recommendation_feedback.analysis_job_id` -> `face_analysis_jobs.id` with cascade delete.
+
+Implemented indexes:
+
+- `face_analysis_jobs (user_id)`
+- `face_analysis_jobs (status)`
+- `recommendation_feedback (user_id)`
+- `recommendation_feedback (analysis_job_id)`
+
+Migration notes:
+
+- Migration `AddFaceAnalysisRecommendations` is applied by EF tooling.
+- Existing `style_items` and `style_jobs` tables remain unchanged by this feature migration.
+
+### Queue Contract Evolution
+
+- Queue `style-jobs` remains the transport.
+- Schema version `2` with `jobType` and `preferencesJson` is implemented.
+
+### Recommendation Data Flow (Current Baseline)
+
+1. User submits recommendation request with image URL and preferences.
+2. Backend writes `face_analysis_jobs` row with `Queued` status.
+3. Backend enqueues queue message (`jobType = FaceAnalysis`, `schemaVersion = 2`).
+4. Worker dequeues message and marks analysis job `Processing`.
+5. Worker validates image URL format/reachability.
+6. Worker writes placeholder feature vector, confidence, and recommendation payload.
+7. Worker persists recommendation payload and marks analysis job terminal status.
+8. Frontend polls status endpoint and renders either recommendations or retry guidance.
+9. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
+
+### Error Codes (Worker Baseline)
+
+- `ANALYSIS_IMAGE_UNREACHABLE`
+- `ANALYSIS_MULTI_FACE_NOT_SUPPORTED` (reserved)
+- `ANALYSIS_NO_FACE_DETECTED` (reserved)
+- `ANALYSIS_QUALITY_TOO_LOW_RESOLUTION` (reserved)
+- `ANALYSIS_QUALITY_TOO_BLURRY` (reserved)
+- `ANALYSIS_QUALITY_BAD_EXPOSURE` (reserved)
+- `ANALYSIS_POOR_POSE` (reserved)
+- `ANALYSIS_SEGMENTATION_FAILED` (reserved)
+- `ANALYSIS_INTERNAL_ERROR`
+
+### Cross-Cutting Constraints
+
+- Maintain queue-driven async processing to protect API responsiveness.
+- Keep beard-related suggestions optional and only applicable when `gender` is `male`.
+- Do not infer or persist sensitive traits.
+- Keep analysis features scoped to authenticated user ownership.
+

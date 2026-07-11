@@ -12,9 +12,16 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 
 // Replicate HTTP client
 builder.Services.AddHttpClient<IReplicateWorkerClient, ReplicateWorkerClient>();
+builder.Services.AddScoped<IFaceQualityStage, HeuristicFaceQualityStage>();
+builder.Services.AddScoped<IFaceLandmarkStage, HeuristicFaceLandmarkStage>();
+builder.Services.AddScoped<IFaceSegmentationStage, HeuristicFaceSegmentationStage>();
+builder.Services.AddScoped<IRecommendationStage, RuleBasedRecommendationStage>();
+builder.Services.AddScoped<IFaceAnalysisPipeline, FaceAnalysisPipeline>();
 
 builder.Services.AddHostedService<JobWorker>();
-builder.Services.AddScoped<IMessageHandler, StyleJobHandler>();
+builder.Services.AddScoped<StyleJobHandler>();
+builder.Services.AddScoped<FaceAnalysisJobHandler>();
+builder.Services.AddScoped<IMessageHandler, MessageRouterHandler>();
 
 var host = builder.Build();
 host.Run();
