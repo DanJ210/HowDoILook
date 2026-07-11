@@ -395,14 +395,14 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         return candidates
             .OrderByDescending(c => c.score)
             .Take(5)
-            .Select(c => new
-            {
-                styleId = c.id,
-                styleName = c.name,
-                score = Math.Round(c.score, 3),
-                reasons = c.reasons,
-                constraints = c.constraints
-            })
+.Select(c => new
+{
+    StyleId = c.id,
+    StyleName = c.name,
+    Score = Math.Round(c.score, 3),
+    Reasons = c.reasons,
+    Constraints = c.constraints
+})
             .Cast<object>()
             .ToList();
     }
