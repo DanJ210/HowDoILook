@@ -181,7 +181,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         {
             return new QualityMetrics(
                 Passed: false,
-                FailureCode: "ANALYSIS_QUALITY_TOO_BLURRY",
+                FailureCode: "ANALYSIS_QUALITY_TOO_LOW_RESOLUTION",
                 Message: $"Image resolution is too low. Minimum required is {MinWidth}x{MinHeight}.",
                 Brightness: 0.0,
                 Contrast: 0.0,
