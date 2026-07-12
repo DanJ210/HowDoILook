@@ -41,6 +41,19 @@ public record SegmentationFeatures(
     double HairDensityEstimate,
     double BeardDensityEstimate);
 
+public record FaceBoundingBox(
+    int X,
+    int Y,
+    int Width,
+    int Height);
+
+public record FaceDetectionResult(
+    int FaceCount,
+    FaceBoundingBox? PrimaryFace,
+    double PrimaryFaceConfidence,
+    string? FailureCode,
+    string? FailureMessage);
+
 public record StageTelemetry(
     string Stage,
     string Model,
@@ -59,14 +72,29 @@ public interface IFaceQualityStage
     QualityMetrics Evaluate(Image<Rgba32> image);
 }
 
+public interface IFaceDetectorStage
+{
+    FaceDetectionResult Detect(Image<Rgba32> image);
+}
+
 public interface IFaceLandmarkStage
 {
     LandmarkFeatures Extract(Image<Rgba32> image);
 }
 
+public interface IFaceLandmarkModelStage
+{
+    LandmarkFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face);
+}
+
 public interface IFaceSegmentationStage
 {
     SegmentationFeatures Extract(Image<Rgba32> image, string? gender);
+}
+
+public interface IFaceRegionEstimationStage
+{
+    SegmentationFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face, string? gender);
 }
 
 public interface IRecommendationStage
@@ -85,14 +113,45 @@ public class HeuristicFaceQualityStage : IFaceQualityStage
     public QualityMetrics Evaluate(Image<Rgba32> image) => FaceAnalysisPipeline.ComputeQuality(image);
 }
 
+public class HeuristicFaceDetectorStage : IFaceDetectorStage
+{
+    public FaceDetectionResult Detect(Image<Rgba32> image)
+    {
+        // PR1 scaffold: centered single-face assumption keeps existing behavior unchanged.
+        var boxWidth = (int)(image.Width * 0.45);
+        var boxHeight = (int)(image.Height * 0.55);
+        var boxX = Math.Max(0, (image.Width - boxWidth) / 2);
+        var boxY = Math.Max(0, (image.Height - boxHeight) / 2);
+
+        return new FaceDetectionResult(
+            FaceCount: 1,
+            PrimaryFace: new FaceBoundingBox(boxX, boxY, boxWidth, boxHeight),
+            PrimaryFaceConfidence: 1.0,
+            FailureCode: null,
+            FailureMessage: null);
+    }
+}
+
 public class HeuristicFaceLandmarkStage : IFaceLandmarkStage
 {
     public LandmarkFeatures Extract(Image<Rgba32> image) => FaceAnalysisPipeline.ComputeLandmarkFeatures(image);
 }
 
+public class HeuristicFaceLandmarkModelStage : IFaceLandmarkModelStage
+{
+    public LandmarkFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face)
+        => FaceAnalysisPipeline.ComputeLandmarkFeatures(image);
+}
+
 public class HeuristicFaceSegmentationStage : IFaceSegmentationStage
 {
     public SegmentationFeatures Extract(Image<Rgba32> image, string? gender)
+        => FaceAnalysisPipeline.ComputeSegmentationFeatures(image, gender);
+}
+
+public class HeuristicFaceRegionEstimationStage : IFaceRegionEstimationStage
+{
+    public SegmentationFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face, string? gender)
         => FaceAnalysisPipeline.ComputeSegmentationFeatures(image, gender);
 }
 
