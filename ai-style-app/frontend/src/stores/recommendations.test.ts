@@ -17,6 +17,7 @@ function createRecommendationStatus(overrides: Partial<RecommendationJobStatusRe
       confidence: null
     },
     recommendations: [],
+    debugTelemetry: null,
     errorCode: null,
     errorMessage: null,
     ...overrides

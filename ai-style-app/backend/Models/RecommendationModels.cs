@@ -30,6 +30,23 @@ public record RecommendationAnalysisSummaryResponse(
     double? Confidence
 );
 
+public record RecommendationStageTelemetryResponse(
+    string Stage,
+    string Model,
+    string ModelVersion,
+    double DurationMs,
+    Dictionary<string, double>? Metrics,
+    string? Notes
+);
+
+public record RecommendationDebugTelemetryResponse(
+    string? Source,
+    int? SchemaVersion,
+    int? ImageWidth,
+    int? ImageHeight,
+    IReadOnlyList<RecommendationStageTelemetryResponse> Stages
+);
+
 public record RecommendationItemResponse(
     string StyleId,
     string StyleName,
@@ -44,6 +61,7 @@ public record RecommendationJobStatusResponse(
     RecommendationQualityGateResponse QualityGate,
     RecommendationAnalysisSummaryResponse AnalysisSummary,
     IReadOnlyList<RecommendationItemResponse> Recommendations,
+    RecommendationDebugTelemetryResponse? DebugTelemetry,
     string? ErrorCode,
     string? ErrorMessage
 );

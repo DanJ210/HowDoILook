@@ -87,6 +87,7 @@ public class RecommendationService : IRecommendationService
                 FaceShapeDistribution: null,
                 Confidence: analysisJob.AnalysisConfidence),
             Recommendations: ParseRecommendations(analysisJob.RecommendationsJson),
+            DebugTelemetry: ParseDebugTelemetry(analysisJob.FeatureVectorJson),
             ErrorCode: analysisJob.ErrorCode,
             ErrorMessage: analysisJob.ErrorMessage);
     }
@@ -137,5 +138,120 @@ public class RecommendationService : IRecommendationService
         {
             return [];
         }
+    }
+
+    private static RecommendationDebugTelemetryResponse? ParseDebugTelemetry(string? featureVectorJson)
+    {
+        if (string.IsNullOrWhiteSpace(featureVectorJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            var root = doc.RootElement;
+
+            var source = TryGetPropertyIgnoreCase(root, "source", out var sourceNode)
+                ? sourceNode.GetString()
+                : null;
+
+            int? schemaVersion = null;
+            if (TryGetPropertyIgnoreCase(root, "schemaVersion", out var schemaNode) && schemaNode.TryGetInt32(out var parsedSchema))
+            {
+                schemaVersion = parsedSchema;
+            }
+
+            int? imageWidth = null;
+            int? imageHeight = null;
+            if (TryGetPropertyIgnoreCase(root, "imageInfo", out var imageInfoNode))
+            {
+                if (TryGetPropertyIgnoreCase(imageInfoNode, "width", out var widthNode) && widthNode.TryGetInt32(out var parsedWidth))
+                {
+                    imageWidth = parsedWidth;
+                }
+
+                if (TryGetPropertyIgnoreCase(imageInfoNode, "height", out var heightNode) && heightNode.TryGetInt32(out var parsedHeight))
+                {
+                    imageHeight = parsedHeight;
+                }
+            }
+
+            var stages = new List<RecommendationStageTelemetryResponse>();
+            if (TryGetPropertyIgnoreCase(root, "stageTelemetry", out var telemetryNode)
+                && telemetryNode.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var stageNode in telemetryNode.EnumerateArray())
+                {
+                    var stage = TryGetPropertyIgnoreCase(stageNode, "stage", out var stageNameNode)
+                        ? stageNameNode.GetString() ?? "unknown"
+                        : "unknown";
+
+                    var model = TryGetPropertyIgnoreCase(stageNode, "model", out var modelNode)
+                        ? modelNode.GetString() ?? "unknown"
+                        : "unknown";
+
+                    var modelVersion = TryGetPropertyIgnoreCase(stageNode, "modelVersion", out var modelVersionNode)
+                        ? modelVersionNode.GetString() ?? "unknown"
+                        : "unknown";
+
+                    var durationMs = TryGetPropertyIgnoreCase(stageNode, "durationMs", out var durationNode)
+                        ? durationNode.GetDouble()
+                        : 0.0;
+
+                    var notes = TryGetPropertyIgnoreCase(stageNode, "notes", out var notesNode)
+                        ? notesNode.GetString()
+                        : null;
+
+                    Dictionary<string, double>? metrics = null;
+                    if (TryGetPropertyIgnoreCase(stageNode, "metrics", out var metricsNode)
+                        && metricsNode.ValueKind == JsonValueKind.Object)
+                    {
+                        metrics = [];
+                        foreach (var metric in metricsNode.EnumerateObject())
+                        {
+                            if (metric.Value.ValueKind == JsonValueKind.Number && metric.Value.TryGetDouble(out var metricValue))
+                            {
+                                metrics[metric.Name] = metricValue;
+                            }
+                        }
+                    }
+
+                    stages.Add(new RecommendationStageTelemetryResponse(
+                        Stage: stage,
+                        Model: model,
+                        ModelVersion: modelVersion,
+                        DurationMs: Math.Round(durationMs, 2),
+                        Metrics: metrics,
+                        Notes: notes));
+                }
+            }
+
+            return new RecommendationDebugTelemetryResponse(
+                Source: source,
+                SchemaVersion: schemaVersion,
+                ImageWidth: imageWidth,
+                ImageHeight: imageHeight,
+                Stages: stages);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 }

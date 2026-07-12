@@ -223,7 +223,7 @@ Queued → Processing → Succeeded
 }
 ```
 
-Beard suggestions are only considered when `gender` is `male`. The baseline worker does not yet enforce `preferences.allowBeardSuggestions`.
+Beard suggestions are only considered when `gender` is `male`, and the worker enforces `preferences.allowBeardSuggestions` when generating recommendation candidates.
 
 ### CreateRecommendationsResponse
 
@@ -266,14 +266,35 @@ The response is `202 Accepted`. Poll `statusEndpoint` to track analysis completi
       ]
     }
   ],
+  "debugTelemetry": {
+    "source": "worker-v1-staged-analysis",
+    "schemaVersion": 2,
+    "imageWidth": 1536,
+    "imageHeight": 2048,
+    "stages": [
+      {
+        "stage": "quality-gate",
+        "model": "heuristic-quality-gate",
+        "modelVersion": "v1",
+        "durationMs": 1.42,
+        "metrics": {
+          "brightness": 0.54,
+          "contrast": 0.16,
+          "blurScore": 0.22,
+          "centerOffset": 0.09
+        },
+        "notes": null
+      }
+    ]
+  },
   "errorCode": "string | null",
   "errorMessage": "string | null"
 }
 ```
 
 Current implementation note:
-- The worker currently writes a deterministic placeholder analysis output and recommendation list so the end-to-end async flow is functional.
-- Full model-backed landmark and segmentation analysis is not implemented yet.
+- The worker performs staged heuristic analysis (quality, landmark proxies, segmentation proxies) and returns telemetry for each stage.
+- Full ONNX model-backed face detection and landmark inference is planned for V2.
 
 ### SubmitRecommendationFeedbackRequest
 

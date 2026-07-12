@@ -6,7 +6,7 @@ Define a production-ready V1 for accurate face analysis and intelligent style re
 
 - frontend (Vue SPA)
 - backend (ASP.NET Core API)
-- worker (.NET 8 BackgroundService)
+- worker (.NET 10 BackgroundService)
 - shared data/contracts in data
 - async queue-driven processing
 
@@ -362,3 +362,377 @@ Validation commands:
 - Feedback endpoint stores user response linked to analysis job.
 - No regression to existing style-generation flow.
 - Contracts are documented in docs/api-contracts.md before merge.
+
+## 16. V2 Plan: ONNX Face Telemetry + Replicate Style Generation
+
+V1 validated async flow and recommendation plumbing. V2 makes recommendations image-driven by adding true face-aware ONNX inference while preserving existing Replicate haircut/beard generation.
+
+### 16.1 V2 Objectives
+
+- Detect and analyze the person (face ROI), not only full-image pixel heuristics.
+- Produce stable, comparable telemetry for research mapping.
+- Keep Replicate models as the generation engine for haircut/beard output.
+- Decouple analysis and recommendation ranking from image generation model prompts.
+
+### 16.2 V2 Non-Goals
+
+- Replacing Replicate haircut/beard generation with ONNX in V2.
+- Training custom foundation models in V2.
+
+## 17. V2 Pipeline Architecture
+
+```mermaid
+flowchart LR
+    A[Frontend: recommendations] --> B[Backend: /api/recommendations]
+    B --> C[(face_analysis_jobs)]
+    B --> D[Queue: style-jobs]
+    D --> E[Worker: FaceAnalysisJobHandler]
+
+    E --> F[ONNX Stage 1: Face Detection]
+    F --> G[ONNX Stage 2: Landmarks]
+    G --> H[ONNX/Hybrid Stage 3: Hair/Beard Region Estimation]
+    H --> I[Research Mapping + Ranking]
+
+    I --> C
+    C --> B
+    B --> A
+
+    A -. select recommendation .-> J[Existing style generation flow]
+    J --> K[Replicate Hair/Beard Models]
+```
+
+### 17.1 Key Principle
+
+Analysis and ranking become model-driven and explainable. Generation remains in current Replicate flow until a future decision changes it.
+
+## 18. Telemetry Contract (Schema v3)
+
+V2 introduces a strict, versioned telemetry payload inside `feature_vector_json`.
+
+### 18.1 Required Fields
+
+```json
+{
+  "source": "worker-v2-onnx-analysis",
+  "schemaVersion": 3,
+  "imageInfo": {
+    "width": 1536,
+    "height": 2048
+  },
+  "faceDetection": {
+    "faceCount": 1,
+    "primaryFace": {
+      "x": 420,
+      "y": 280,
+      "width": 620,
+      "height": 760,
+      "confidence": 0.97
+    }
+  },
+  "stageTelemetry": [
+    {
+      "stage": "face-detection",
+      "model": "<detector-model>",
+      "modelVersion": "v1",
+      "durationMs": 6.3,
+      "metrics": {
+        "faceCount": 1,
+        "primaryFaceConfidence": 0.97
+      }
+    },
+    {
+      "stage": "landmarks",
+      "model": "<landmark-model>",
+      "modelVersion": "v1",
+      "durationMs": 4.1,
+      "metrics": {
+        "landmarkConfidence": 0.94,
+        "yaw": 0.03,
+        "pitch": -0.02
+      }
+    },
+    {
+      "stage": "region-estimation",
+      "model": "<region-model-or-hybrid>",
+      "modelVersion": "v1",
+      "durationMs": 3.8,
+      "metrics": {
+        "hairDensityEstimate": 0.63,
+        "beardDensityEstimate": 0.41
+      }
+    }
+  ],
+  "quality": {},
+  "landmarks": {},
+  "segmentation": {}
+}
+```
+
+### 18.2 Telemetry Reliability Rules
+
+- If `faceCount != 1`, mark job failed with explicit code.
+- If face confidence < configured threshold, mark failed.
+- If landmark confidence < configured threshold, mark failed.
+- Always include model name/version per stage to track drift.
+
+## 19. Stage Contracts (Worker)
+
+Define stage interfaces as swappable implementations:
+
+- `IFaceDetectorStage` -> returns face boxes + confidence.
+- `IFaceLandmarkModelStage` -> returns normalized landmarks + confidence.
+- `IFaceRegionEstimationStage` -> returns hair/beard region metrics.
+
+Implementation strategy:
+
+1. Add ONNX implementations.
+2. Keep heuristic implementations behind feature flag for fallback.
+3. Use DI to select implementation by config.
+
+## 20. Research Mapping Layer
+
+Add a dedicated mapping module that converts telemetry features into recommendation scores. This module is data-driven and independent of ONNX model runtime.
+
+Inputs:
+
+- face geometry features (jaw/forehead/elongation/symmetry)
+- quality metrics (blur/exposure/pose)
+- beard/hair estimates
+- user preferences (maintenance/styleVibe/hairColor/beard opt-in)
+
+Outputs:
+
+- ranked haircut/beard candidates
+- rationale lines linked to measured features
+- recommendation confidence with contribution breakdown
+
+## 21. Replicate Integration Constraints
+
+Replicate stays the rendering engine for final style generation in V2.
+
+Rules:
+
+1. Recommendation chooses style template and parameters.
+2. Existing style generation endpoints queue Replicate jobs unchanged.
+3. Telemetry influences what style to generate, not how Replicate is called.
+4. Hair and beard stages remain optional and compatible with current two-stage pipeline.
+
+## 22. API and UI Additions (V2)
+
+### 22.1 API
+
+Extend `RecommendationJobStatusResponse` with:
+
+- `debugTelemetry` (already present in baseline implementation)
+- `faceDetection` summary (faceCount, primaryFace confidence, bbox)
+
+### 22.2 UI
+
+Recommendations page should display:
+
+- image dimensions
+- face detection confidence and count
+- per-stage timing and model metadata
+- confidence/rationale for each recommendation
+
+## 23. Rollout and Feature Flags
+
+Use staged rollout:
+
+1. `Features:OnnxFaceDetection` (shadow mode)
+2. `Features:OnnxLandmarks`
+3. `Features:OnnxRegionEstimation`
+4. `Features:RecommendationResearchMappingV2`
+
+Rollout sequence:
+
+1. Shadow mode: run ONNX and heuristic in parallel, persist both (internal only).
+2. Compare telemetry stability and recommendation deltas.
+3. Promote ONNX output to primary when acceptance thresholds are met.
+
+## 24. Acceptance Criteria (V2)
+
+- For valid portraits, face detection returns exactly one primary face with confidence >= threshold.
+- Two different portraits produce meaningfully different face telemetry vectors.
+- Telemetry includes non-empty stage metadata (model/version/duration/metrics).
+- Recommendation ranking is traceable to telemetry features and preferences.
+- Existing Replicate generation flow remains functional without contract regressions.
+
+## 25. Open Decisions
+
+- Final ONNX model selection for detection and landmarks (accuracy vs latency).
+- Whether region estimation is ONNX segmentation or landmark-guided hybrid in V2.
+- Threshold defaults for face confidence and landmark confidence by environment.
+
+## 26. Execution Checklist (By File)
+
+This section converts V2 into a concrete implementation sequence with minimal-risk PRs.
+
+### PR 1: Worker Stage Interfaces + Feature Flags
+
+Goal: introduce ONNX-ready abstractions without changing runtime behavior.
+
+Files:
+
+- `ai-style-app/worker/Services/FaceAnalysisPipeline.cs`
+  - Add stage interfaces for detection, landmark inference, and region estimation.
+  - Add telemetry object builders for face detection outputs.
+- `ai-style-app/worker/Program.cs`
+  - Register new interfaces in DI.
+  - Add config-based implementation selection (`heuristic` vs `onnx`).
+- `ai-style-app/worker/appsettings.json`
+  - Add feature flags:
+    - `Features:OnnxFaceDetection`
+    - `Features:OnnxLandmarks`
+    - `Features:OnnxRegionEstimation`
+  - Add threshold settings (face confidence, landmark confidence).
+- `ai-style-app/worker/appsettings.Development.json`
+  - Add local defaults for feature flags and thresholds.
+
+Exit criteria:
+
+- No behavior change when flags are off.
+- Worker build and existing face-analysis tests pass.
+
+### PR 2: ONNX Face Detection Stage
+
+Goal: detect primary face ROI and persist detection telemetry.
+
+Files:
+
+- `ai-style-app/worker/Services/FaceAnalysisPipeline.cs`
+  - Invoke detector stage before quality/landmark scoring.
+  - Fail with `ANALYSIS_NO_FACE_DETECTED` or `ANALYSIS_MULTI_FACE_NOT_SUPPORTED` as needed.
+- `ai-style-app/worker/Services/Onnx/OnnxFaceDetectorStage.cs` (new)
+  - Load ONNX detector model.
+  - Return face boxes, confidence, and count.
+- `ai-style-app/worker/Services/Onnx/OnnxSessionFactory.cs` (new)
+  - Centralize ONNX runtime session creation and options.
+- `ai-style-app/worker/Services/Onnx/OnnxImageTensorizer.cs` (new)
+  - Convert ImageSharp image/ROI to model tensors.
+- `ai-style-app/worker/Program.cs`
+  - Register ONNX detector stage.
+
+Exit criteria:
+
+- Telemetry includes `faceDetection.faceCount` and `primaryFace` when successful.
+- Detection failures return actionable error codes/messages.
+
+### PR 3: ONNX Landmarks + ROI-based Quality
+
+Goal: run landmark extraction on face ROI and shift quality checks to face-aware scoring.
+
+Files:
+
+- `ai-style-app/worker/Services/FaceAnalysisPipeline.cs`
+  - Crop to primary face ROI for quality and landmark stages.
+  - Persist yaw/pitch/landmark confidence telemetry.
+- `ai-style-app/worker/Services/Onnx/OnnxFaceLandmarkStage.cs` (new)
+  - Run landmark model and return normalized keypoints + confidence.
+- `ai-style-app/worker/Services/HeuristicFaceQualityStage.cs` (optional split/new)
+  - Keep fallback implementation while ONNX rollout is gated.
+
+Exit criteria:
+
+- Portrait-mode blurred background no longer dominates blur gate decisions.
+- Landmark confidence present in telemetry when enabled.
+
+### PR 4: Region Estimation (Hair/Beard)
+
+Goal: produce stable hair/beard region metrics based on ROI or segmentation.
+
+Files:
+
+- `ai-style-app/worker/Services/FaceAnalysisPipeline.cs`
+  - Use region stage output instead of full-frame proxies.
+- `ai-style-app/worker/Services/Onnx/OnnxFaceRegionEstimationStage.cs` (new)
+  - Implement ONNX segmentation or hybrid ROI algorithm.
+- `ai-style-app/worker/Services/Onnx/OnnxModelOptions.cs` (new)
+  - Configure model paths, execution provider, input sizes.
+
+Exit criteria:
+
+- Telemetry reports `hairDensityEstimate` and `beardDensityEstimate` from ROI-aware analysis.
+
+### PR 5: Backend Telemetry Contract + Parsing Hardening
+
+Goal: expose complete debug telemetry for validation and future research mapping.
+
+Files:
+
+- `ai-style-app/backend/Models/RecommendationModels.cs`
+  - Add/extend DTOs for face detection summary and stage telemetry.
+- `ai-style-app/backend/Services/RecommendationService.cs`
+  - Parse schema v2/v3 feature vectors (case-insensitive fields).
+  - Map face detection and stage telemetry to response DTOs.
+- `ai-style-app/docs/api-contracts.md`
+  - Document `debugTelemetry` and `faceDetection` response shape.
+
+Exit criteria:
+
+- API returns non-empty stage telemetry/model metadata for new jobs.
+
+### PR 6: Frontend Debug and Operator Visibility
+
+Goal: make telemetry auditable in UI for validation.
+
+Files:
+
+- `ai-style-app/frontend/src/types/api.ts`
+  - Add face detection + stage telemetry client types.
+- `ai-style-app/frontend/src/pages/RecommendationsPage.vue`
+  - Show face count, primary face confidence, ROI dimensions, per-stage metrics.
+- `ai-style-app/frontend/src/stores/recommendations.test.ts`
+  - Update fixtures and assertions for telemetry presence.
+
+Exit criteria:
+
+- Operators can verify image-driven analysis directly from UI.
+
+### PR 7: Research Mapping Layer
+
+Goal: decouple recommendation scoring from hardcoded heuristic constants.
+
+Files:
+
+- `ai-style-app/worker/Services/RecommendationResearchMapper.cs` (new)
+  - Map telemetry features to recommendation priors/weights from research table.
+- `ai-style-app/worker/Services/FaceAnalysisPipeline.cs`
+  - Replace inline scoring composition with mapper call.
+- `ai-style-app/docs/face-analysis-recommendation-spec.md`
+  - Add reference table source/versioning notes.
+
+Exit criteria:
+
+- Recommendation reasons include traceable feature contributions.
+
+### PR 8: Evaluation Harness + Regression Dataset
+
+Goal: prevent regressions and verify recommendations differ for distinct portraits.
+
+Files:
+
+- `ai-style-app/tests/AiStyleApp.Tests/FaceAnalysisQualityStageTests.cs`
+  - Add ROI-centric cases and confidence threshold tests.
+- `ai-style-app/tests/AiStyleApp.Tests/FaceAnalysisJobHandlerTests.cs`
+  - Add detector failure path tests (no face, multi-face, low confidence).
+- `ai-style-app/tests/AiStyleApp.Tests/RecommendationServiceTests.cs` (new)
+  - Assert telemetry parsing and response mapping for schema v2/v3.
+- `ai-style-app/docs/architecture.md`
+  - Add evaluation metrics and rollout gates.
+
+Exit criteria:
+
+- Distinct portrait fixtures produce measurably distinct telemetry vectors.
+- All targeted tests pass in Release.
+
+## 27. Operational Runbook (Short)
+
+After each PR:
+
+1. Build and test
+   - `dotnet test ai-style-app/tests/AiStyleApp.Tests/AiStyleApp.Tests.csproj -c Release`
+   - `cd ai-style-app/frontend && npm test && npm run build`
+2. Run backend + worker with feature flags off, then on for target stage.
+3. Submit at least two different portrait images and compare telemetry in UI.
+4. Confirm recommendation ranking shifts when telemetry differs.

@@ -137,8 +137,26 @@ export interface RecommendationJobStatusResponse {
   qualityGate: RecommendationQualityGate
   analysisSummary: RecommendationAnalysisSummary
   recommendations: RecommendationItem[]
+  debugTelemetry: RecommendationDebugTelemetry | null
   errorCode: string | null
   errorMessage: string | null
+}
+
+export interface RecommendationStageTelemetry {
+  stage: string
+  model: string
+  modelVersion: string
+  durationMs: number
+  metrics: Record<string, number> | null
+  notes: string | null
+}
+
+export interface RecommendationDebugTelemetry {
+  source: string | null
+  schemaVersion: number | null
+  imageWidth: number | null
+  imageHeight: number | null
+  stages: RecommendationStageTelemetry[]
 }
 
 export interface SubmitRecommendationFeedbackRequest {

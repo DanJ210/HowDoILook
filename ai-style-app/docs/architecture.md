@@ -7,7 +7,7 @@ graph TD
     User["Browser (Vue 3 + Vite + Tailwind)"]
     API["Backend — ASP.NET Core Web API"]
     Queue["Azure Storage Queue (style-jobs)"]
-    Worker["Worker — .NET 8 BackgroundService"]
+    Worker["Worker — .NET 10 BackgroundService"]
     DB["PostgreSQL (style_items, style_jobs)"]
     Replicate["Replicate AI API"]
     Webhook["POST /api/webhooks/replicate"]
@@ -151,12 +151,13 @@ This appendix describes the current baseline architecture for face analysis and 
 
 - **Worker**
   - Face-analysis handler routing by `jobType` is implemented.
-  - Initial baseline validates image reachability and writes deterministic placeholder analysis/recommendations.
-  - Structured failure codes are partially implemented (`ANALYSIS_IMAGE_UNREACHABLE`, `ANALYSIS_INTERNAL_ERROR`).
+  - Baseline validates image reachability, runs staged heuristic analysis, and writes ranked recommendations.
+  - Stage telemetry (model/version/duration/metrics) is persisted in feature vectors and exposed by API.
+  - Structured failure codes include quality and input validation paths.
 
 - **Frontend**
-  - Backend contracts for request, polling, and feedback are available.
-  - Frontend page/store integration is still pending.
+  - Recommendations page and store integration are implemented.
+  - Polling, failure messaging, recommendation rendering, feedback submission, and telemetry display are implemented.
 
 ### Data Model Additions
 
@@ -234,7 +235,7 @@ Migration notes:
 3. Backend enqueues queue message (`jobType = FaceAnalysis`, `schemaVersion = 2`).
 4. Worker dequeues message and marks analysis job `Processing`.
 5. Worker validates image URL format/reachability.
-6. Worker writes placeholder feature vector, confidence, and recommendation payload.
+6. Worker runs quality + landmark + segmentation heuristic stages and writes feature vector + stage telemetry.
 7. Worker persists recommendation payload and marks analysis job terminal status.
 8. Frontend polls status endpoint and renders either recommendations or retry guidance.
 9. Frontend submits optional feedback, backend persists to `recommendation_feedback`.

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Diagnostics;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -39,6 +40,14 @@ public record LandmarkFeatures(
 public record SegmentationFeatures(
     double HairDensityEstimate,
     double BeardDensityEstimate);
+
+public record StageTelemetry(
+    string Stage,
+    string Model,
+    string ModelVersion,
+    double DurationMs,
+    IReadOnlyDictionary<string, double>? Metrics = null,
+    string? Notes = null);
 
 public interface IFaceAnalysisPipeline
 {
@@ -144,20 +153,69 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
 
         var preferences = ParsePreferences(preferencesJson);
 
+        var stageTelemetry = new List<StageTelemetry>();
+
+        var qualityStopwatch = Stopwatch.StartNew();
         var quality = _qualityStage.Evaluate(image);
+        qualityStopwatch.Stop();
+        stageTelemetry.Add(new StageTelemetry(
+            Stage: "quality-gate",
+            Model: "heuristic-quality-gate",
+            ModelVersion: "v1",
+            DurationMs: qualityStopwatch.Elapsed.TotalMilliseconds,
+            Metrics: new Dictionary<string, double>
+            {
+                ["brightness"] = quality.Brightness,
+                ["contrast"] = quality.Contrast,
+                ["blurScore"] = quality.BlurScore,
+                ["centerOffset"] = quality.CenterOffset
+            }));
+
         if (!quality.Passed)
         {
             throw new FaceAnalysisException(quality.FailureCode!, quality.Message!);
         }
 
+        var landmarkStopwatch = Stopwatch.StartNew();
         var landmarks = _landmarkStage.Extract(image);
+        landmarkStopwatch.Stop();
+        stageTelemetry.Add(new StageTelemetry(
+            Stage: "landmarks",
+            Model: "heuristic-landmarks",
+            ModelVersion: "v1",
+            DurationMs: landmarkStopwatch.Elapsed.TotalMilliseconds,
+            Metrics: new Dictionary<string, double>
+            {
+                ["jawWidthRatio"] = landmarks.JawWidthRatio,
+                ["foreheadHeightRatio"] = landmarks.ForeheadHeightRatio,
+                ["faceElongation"] = landmarks.FaceElongation
+            }));
+
+        var segmentationStopwatch = Stopwatch.StartNew();
         var segmentation = _segmentationStage.Extract(image, gender);
+        segmentationStopwatch.Stop();
+        stageTelemetry.Add(new StageTelemetry(
+            Stage: "segmentation",
+            Model: "heuristic-segmentation",
+            ModelVersion: "v1",
+            DurationMs: segmentationStopwatch.Elapsed.TotalMilliseconds,
+            Metrics: new Dictionary<string, double>
+            {
+                ["hairDensityEstimate"] = segmentation.HairDensityEstimate,
+                ["beardDensityEstimate"] = segmentation.BeardDensityEstimate
+            }));
 
         var confidence = ComputeConfidence(quality, landmarks, segmentation);
         var featureVector = new
         {
             source = "worker-v1-staged-analysis",
             schemaVersion = 2,
+            imageInfo = new
+            {
+                width = image.Width,
+                height = image.Height
+            },
+            stageTelemetry,
             quality,
             landmarks,
             segmentation
