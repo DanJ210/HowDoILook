@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Diagnostics;
+using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace AiStyleApp.Worker.Services;
 
@@ -35,7 +37,10 @@ public record QualityMetrics(
 public record LandmarkFeatures(
     double JawWidthRatio,
     double ForeheadHeightRatio,
-    double FaceElongation);
+    double FaceElongation,
+    double LandmarkConfidence = 1.0,
+    double Yaw = 0.0,
+    double Pitch = 0.0);
 
 public record SegmentationFeatures(
     double HairDensityEstimate,
@@ -52,7 +57,10 @@ public record FaceDetectionResult(
     FaceBoundingBox? PrimaryFace,
     double PrimaryFaceConfidence,
     string? FailureCode,
-    string? FailureMessage);
+    string? FailureMessage,
+    string Model = "heuristic-face-detector",
+    string ModelVersion = "v1",
+    string? Notes = null);
 
 public record StageTelemetry(
     string Stage,
@@ -128,7 +136,10 @@ public class HeuristicFaceDetectorStage : IFaceDetectorStage
             PrimaryFace: new FaceBoundingBox(boxX, boxY, boxWidth, boxHeight),
             PrimaryFaceConfidence: 1.0,
             FailureCode: null,
-            FailureMessage: null);
+            FailureMessage: null,
+            Model: "heuristic-face-detector",
+            ModelVersion: "v1",
+            Notes: "assumed-centered-face");
     }
 }
 
@@ -183,25 +194,40 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
     private const double MaxCenterOffset = 0.22;
 
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IFaceDetectorStage _detectorStage;
     private readonly IFaceQualityStage _qualityStage;
+    private readonly IFaceLandmarkModelStage _landmarkModelStage;
     private readonly IFaceLandmarkStage _landmarkStage;
+    private readonly IFaceRegionEstimationStage _regionEstimationStage;
     private readonly IFaceSegmentationStage _segmentationStage;
     private readonly IRecommendationStage _recommendationStage;
+    private readonly WorkerFeatureFlags _features;
+    private readonly FaceAnalysisThresholds _thresholds;
     private readonly ILogger<FaceAnalysisPipeline> _logger;
 
     public FaceAnalysisPipeline(
         IHttpClientFactory httpClientFactory,
+        IFaceDetectorStage detectorStage,
         IFaceQualityStage qualityStage,
+        IFaceLandmarkModelStage landmarkModelStage,
         IFaceLandmarkStage landmarkStage,
+        IFaceRegionEstimationStage regionEstimationStage,
         IFaceSegmentationStage segmentationStage,
         IRecommendationStage recommendationStage,
+        IOptions<WorkerFeatureFlags> features,
+        IOptions<FaceAnalysisThresholds> thresholds,
         ILogger<FaceAnalysisPipeline> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _detectorStage = detectorStage;
         _qualityStage = qualityStage;
+        _landmarkModelStage = landmarkModelStage;
         _landmarkStage = landmarkStage;
+        _regionEstimationStage = regionEstimationStage;
         _segmentationStage = segmentationStage;
         _recommendationStage = recommendationStage;
+        _features = features.Value;
+        _thresholds = thresholds.Value;
         _logger = logger;
     }
 
@@ -214,8 +240,53 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
 
         var stageTelemetry = new List<StageTelemetry>();
 
+        var detectionStopwatch = Stopwatch.StartNew();
+        var detection = _detectorStage.Detect(image);
+        detectionStopwatch.Stop();
+        stageTelemetry.Add(new StageTelemetry(
+            Stage: "face-detection",
+            Model: detection.Model,
+            ModelVersion: detection.ModelVersion,
+            DurationMs: detectionStopwatch.Elapsed.TotalMilliseconds,
+            Metrics: new Dictionary<string, double>
+            {
+                ["faceCount"] = detection.FaceCount,
+                ["primaryFaceConfidence"] = detection.PrimaryFaceConfidence,
+                ["primaryFaceWidth"] = detection.PrimaryFace?.Width ?? 0,
+                ["primaryFaceHeight"] = detection.PrimaryFace?.Height ?? 0
+            },
+            Notes: detection.Notes));
+
+        if (!string.IsNullOrWhiteSpace(detection.FailureCode) || !string.IsNullOrWhiteSpace(detection.FailureMessage))
+        {
+            throw new FaceAnalysisException(
+                detection.FailureCode ?? "ANALYSIS_NO_FACE_DETECTED",
+                detection.FailureMessage ?? "No face was detected in the image.");
+        }
+
+        if (detection.FaceCount == 0 || detection.PrimaryFace is null)
+        {
+            throw new FaceAnalysisException("ANALYSIS_NO_FACE_DETECTED", "No face was detected in the image.");
+        }
+
+        if (detection.FaceCount > 1)
+        {
+            throw new FaceAnalysisException(
+                "ANALYSIS_MULTI_FACE_NOT_SUPPORTED",
+                "Multiple faces were detected. Please upload a photo with one visible face.");
+        }
+
+        if (detection.PrimaryFaceConfidence < _thresholds.MinFaceDetectionConfidence)
+        {
+            throw new FaceAnalysisException(
+                "ANALYSIS_NO_FACE_DETECTED",
+                "Face detection confidence is too low. Try a clearer, front-facing photo.");
+        }
+
+        using var faceRegionForAnalysis = CropToFaceRegion(image, detection.PrimaryFace, paddingFactor: 0.20);
+
         var qualityStopwatch = Stopwatch.StartNew();
-        var quality = _qualityStage.Evaluate(image);
+        var quality = _qualityStage.Evaluate(faceRegionForAnalysis);
         qualityStopwatch.Stop();
         stageTelemetry.Add(new StageTelemetry(
             Stage: "quality-gate",
@@ -236,26 +307,40 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         }
 
         var landmarkStopwatch = Stopwatch.StartNew();
-        var landmarks = _landmarkStage.Extract(image);
+        var landmarks = _features.OnnxLandmarks
+            ? _landmarkModelStage.Extract(faceRegionForAnalysis, detection.PrimaryFace)
+            : _landmarkStage.Extract(faceRegionForAnalysis);
         landmarkStopwatch.Stop();
         stageTelemetry.Add(new StageTelemetry(
             Stage: "landmarks",
-            Model: "heuristic-landmarks",
+            Model: _features.OnnxLandmarks ? "onnx-landmarks" : "heuristic-landmarks",
             ModelVersion: "v1",
             DurationMs: landmarkStopwatch.Elapsed.TotalMilliseconds,
             Metrics: new Dictionary<string, double>
             {
+                ["landmarkConfidence"] = landmarks.LandmarkConfidence,
+                ["yaw"] = landmarks.Yaw,
+                ["pitch"] = landmarks.Pitch,
                 ["jawWidthRatio"] = landmarks.JawWidthRatio,
                 ["foreheadHeightRatio"] = landmarks.ForeheadHeightRatio,
                 ["faceElongation"] = landmarks.FaceElongation
             }));
 
+        if (_features.OnnxLandmarks && landmarks.LandmarkConfidence < _thresholds.MinLandmarkConfidence)
+        {
+            throw new FaceAnalysisException(
+                "ANALYSIS_LANDMARK_CONFIDENCE_TOO_LOW",
+                "Landmark confidence is too low. Try a clearer, front-facing photo.");
+        }
+
         var segmentationStopwatch = Stopwatch.StartNew();
-        var segmentation = _segmentationStage.Extract(image, gender);
+        var segmentation = _features.OnnxRegionEstimation
+            ? _regionEstimationStage.Extract(image, detection.PrimaryFace, gender)
+            : _segmentationStage.Extract(image, gender);
         segmentationStopwatch.Stop();
         stageTelemetry.Add(new StageTelemetry(
             Stage: "segmentation",
-            Model: "heuristic-segmentation",
+            Model: _features.OnnxRegionEstimation ? "onnx-region-estimation" : "heuristic-segmentation",
             ModelVersion: "v1",
             DurationMs: segmentationStopwatch.Elapsed.TotalMilliseconds,
             Metrics: new Dictionary<string, double>
@@ -273,6 +358,20 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             {
                 width = image.Width,
                 height = image.Height
+            },
+            faceDetection = new
+            {
+                faceCount = detection.FaceCount,
+                primaryFace = detection.PrimaryFace is null
+                    ? null
+                    : new
+                    {
+                        x = detection.PrimaryFace.X,
+                        y = detection.PrimaryFace.Y,
+                        width = detection.PrimaryFace.Width,
+                        height = detection.PrimaryFace.Height,
+                        confidence = detection.PrimaryFaceConfidence
+                    }
             },
             stageTelemetry,
             quality,
@@ -651,6 +750,22 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
     private static double Luminance(Rgba32 pixel)
     {
         return (0.2126 * pixel.R + 0.7152 * pixel.G + 0.0722 * pixel.B) / 255.0;
+    }
+
+    private static Image<Rgba32> CropToFaceRegion(Image<Rgba32> image, FaceBoundingBox face, double paddingFactor)
+    {
+        var padX = (int)Math.Round(face.Width * paddingFactor);
+        var padY = (int)Math.Round(face.Height * paddingFactor);
+
+        var x = Math.Max(0, face.X - padX);
+        var y = Math.Max(0, face.Y - padY);
+        var right = Math.Min(image.Width, face.X + face.Width + padX);
+        var bottom = Math.Min(image.Height, face.Y + face.Height + padY);
+
+        var width = Math.Max(1, right - x);
+        var height = Math.Max(1, bottom - y);
+
+        return image.Clone(ctx => ctx.Crop(new Rectangle(x, y, width, height)));
     }
 
     private static double Clamp01(double value) => Math.Clamp(value, 0.0, 1.0);

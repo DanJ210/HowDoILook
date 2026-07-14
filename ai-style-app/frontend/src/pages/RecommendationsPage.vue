@@ -323,6 +323,7 @@ onUnmounted(() => {
                   <p class="text-xs text-slate-300">{{ stage.durationMs.toFixed(2) }} ms</p>
                 </div>
                 <p class="mt-1 text-xs text-slate-400">{{ stage.model }} ({{ stage.modelVersion }})</p>
+                <p v-if="stage.notes" class="mt-1 break-all text-xs text-amber-200">{{ stage.notes }}</p>
                 <div v-if="stage.metrics" class="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-300 sm:grid-cols-2">
                   <div v-for="(metricValue, metricName) in stage.metrics" :key="metricName" class="flex items-center justify-between gap-2 rounded bg-white/5 px-2 py-1">
                     <span>{{ metricName }}</span>
