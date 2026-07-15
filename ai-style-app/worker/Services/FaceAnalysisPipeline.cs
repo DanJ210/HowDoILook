@@ -107,7 +107,7 @@ public interface IFaceRegionEstimationStage
 
 public interface IRecommendationStage
 {
-    IReadOnlyList<object> Rank(
+    IReadOnlyList<RecommendationCandidate> Rank(
         LandmarkFeatures landmarks,
         SegmentationFeatures segmentation,
         QualityMetrics quality,
@@ -168,14 +168,22 @@ public class HeuristicFaceRegionEstimationStage : IFaceRegionEstimationStage
 
 public class RuleBasedRecommendationStage : IRecommendationStage
 {
-    public IReadOnlyList<object> Rank(
+    public IReadOnlyList<RecommendationCandidate> Rank(
         LandmarkFeatures landmarks,
         SegmentationFeatures segmentation,
         QualityMetrics quality,
         double confidence,
     string? gender,
     bool allowBeardSuggestions)
-    => FaceAnalysisPipeline.BuildRecommendations(landmarks, segmentation, quality, confidence, gender, allowBeardSuggestions);
+    => StyleRecommendationMapper.Rank(new StyleRankingInputs(
+        JawWidthRatio: landmarks.JawWidthRatio,
+        ForeheadHeightRatio: landmarks.ForeheadHeightRatio,
+        FaceElongation: landmarks.FaceElongation,
+        HairDensityEstimate: segmentation.HairDensityEstimate,
+        BeardDensityEstimate: segmentation.BeardDensityEstimate,
+        AnalysisConfidence: confidence,
+        Gender: gender,
+        AllowBeardSuggestions: allowBeardSuggestions));
 }
 
 public class FaceAnalysisPipeline : IFaceAnalysisPipeline
@@ -317,6 +325,10 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             ? _landmarkModelStage.Extract(faceRegionForLandmarks, detection.PrimaryFace)
             : _landmarkStage.Extract(faceRegionForLandmarks);
         landmarkStopwatch.Stop();
+        var faceShape = FaceShapeClassifier.Classify(
+            landmarks.JawWidthRatio,
+            landmarks.ForeheadHeightRatio,
+            landmarks.FaceElongation);
         stageTelemetry.Add(new StageTelemetry(
             Stage: "landmarks",
             Model: _features.OnnxLandmarks ? "onnx-landmarks" : "heuristic-landmarks",
@@ -330,7 +342,8 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
                 ["jawWidthRatio"] = landmarks.JawWidthRatio,
                 ["foreheadHeightRatio"] = landmarks.ForeheadHeightRatio,
                 ["faceElongation"] = landmarks.FaceElongation
-            }));
+            },
+            Notes: faceShape.ToString().ToLowerInvariant()));
 
         if (_features.OnnxLandmarks && landmarks.LandmarkConfidence < _thresholds.MinLandmarkConfidence)
         {
@@ -379,6 +392,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
                         confidence = detection.PrimaryFaceConfidence
                     }
             },
+            faceShape = faceShape.ToString(),
             stageTelemetry,
             quality,
             landmarks,
@@ -570,96 +584,6 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             + (0.05 * hair);
 
         return Math.Round(Clamp01(confidence), 3);
-    }
-
-    internal static IReadOnlyList<object> BuildRecommendations(
-        LandmarkFeatures landmarks,
-        SegmentationFeatures segmentation,
-        QualityMetrics quality,
-        double confidence,
-        string? gender,
-        bool allowBeardSuggestions)
-    {
-        var jaw = landmarks.JawWidthRatio;
-        var forehead = landmarks.ForeheadHeightRatio;
-        var elongation = landmarks.FaceElongation;
-        var hairDensity = segmentation.HairDensityEstimate;
-        var beardDensity = segmentation.BeardDensityEstimate;
-
-        var candidates = new List<(string id, string name, double score, List<string> reasons, List<string> constraints)>
-        {
-            (
-                "textured-crop",
-                "Textured Crop",
-                ScoreBase(0.62, hairDensity, jaw, elongation, confidence),
-                new List<string>
-                {
-                    "Adds controlled texture without excess volume",
-                    "Works well when jaw definition is moderate to strong"
-                },
-                new List<string> { "Best maintained with trims every 3-4 weeks" }
-            ),
-            (
-                "classic-side-part",
-                "Classic Side Part",
-                ScoreBase(0.58, hairDensity, 1.0 - forehead, elongation, confidence),
-                new List<string>
-                {
-                    "Balanced shape for most face proportions",
-                    "Professional and versatile styling profile"
-                },
-                new List<string> { "Needs light product for hold and direction" }
-            ),
-            (
-                "short-quiff",
-                "Short Quiff",
-                ScoreBase(0.55, hairDensity, forehead, 1.0 - elongation, confidence),
-                new List<string>
-                {
-                    "Adds vertical emphasis to balance wider lower face",
-                    "Keeps sides controlled while retaining top movement"
-                },
-                new List<string> { "Requires blow-dry or styling routine for shape" }
-            )
-        };
-
-        if (allowBeardSuggestions
-            && string.Equals(gender, "male", StringComparison.OrdinalIgnoreCase)
-            && beardDensity > 0.25)
-        {
-            candidates.Add(
-                (
-                    "short-boxed-beard",
-                    "Short Boxed Beard Pairing",
-                    ScoreBase(0.50, beardDensity, jaw, 1.0 - forehead, confidence),
-                    new List<string>
-                    {
-                        "Facial hair density supports a clean short beard contour",
-                        "Can reinforce jaw framing when paired with short sides"
-                    },
-                    new List<string> { "Optional recommendation and can be skipped" }
-                ));
-        }
-
-        return candidates
-            .OrderByDescending(c => c.score)
-            .Take(5)
-.Select(c => new
-{
-    StyleId = c.id,
-    StyleName = c.name,
-    Score = Math.Round(c.score, 3),
-    Reasons = c.reasons,
-    Constraints = c.constraints
-})
-            .Cast<object>()
-            .ToList();
-    }
-
-    private static double ScoreBase(double baseline, params double[] factors)
-    {
-        var adjustment = factors.Sum(f => (f - 0.5) * 0.15);
-        return Clamp01(baseline + adjustment);
     }
 
     private static double SumHorizontalEdgeBand(Image<Rgba32> image, double yStartFactor, double yEndFactor)

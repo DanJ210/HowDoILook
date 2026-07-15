@@ -254,7 +254,7 @@ Current implementation note:
     "message": "string | null"
   },
   "analysisSummary": {
-    "faceShapeDistribution": "object | null",
+    "faceShapeDistribution": null,
     "confidence": 0.87
   },
   "recommendations": [
@@ -288,7 +288,7 @@ Current implementation note:
           "blurScore": 0.22,
           "centerOffset": 0.09
         },
-        "notes": null
+        "notes": "square"
       }
     ]
   },
@@ -300,6 +300,9 @@ Current implementation note:
 Current implementation note:
 - The worker emits `schemaVersion: 2` queue messages for both style generation and recommendations.
 - Recommendations jobs use the same `style-jobs` transport and are handled by the worker's face-analysis path.
+- Face shape is persisted at `face_analysis_jobs.feature_vector_json.faceShape` (for example, `"Square"`).
+- API consumers should read face shape from `debugTelemetry.stages[]` where `stage = "landmarks"`; `notes` carries the lowercase shape label (for example, `"square"`).
+- `analysisSummary.faceShapeDistribution` is currently a placeholder and is returned as `null`.
 
 ### SubmitRecommendationFeedbackRequest
 
