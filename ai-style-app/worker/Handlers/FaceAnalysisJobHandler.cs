@@ -18,17 +18,20 @@ public class FaceAnalysisJobHandler : IMessageHandler
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IFaceAnalysisPipeline _pipeline;
     private readonly ILogger<FaceAnalysisJobHandler> _logger;
+    private readonly IMetricsLogger _metricsLogger;
 
     public FaceAnalysisJobHandler(
         AppDbContext db,
         IHttpClientFactory httpClientFactory,
         IFaceAnalysisPipeline pipeline,
-        ILogger<FaceAnalysisJobHandler> logger)
+        ILogger<FaceAnalysisJobHandler> logger,
+        IMetricsLogger metricsLogger)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
         _pipeline = pipeline;
         _logger = logger;
+        _metricsLogger = metricsLogger;
     }
 
     public async Task HandleAsync(string messageBody, CancellationToken cancellationToken)
@@ -112,6 +115,20 @@ if (!Uri.TryCreate(analysisJob.ImageUrl, UriKind.Absolute, out var uri) ||
             analysisJob.CompletedAtUtc = DateTimeOffset.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
 
+            // Log metrics for monitoring and analysis
+            var duration = (analysisJob.CompletedAtUtc - analysisJob.StartedAtUtc) ?? TimeSpan.Zero;
+            var faceShape = ExtractFaceShape(analysisJob.FeatureVectorJson);
+            var recommendationCount = CountRecommendations(analysisJob.RecommendationsJson);
+            _metricsLogger.LogAnalysisJobCompleted(
+                analysisJob.Id,
+                analysisJob.UserId,
+                analysisJob.QualityPassed ?? false,
+                analysisJob.QualityFailureCode,
+                analysisJob.AnalysisConfidence,
+                faceShape,
+                recommendationCount,
+                duration);
+
             _logger.LogInformation("Face-analysis job {JobId} completed with model-stage pipeline output.", analysisJob.Id);
         }
 catch (FaceAnalysisException ex)
@@ -167,6 +184,59 @@ catch (FaceAnalysisException ex)
             : errorMessage[..1997] + "...";
         analysisJob.CompletedAtUtc = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
+
+        // Log metrics for monitoring and analysis
+        var duration = (analysisJob.CompletedAtUtc - analysisJob.StartedAtUtc) ?? TimeSpan.Zero;
+        _metricsLogger.LogAnalysisJobFailed(
+            analysisJob.Id,
+            analysisJob.UserId,
+            errorCode,
+            errorMessage,
+            duration);
     }
 
+    private static string? ExtractFaceShape(string? featureVectorJson)
+    {
+        if (string.IsNullOrEmpty(featureVectorJson))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            // Only try to get property if the root element is an object
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("faceShape", out var shapeElement))
+                return shapeElement.GetString();
+        }
+        catch (JsonException)
+        {
+            // Fall through to return null
+        }
+
+        return null;
+    }
+
+    private static int CountRecommendations(string? recommendationsJson)
+    {
+        if (string.IsNullOrEmpty(recommendationsJson))
+            return 0;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(recommendationsJson);
+            // Only try to get property if the root element is an object
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("topStyles", out var stylesElement) &&
+                stylesElement.ValueKind == JsonValueKind.Array)
+            {
+                return stylesElement.GetArrayLength();
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through to return 0
+        }
+
+        return 0;
+    }
 }

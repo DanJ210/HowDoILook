@@ -1,5 +1,6 @@
 using AiStyleApp.Api.Infrastructure;
 using AiStyleApp.Api.Services;
+using AiStyleApp.Backend.Services;
 using AiStyleApp.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -59,12 +60,14 @@ builder.Services.Configure<BlobStorageOptions>(
 builder.Services.AddScoped<IStyleService, StyleService>();
 builder.Services.AddScoped<IJobService, JobService>();
 builder.Services.AddScoped<IRecommendationService, RecommendationService>();
+builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IReplicateWebhookProcessor, ReplicateWebhookProcessor>();
 builder.Services.AddScoped<IQueuePublisher, QueuePublisher>();
 builder.Services.AddScoped<IBlobStorageService, BlobStorageService>();
 builder.Services.AddScoped<IGeneratedImageArchiver, GeneratedImageArchiver>();
 builder.Services.AddHttpClient<GeneratedImageArchiver>();
 builder.Services.AddSingleton<IReplicateSignatureVerifier, ReplicateSignatureVerifier>();
+builder.Services.AddSingleton<IMetricsLogger, MetricsLogger>();
 
 var app = builder.Build();
 

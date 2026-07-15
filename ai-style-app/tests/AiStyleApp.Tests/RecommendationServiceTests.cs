@@ -26,7 +26,7 @@ public class RecommendationServiceTests
         db.FaceAnalysisJobs.Add(analysisJob);
         await db.SaveChangesAsync();
 
-        var service = new RecommendationService(db, new StubQueuePublisher());
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger());
 
         var result = await service.GetStatusAsync(analysisJob.Id, "user-1");
 
@@ -48,5 +48,12 @@ public class RecommendationServiceTests
     {
         public Task PublishAsync<T>(T message, CancellationToken ct = default)
             => Task.CompletedTask;
+    }
+
+    private sealed class StubMetricsLogger : IMetricsLogger
+    {
+        public void LogAnalysisJobCompleted(Guid jobId, string userId, bool qualityPassed, string? qualityFailureCode, double? analysisConfidence, string? faceShape, int recommendationCount, TimeSpan duration) { }
+        public void LogAnalysisJobFailed(Guid jobId, string userId, string errorCode, string errorMessage, TimeSpan duration) { }
+        public void LogRecommendationFeedbackSubmitted(Guid jobId, string userId, string? selectedStyleId, int? rating, string? tags, int? recommendationRank) { }
     }
 }
