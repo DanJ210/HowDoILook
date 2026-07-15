@@ -25,4 +25,11 @@
     <ProjectReference Include="..\data\AiStyleApp.Data.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Services\Onnx\Models\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
