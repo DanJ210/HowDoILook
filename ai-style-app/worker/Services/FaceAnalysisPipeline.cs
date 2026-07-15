@@ -325,6 +325,10 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             ? _landmarkModelStage.Extract(faceRegionForLandmarks, detection.PrimaryFace)
             : _landmarkStage.Extract(faceRegionForLandmarks);
         landmarkStopwatch.Stop();
+        var faceShape = FaceShapeClassifier.Classify(
+            landmarks.JawWidthRatio,
+            landmarks.ForeheadHeightRatio,
+            landmarks.FaceElongation);
         stageTelemetry.Add(new StageTelemetry(
             Stage: "landmarks",
             Model: _features.OnnxLandmarks ? "onnx-landmarks" : "heuristic-landmarks",
@@ -338,7 +342,8 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
                 ["jawWidthRatio"] = landmarks.JawWidthRatio,
                 ["foreheadHeightRatio"] = landmarks.ForeheadHeightRatio,
                 ["faceElongation"] = landmarks.FaceElongation
-            }));
+            },
+            Notes: faceShape.ToString().ToLowerInvariant()));
 
         if (_features.OnnxLandmarks && landmarks.LandmarkConfidence < _thresholds.MinLandmarkConfidence)
         {
@@ -387,6 +392,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
                         confidence = detection.PrimaryFaceConfidence
                     }
             },
+            faceShape = faceShape.ToString(),
             stageTelemetry,
             quality,
             landmarks,

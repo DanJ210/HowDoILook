@@ -31,7 +31,13 @@ public record StyleEntry(
     IReadOnlyList<string> Reasons,
     IReadOnlyList<string> Constraints,
     bool RequiresBeard = false,
-    double BeardDensityThreshold = 0.0
+    double BeardDensityThreshold = 0.0,
+    /// <summary>
+    /// Per-shape score adjustment added on top of the feature-weight score.
+    /// Positive values favour this style for the given shape; negative values discourage it.
+    /// Shapes absent from this dict default to 0.0 (no adjustment).
+    /// </summary>
+    IReadOnlyDictionary<FaceShape, double>? ShapePriors = null
 );
 
 /// <summary>
@@ -88,7 +94,16 @@ public static class StyleRecommendationMapper
                 "Adds controlled texture without excess volume",
                 "Works well when jaw definition is moderate to strong"
             },
-            Constraints: new[] { "Best maintained with trims every 3-4 weeks" }),
+            Constraints: new[] { "Best maintained with trims every 3-4 weeks" },
+            ShapePriors: new Dictionary<FaceShape, double>
+            {
+                [FaceShape.Oval]    =  0.05,  // universally flattering
+                [FaceShape.Square]  =  0.05,  // texture softens angular jaw
+                [FaceShape.Heart]   =  0.05,  // works with tapered proportions
+                [FaceShape.Diamond] =  0.08,  // adds crown dimension
+                [FaceShape.Oblong]  =  0.0,
+                [FaceShape.Round]   =  0.0
+            }),
 
         new StyleEntry(
             StyleId: "classic-side-part",
@@ -106,7 +121,16 @@ public static class StyleRecommendationMapper
                 "Balanced shape for most face proportions",
                 "Professional and versatile styling profile"
             },
-            Constraints: new[] { "Needs light product for hold and direction" }),
+            Constraints: new[] { "Needs light product for hold and direction" },
+            ShapePriors: new Dictionary<FaceShape, double>
+            {
+                [FaceShape.Oval]    =  0.05,
+                [FaceShape.Heart]   =  0.08,  // asymmetric part breaks up wide forehead
+                [FaceShape.Oblong]  =  0.08,  // horizontal emphasis adds width
+                [FaceShape.Round]   =  0.03,  // asymmetry helps
+                [FaceShape.Square]  = -0.05,  // hard part emphasises angular jaw
+                [FaceShape.Diamond] =  0.03
+            }),
 
         new StyleEntry(
             StyleId: "short-quiff",
@@ -124,7 +148,16 @@ public static class StyleRecommendationMapper
                 "Adds vertical emphasis to balance wider lower face",
                 "Keeps sides controlled while retaining top movement"
             },
-            Constraints: new[] { "Requires blow-dry or styling routine for shape" }),
+            Constraints: new[] { "Requires blow-dry or styling routine for shape" },
+            ShapePriors: new Dictionary<FaceShape, double>
+            {
+                [FaceShape.Round]   =  0.10,  // height counters width — strong fit
+                [FaceShape.Oval]    =  0.03,
+                [FaceShape.Square]  =  0.0,
+                [FaceShape.Heart]   = -0.05,  // top volume emphasises already-wide forehead
+                [FaceShape.Diamond] = -0.03,
+                [FaceShape.Oblong]  = -0.08   // adds height to an already-long face
+            }),
 
         new StyleEntry(
             StyleId: "short-boxed-beard",
@@ -144,7 +177,16 @@ public static class StyleRecommendationMapper
             },
             Constraints: new[] { "Optional recommendation and can be skipped" },
             RequiresBeard: true,
-            BeardDensityThreshold: 0.25)
+            BeardDensityThreshold: 0.25,
+            ShapePriors: new Dictionary<FaceShape, double>
+            {
+                [FaceShape.Heart]   =  0.08,  // adds jaw width to balance forehead
+                [FaceShape.Diamond] =  0.08,  // adds jaw definition
+                [FaceShape.Round]   =  0.05,  // structure defines jawline
+                [FaceShape.Oval]    =  0.03,
+                [FaceShape.Oblong]  =  0.03,
+                [FaceShape.Square]  = -0.05   // over-emphasises angular jaw
+            })
     };
 
     /// <summary>
@@ -152,9 +194,14 @@ public static class StyleRecommendationMapper
     /// </summary>
     public static IReadOnlyList<RecommendationCandidate> Rank(StyleRankingInputs inputs)
     {
+        var faceShape = FaceShapeClassifier.Classify(
+            inputs.JawWidthRatio,
+            inputs.ForeheadHeightRatio,
+            inputs.FaceElongation);
+
         return Catalog
             .Where(entry => IsEligible(entry, inputs))
-            .Select(entry => ComputeScore(entry, inputs))
+            .Select(entry => ComputeScore(entry, inputs, faceShape))
             .OrderByDescending(c => c.Score)
             .Take(5)
             .ToList();
@@ -172,10 +219,13 @@ public static class StyleRecommendationMapper
             && inputs.BeardDensityEstimate > entry.BeardDensityThreshold;
     }
 
-    private static RecommendationCandidate ComputeScore(StyleEntry entry, StyleRankingInputs inputs)
+    private static RecommendationCandidate ComputeScore(StyleEntry entry, StyleRankingInputs inputs, FaceShape faceShape)
     {
-        var adjustment = entry.FeatureWeights.Sum(w => (GetFeatureValue(w, inputs) - 0.5) * 0.15);
-        var score = Math.Round(Math.Clamp(entry.Baseline + adjustment, 0.0, 1.0), 3);
+        var featureAdjustment = entry.FeatureWeights.Sum(w => (GetFeatureValue(w, inputs) - 0.5) * 0.15);
+        var shapePrior = entry.ShapePriors is not null && entry.ShapePriors.TryGetValue(faceShape, out var prior)
+            ? prior
+            : 0.0;
+        var score = Math.Round(Math.Clamp(entry.Baseline + featureAdjustment + shapePrior, 0.0, 1.0), 3);
 
         return new RecommendationCandidate(
             StyleId: entry.StyleId,
