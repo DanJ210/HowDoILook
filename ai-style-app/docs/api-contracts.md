@@ -339,6 +339,55 @@ The webhook verifies Replicate signature headers (`webhook-id`, `webhook-timesta
 }
 ```
 
+## Internal Decision Contract
+
+This internal payload defines the handoff from recommendations analysis to style generation request composition. It is not a public HTTP contract.
+
+### RecommendationToGenerationDecision (Internal)
+
+```json
+{
+  "contractVersion": 1,
+  "analysisJobId": "uuid",
+  "userId": "string",
+  "sourceImageUrl": "https://...",
+  "selectedRecommendation": {
+    "styleId": "string",
+    "styleName": "string",
+    "score": 0.92,
+    "reasons": ["string"]
+  },
+  "decision": {
+    "haircut": "string",
+    "hairColor": "string",
+    "beardStyle": "string",
+    "beardColor": "string",
+    "pipelineMode": "HairOnly | BeardOnly | HairThenBeard"
+  },
+  "guardrails": {
+    "gender": "none | male | female",
+    "allowBeardSuggestions": true,
+    "qualityPassed": true,
+    "analysisConfidence": 0.87,
+    "minimumConfidenceRequired": 0.7
+  },
+  "telemetrySnapshot": {
+    "source": "worker-v1-staged-analysis",
+    "schemaVersion": 2,
+    "landmarkConfidence": 0.78,
+    "yaw": 0.05,
+    "pitch": -0.02
+  }
+}
+```
+
+Rules:
+
+- `analysisJobId` must correspond to a succeeded recommendations job owned by `userId`.
+- `decision.haircut` is required.
+- Beard fields must remain `No change` unless `gender = male` and `allowBeardSuggestions = true`.
+- If quality/confidence guardrails fail, style-generation enqueue should be blocked with an actionable error response.
+
 ## Queue Message Contract
 
 Messages enqueued to `style-jobs` are currently emitted in schema v2 for style generation and recommendations.

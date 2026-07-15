@@ -527,6 +527,58 @@ Rules:
 3. Telemetry influences what style to generate, not how Replicate is called.
 4. Hair and beard stages remain optional and compatible with current two-stage pipeline.
 
+### 21.1 Recommendation-to-Generation Decision Contract (Internal)
+
+Use a single internal payload for the handoff between recommendation output and style generation request building.
+
+```json
+{
+  "contractVersion": 1,
+  "analysisJobId": "uuid",
+  "userId": "string",
+  "sourceImageUrl": "https://...",
+  "selectedRecommendation": {
+    "styleId": "textured-crop",
+    "styleName": "Textured Crop",
+    "score": 0.86,
+    "reasons": [
+      "Balances jaw width",
+      "Fits medium maintenance preference"
+    ]
+  },
+  "decision": {
+    "haircut": "Textured Crop",
+    "hairColor": "No change",
+    "beardStyle": "No change",
+    "beardColor": "No change",
+    "pipelineMode": "HairOnly"
+  },
+  "guardrails": {
+    "gender": "male | female | none",
+    "allowBeardSuggestions": true,
+    "qualityPassed": true,
+    "analysisConfidence": 0.82,
+    "minimumConfidenceRequired": 0.70
+  },
+  "telemetrySnapshot": {
+    "source": "worker-v1-staged-analysis",
+    "schemaVersion": 2,
+    "landmarkConfidence": 0.78,
+    "yaw": 0.12,
+    "pitch": -0.03
+  }
+}
+```
+
+### 21.2 Contract Rules
+
+- `analysisJobId` must refer to a `Succeeded` recommendations job owned by `userId`.
+- `decision.haircut` is required; beard fields are optional.
+- Beard fields must be `No change` unless `gender == male` and `allowBeardSuggestions == true`.
+- If `qualityPassed == false` or `analysisConfidence < minimumConfidenceRequired`, do not enqueue style generation.
+- `pipelineMode` must be one of `HairOnly`, `BeardOnly`, `HairThenBeard` and map directly to the existing style job pipeline behavior.
+- This is an internal contract between recommendation and generation services; public API DTOs stay unchanged.
+
 ## 22. API and UI Additions (V2)
 
 ### 22.1 API
