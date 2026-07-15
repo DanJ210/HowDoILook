@@ -67,4 +67,21 @@ public class FaceAnalysisQualityStageTests
         Assert.NotEqual("ANALYSIS_QUALITY_TOO_BLURRY", result.FailureCode);
         Assert.True(result.BlurScore >= 0.08, $"Expected blur score above threshold but got {result.BlurScore}");
     }
+
+    [Fact]
+    public void CropToFaceRegion_ExpandsQualityCropToMinimumResolutionWhenPossible()
+    {
+        using var image = new Image<Rgba32>(1024, 1024, new Rgba32(128, 128, 128));
+        var face = new FaceBoundingBox(X: 282, Y: 231, Width: 460, Height: 563);
+
+        using var crop = FaceAnalysisPipeline.CropToFaceRegion(
+            image,
+            face,
+            paddingFactor: 0.20,
+            minimumWidth: 768,
+            minimumHeight: 768);
+
+        Assert.True(crop.Width >= 768, $"Expected crop width >= 768 but got {crop.Width}");
+        Assert.True(crop.Height >= 768, $"Expected crop height >= 768 but got {crop.Height}");
+    }
 }

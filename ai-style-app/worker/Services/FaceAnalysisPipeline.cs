@@ -283,10 +283,16 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
                 "Face detection confidence is too low. Try a clearer, front-facing photo.");
         }
 
-        using var faceRegionForAnalysis = CropToFaceRegion(image, detection.PrimaryFace, paddingFactor: 0.20);
+        using var faceRegionForQuality = CropToFaceRegion(
+            image,
+            detection.PrimaryFace,
+            paddingFactor: 0.20,
+            minimumWidth: MinWidth,
+            minimumHeight: MinHeight);
+        using var faceRegionForLandmarks = CropToFaceRegion(image, detection.PrimaryFace, paddingFactor: 0.20);
 
         var qualityStopwatch = Stopwatch.StartNew();
-        var quality = _qualityStage.Evaluate(faceRegionForAnalysis);
+        var quality = _qualityStage.Evaluate(faceRegionForQuality);
         qualityStopwatch.Stop();
         stageTelemetry.Add(new StageTelemetry(
             Stage: "quality-gate",
@@ -308,8 +314,8 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
 
         var landmarkStopwatch = Stopwatch.StartNew();
         var landmarks = _features.OnnxLandmarks
-            ? _landmarkModelStage.Extract(faceRegionForAnalysis, detection.PrimaryFace)
-            : _landmarkStage.Extract(faceRegionForAnalysis);
+            ? _landmarkModelStage.Extract(faceRegionForLandmarks, detection.PrimaryFace)
+            : _landmarkStage.Extract(faceRegionForLandmarks);
         landmarkStopwatch.Stop();
         stageTelemetry.Add(new StageTelemetry(
             Stage: "landmarks",
@@ -752,7 +758,12 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         return (0.2126 * pixel.R + 0.7152 * pixel.G + 0.0722 * pixel.B) / 255.0;
     }
 
-    private static Image<Rgba32> CropToFaceRegion(Image<Rgba32> image, FaceBoundingBox face, double paddingFactor)
+    internal static Image<Rgba32> CropToFaceRegion(
+        Image<Rgba32> image,
+        FaceBoundingBox face,
+        double paddingFactor,
+        int minimumWidth = 1,
+        int minimumHeight = 1)
     {
         var padX = (int)Math.Round(face.Width * paddingFactor);
         var padY = (int)Math.Round(face.Height * paddingFactor);
@@ -764,6 +775,56 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
 
         var width = Math.Max(1, right - x);
         var height = Math.Max(1, bottom - y);
+
+        if (width < minimumWidth)
+        {
+            var desiredWidth = Math.Min(image.Width, Math.Max(minimumWidth, width));
+            var deficit = desiredWidth - width;
+            var expandLeft = Math.Min(x, deficit / 2);
+            var expandRight = Math.Min(image.Width - right, deficit - expandLeft);
+            var remaining = deficit - expandLeft - expandRight;
+
+            if (remaining > 0)
+            {
+                var extraLeft = Math.Min(x - expandLeft, remaining);
+                expandLeft += extraLeft;
+                remaining -= extraLeft;
+            }
+
+            if (remaining > 0)
+            {
+                expandRight += Math.Min(image.Width - right - expandRight, remaining);
+            }
+
+            x -= expandLeft;
+            right += expandRight;
+            width = Math.Max(1, right - x);
+        }
+
+        if (height < minimumHeight)
+        {
+            var desiredHeight = Math.Min(image.Height, Math.Max(minimumHeight, height));
+            var deficit = desiredHeight - height;
+            var expandTop = Math.Min(y, deficit / 2);
+            var expandBottom = Math.Min(image.Height - bottom, deficit - expandTop);
+            var remaining = deficit - expandTop - expandBottom;
+
+            if (remaining > 0)
+            {
+                var extraTop = Math.Min(y - expandTop, remaining);
+                expandTop += extraTop;
+                remaining -= extraTop;
+            }
+
+            if (remaining > 0)
+            {
+                expandBottom += Math.Min(image.Height - bottom - expandBottom, remaining);
+            }
+
+            y -= expandTop;
+            bottom += expandBottom;
+            height = Math.Max(1, bottom - y);
+        }
 
         return image.Clone(ctx => ctx.Crop(new Rectangle(x, y, width, height)));
     }

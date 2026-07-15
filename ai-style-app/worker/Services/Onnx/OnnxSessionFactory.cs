@@ -11,7 +11,7 @@ public class OnnxSessionFactory : IOnnxSessionFactory
 {
     public InferenceSession Create(string modelPath, string executionProvider)
     {
-        var options = new SessionOptions();
+        using var options = new SessionOptions();
 
         // CPU is the default provider and is always available.
         if (string.Equals(executionProvider, "CPU", StringComparison.OrdinalIgnoreCase))

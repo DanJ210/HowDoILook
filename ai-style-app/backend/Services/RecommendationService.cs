@@ -234,7 +234,7 @@ public class RecommendationService : IRecommendationService
                 ImageHeight: imageHeight,
                 Stages: stages);
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
         {
             return null;
         }
