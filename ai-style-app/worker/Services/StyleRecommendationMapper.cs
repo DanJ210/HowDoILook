@@ -32,11 +32,9 @@ public record StyleEntry(
     IReadOnlyList<string> Constraints,
     bool RequiresBeard = false,
     double BeardDensityThreshold = 0.0,
-    /// <summary>
-    /// Per-shape score adjustment added on top of the feature-weight score.
-    /// Positive values favour this style for the given shape; negative values discourage it.
-    /// Shapes absent from this dict default to 0.0 (no adjustment).
-    /// </summary>
+    // Per-shape score adjustment added on top of the feature-weight score.
+    // Positive values favour this style for the given shape; negative values discourage it.
+    // Shapes absent from this dict default to 0.0 (no adjustment).
     IReadOnlyDictionary<FaceShape, double>? ShapePriors = null
 );
 
