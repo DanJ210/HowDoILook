@@ -7,7 +7,7 @@ graph TD
     User["Browser (Vue 3 + Vite + Tailwind)"]
     API["Backend — ASP.NET Core Web API"]
     Queue["Azure Storage Queue (style-jobs)"]
-    Worker["Worker — .NET 8 BackgroundService"]
+    Worker["Worker — .NET 10 BackgroundService"]
     DB["PostgreSQL (style_items, style_jobs)"]
     Replicate["Replicate AI API"]
     Webhook["POST /api/webhooks/replicate"]
@@ -138,9 +138,9 @@ graph TD
 8. Backend verifies the HMAC signature, updates the job to `Succeeded` (or `Failed`) with `result_json`, and asynchronously archives the generated image.
 9. Frontend polling detects the terminal status and displays the result (or error).
 
-## Appendix: Face Analysis and Recommendations (V1 Baseline)
+## Appendix: Face Analysis and Recommendations (Current Implementation)
 
-This appendix describes the current baseline architecture for face analysis and recommendation while preserving the async style-generation flow.
+This appendix describes the current face-analysis and recommendation flow while preserving the async style-generation flow.
 
 ### Current Baseline Components
 
@@ -151,12 +151,14 @@ This appendix describes the current baseline architecture for face analysis and 
 
 - **Worker**
   - Face-analysis handler routing by `jobType` is implemented.
-  - Initial baseline validates image reachability and writes deterministic placeholder analysis/recommendations.
-  - Structured failure codes are partially implemented (`ANALYSIS_IMAGE_UNREACHABLE`, `ANALYSIS_INTERNAL_ERROR`).
+  - The worker validates image reachability, runs staged analysis, and writes ranked recommendations.
+  - ONNX landmarks are enabled in Development and load `fan2_68_landmark.onnx` from `worker/Services/Onnx/Models`.
+  - Stage telemetry (model/version/duration/metrics) is persisted in feature vectors and exposed by API.
+  - Structured failure codes include quality, input validation, and ONNX model load/parse paths.
 
 - **Frontend**
-  - Backend contracts for request, polling, and feedback are available.
-  - Frontend page/store integration is still pending.
+  - Recommendations page and store integration are implemented.
+  - Polling, failure messaging, recommendation rendering, feedback submission, and telemetry display are implemented.
 
 ### Data Model Additions
 
@@ -234,10 +236,10 @@ Migration notes:
 3. Backend enqueues queue message (`jobType = FaceAnalysis`, `schemaVersion = 2`).
 4. Worker dequeues message and marks analysis job `Processing`.
 5. Worker validates image URL format/reachability.
-6. Worker writes placeholder feature vector, confidence, and recommendation payload.
-7. Worker persists recommendation payload and marks analysis job terminal status.
-8. Frontend polls status endpoint and renders either recommendations or retry guidance.
-9. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
+7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector + stage telemetry.
+8. Worker persists recommendation payload and marks analysis job terminal status.
+9. Frontend polls status endpoint and renders either recommendations or retry guidance.
+10. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
 
 ### Error Codes (Worker Baseline)
 
@@ -249,6 +251,8 @@ Migration notes:
 - `ANALYSIS_QUALITY_BAD_EXPOSURE` (reserved)
 - `ANALYSIS_POOR_POSE` (reserved)
 - `ANALYSIS_SEGMENTATION_FAILED` (reserved)
+- `ANALYSIS_LANDMARK_MODEL_LOAD_FAILED`
+- `ANALYSIS_LANDMARK_MODEL_OUTPUT_UNSUPPORTED`
 - `ANALYSIS_INTERNAL_ERROR`
 
 ### Cross-Cutting Constraints

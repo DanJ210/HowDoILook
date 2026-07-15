@@ -23,9 +23,9 @@ HowDoILook is designed to become a trustworthy AI assistant for personal groomin
 The solution follows an async, service-oriented flow:
 
 1. Frontend (Vue 3 + Vite + TypeScript + Tailwind + Pinia) sends authenticated requests.
-2. Backend API (.NET 8) validates requests, stores data, and enqueues style-generation jobs.
+2. Backend API (.NET 10) validates requests, stores data, and enqueues style-generation jobs.
 3. Queue decouples user-facing latency from heavy AI processing.
-4. Worker service (.NET 8) processes queued jobs and calls Replicate for inference.
+4. Worker service (.NET 10) processes queued jobs and calls Replicate for inference.
 5. Webhook callback updates job state and results in PostgreSQL.
 6. Frontend polls job status and renders progress and final output.
 
@@ -41,8 +41,8 @@ The solution follows an async, service-oriented flow:
 ## Tech Stack
 
 - Frontend: Vue 3, Vite, TypeScript, Tailwind CSS, Pinia
-- Backend: ASP.NET Core (.NET 8), JWT auth, Swagger
-- Worker: .NET 8 Hosted Service
+- Backend: ASP.NET Core (.NET 10), JWT auth, Swagger
+- Worker: .NET 10 Hosted Service
 - Database: PostgreSQL (EF Core + Npgsql)
 - Queue: Azure Storage Queue (Azurite locally)
 - AI Inference: Replicate API
@@ -59,7 +59,7 @@ The solution follows an async, service-oriented flow:
 ## Local Development Quick Start
 
 Prerequisites:
-- .NET 8 SDK
+- .NET 10 SDK
 - Node.js 20+
 - Docker Desktop
 
@@ -117,5 +117,6 @@ Planned priorities for hardening into a commercial-grade platform:
 Core full-stack foundation is implemented:
 - API, worker, queue contract, and database schema are in place
 - Frontend flow for style generation and job tracking is implemented
+- Recommendations flow (request, polling, feedback, telemetry view) is implemented end-to-end
 - Local infrastructure via Docker Compose is available
 - Project is ready for iterative hardening toward production

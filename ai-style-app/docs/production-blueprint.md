@@ -25,7 +25,7 @@
 | Resource | SKU / Tier | Purpose |
 |---|---|---|
 | **Azure Container Apps** (backend) | Consumption | ASP.NET Core API, auto-scales to 0 |
-| **Azure Container Apps** (worker) | Consumption | .NET 8 BackgroundService, scales by queue depth |
+| **Azure Container Apps** (worker) | Consumption | .NET 10 BackgroundService, scales by queue depth |
 | **Azure Container Registry (ACR)** | Basic → Standard | Stores `backend` and `worker` Docker images |
 | **Azure Database for PostgreSQL — Flexible Server** | Burstable B1ms (dev) → General Purpose (prod) | Persistent data store |
 | **Azure Storage Account** (app data) | Standard LRS | Blob container `user-uploads`, Queue `style-jobs` |

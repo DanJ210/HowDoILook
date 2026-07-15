@@ -200,7 +200,7 @@ Queued → Processing → Succeeded
 
 `externalPredictionId` always represents the active Replicate prediction for the current stage and may change between the hair and beard stages. Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Canceled`) it will not transition further.
 
-## Recommendations (V1 Baseline Implemented)
+## Recommendations (Current Implementation)
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
@@ -223,7 +223,7 @@ Queued → Processing → Succeeded
 }
 ```
 
-Beard suggestions are only considered when `gender` is `male`. The baseline worker does not yet enforce `preferences.allowBeardSuggestions`.
+Beard suggestions are only considered when `gender` is `male`, and the worker enforces `preferences.allowBeardSuggestions` when generating recommendation candidates.
 
 ### CreateRecommendationsResponse
 
@@ -236,6 +236,11 @@ Beard suggestions are only considered when `gender` is `male`. The baseline work
 ```
 
 The response is `202 Accepted`. Poll `statusEndpoint` to track analysis completion.
+
+Current implementation note:
+- The worker runs staged quality gating, face detection, ONNX landmark extraction when enabled, and segmentation proxies.
+- `debugTelemetry.stages` includes per-stage model, model version, duration, metrics, and optional notes.
+- Invalid ONNX landmark artifacts now fail fast with explicit analysis error codes instead of silently falling back.
 
 ### RecommendationJobStatusResponse
 
@@ -266,14 +271,35 @@ The response is `202 Accepted`. Poll `statusEndpoint` to track analysis completi
       ]
     }
   ],
+  "debugTelemetry": {
+    "source": "worker-v1-staged-analysis",
+    "schemaVersion": 2,
+    "imageWidth": 1536,
+    "imageHeight": 2048,
+    "stages": [
+      {
+        "stage": "quality-gate",
+        "model": "heuristic-quality-gate",
+        "modelVersion": "v1",
+        "durationMs": 1.42,
+        "metrics": {
+          "brightness": 0.54,
+          "contrast": 0.16,
+          "blurScore": 0.22,
+          "centerOffset": 0.09
+        },
+        "notes": null
+      }
+    ]
+  },
   "errorCode": "string | null",
   "errorMessage": "string | null"
 }
 ```
 
 Current implementation note:
-- The worker currently writes a deterministic placeholder analysis output and recommendation list so the end-to-end async flow is functional.
-- Full model-backed landmark and segmentation analysis is not implemented yet.
+- The worker emits `schemaVersion: 2` queue messages for both style generation and recommendations.
+- Recommendations jobs use the same `style-jobs` transport and are handled by the worker's face-analysis path.
 
 ### SubmitRecommendationFeedbackRequest
 
@@ -312,6 +338,55 @@ The webhook verifies Replicate signature headers (`webhook-id`, `webhook-timesta
   "url": "https://..."
 }
 ```
+
+## Internal Decision Contract
+
+This internal payload defines the handoff from recommendations analysis to style generation request composition. It is not a public HTTP contract.
+
+### RecommendationToGenerationDecision (Internal)
+
+```json
+{
+  "contractVersion": 1,
+  "analysisJobId": "uuid",
+  "userId": "string",
+  "sourceImageUrl": "https://...",
+  "selectedRecommendation": {
+    "styleId": "string",
+    "styleName": "string",
+    "score": 0.92,
+    "reasons": ["string"]
+  },
+  "decision": {
+    "haircut": "string",
+    "hairColor": "string",
+    "beardStyle": "string",
+    "beardColor": "string",
+    "pipelineMode": "HairOnly | BeardOnly | HairThenBeard"
+  },
+  "guardrails": {
+    "gender": "none | male | female",
+    "allowBeardSuggestions": true,
+    "qualityPassed": true,
+    "analysisConfidence": 0.87,
+    "minimumConfidenceRequired": 0.7
+  },
+  "telemetrySnapshot": {
+    "source": "worker-v1-staged-analysis",
+    "schemaVersion": 2,
+    "landmarkConfidence": 0.78,
+    "yaw": 0.05,
+    "pitch": -0.02
+  }
+}
+```
+
+Rules:
+
+- `analysisJobId` must correspond to a succeeded recommendations job owned by `userId`.
+- `decision.haircut` is required.
+- Beard fields must remain `No change` unless `gender = male` and `allowBeardSuggestions = true`.
+- If quality/confidence guardrails fail, style-generation enqueue should be blocked with an actionable error response.
 
 ## Queue Message Contract
 

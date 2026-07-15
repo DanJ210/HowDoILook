@@ -10,6 +10,7 @@ const authStore = useAuthStore()
 const navItems = [
   { name: 'home', label: 'Home', requiresAuth: false },
   { name: 'style-generate', label: 'Generate', requiresAuth: true },
+  { name: 'recommendations', label: 'Recommend', requiresAuth: true },
   { name: 'jobs', label: 'Jobs', requiresAuth: true }
 ] as const
 
@@ -32,7 +33,7 @@ function go(name: string, requiresAuth = false) {
 <template>
   <nav class="fixed inset-x-0 bottom-0 z-50 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
     <div class="mx-auto max-w-xl rounded-3xl border border-white/10 bg-slate-950/90 backdrop-blur-xl shadow-[0_-20px_60px_rgba(2,6,23,0.45)] px-3 py-3">
-      <div class="grid grid-cols-3 gap-2">
+      <div class="grid grid-cols-4 gap-2">
         <button
           v-for="item in navItems"
           :key="item.name"
