@@ -15,7 +15,7 @@ This spec focuses on analysis and recommendation only. It does not replace the e
 Implementation status:
 
 - The recommendations API, feedback persistence, queue publishing, and worker handler are implemented.
-- Development worker configuration currently enables ONNX landmark extraction with `fan2_68_landmark.onnx`.
+- ONNX landmark extraction is supported and can be enabled via worker configuration with `fan2_68_landmark.onnx`.
 - Invalid ONNX landmark model files now fail fast with explicit analysis error codes.
 
 ## 2. Goals and Non-Goals
@@ -606,7 +606,7 @@ Use staged rollout:
 3. `Features:OnnxRegionEstimation`
 4. `Features:RecommendationResearchMappingV2`
 
-Current development defaults already enable `Features:OnnxFaceDetection` and `Features:OnnxLandmarks`; `Features:OnnxRegionEstimation` remains optional.
+`Features:OnnxFaceDetection`, `Features:OnnxLandmarks`, and `Features:OnnxRegionEstimation` are configuration-driven and may be enabled per environment as rollout progresses.
 
 Rollout sequence:
 
