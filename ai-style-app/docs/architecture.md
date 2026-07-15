@@ -153,6 +153,7 @@ This appendix describes the current face-analysis and recommendation flow while 
   - Face-analysis handler routing by `jobType` is implemented.
   - The worker validates image reachability, runs staged analysis, and writes ranked recommendations.
   - ONNX landmarks are enabled in Development and load `fan2_68_landmark.onnx` from `worker/Services/Onnx/Models`.
+  - Face shape is persisted in `feature_vector_json.faceShape`; the landmarks stage telemetry note mirrors the shape label.
   - Stage telemetry (model/version/duration/metrics) is persisted in feature vectors and exposed by API.
   - Structured failure codes include quality, input validation, and ONNX model load/parse paths.
 
@@ -236,7 +237,7 @@ Migration notes:
 3. Backend enqueues queue message (`jobType = FaceAnalysis`, `schemaVersion = 2`).
 4. Worker dequeues message and marks analysis job `Processing`.
 5. Worker validates image URL format/reachability.
-7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector + stage telemetry.
+7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector (including `faceShape`) + stage telemetry (landmarks `notes` contains the shape label).
 8. Worker persists recommendation payload and marks analysis job terminal status.
 9. Frontend polls status endpoint and renders either recommendations or retry guidance.
 10. Frontend submits optional feedback, backend persists to `recommendation_feedback`.

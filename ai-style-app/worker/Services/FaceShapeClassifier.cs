@@ -30,6 +30,11 @@ public static class FaceShapeClassifier
     /// <param name="faceElongation">Normalized height-to-width ratio (0.5 ≈ square, higher = longer).</param>
     public static FaceShape Classify(double jawWidthRatio, double foreheadHeightRatio, double faceElongation)
     {
+        if (!IsNormalized(jawWidthRatio) || !IsNormalized(foreheadHeightRatio) || !IsNormalized(faceElongation))
+        {
+            return FaceShape.Unknown;
+        }
+
         // Square: low elongation + very wide jaw line.
         if (faceElongation < 0.42 && jawWidthRatio > 0.92)
         {
@@ -62,5 +67,10 @@ public static class FaceShapeClassifier
 
         // Oval: balanced proportions — the default when no other shape matches.
         return FaceShape.Oval;
+    }
+
+    private static bool IsNormalized(double value)
+    {
+        return double.IsFinite(value) && value >= 0d && value <= 1d;
     }
 }
