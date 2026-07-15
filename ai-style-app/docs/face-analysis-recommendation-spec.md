@@ -12,6 +12,12 @@ Define a production-ready V1 for accurate face analysis and intelligent style re
 
 This spec focuses on analysis and recommendation only. It does not replace the existing style generation pipeline.
 
+Implementation status:
+
+- The recommendations API, feedback persistence, queue publishing, and worker handler are implemented.
+- Development worker configuration currently enables ONNX landmark extraction with `fan2_68_landmark.onnx`.
+- Invalid ONNX landmark model files now fail fast with explicit analysis error codes.
+
 ## 2. Goals and Non-Goals
 
 ### Goals
@@ -374,6 +380,10 @@ V1 validated async flow and recommendation plumbing. V2 makes recommendations im
 - Keep Replicate models as the generation engine for haircut/beard output.
 - Decouple analysis and recommendation ranking from image generation model prompts.
 
+Current note:
+
+- The worker already performs ONNX landmark extraction in development, so the remaining V2 work is about making the telemetry and ranking fully research-grade rather than adding the first ONNX pass.
+
 ### 16.2 V2 Non-Goals
 
 - Replacing Replicate haircut/beard generation with ONNX in V2.
@@ -543,6 +553,8 @@ Use staged rollout:
 2. `Features:OnnxLandmarks`
 3. `Features:OnnxRegionEstimation`
 4. `Features:RecommendationResearchMappingV2`
+
+Current development defaults already enable `Features:OnnxFaceDetection` and `Features:OnnxLandmarks`; `Features:OnnxRegionEstimation` remains optional.
 
 Rollout sequence:
 

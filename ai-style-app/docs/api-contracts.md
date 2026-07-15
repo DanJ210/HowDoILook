@@ -200,7 +200,7 @@ Queued → Processing → Succeeded
 
 `externalPredictionId` always represents the active Replicate prediction for the current stage and may change between the hair and beard stages. Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Canceled`) it will not transition further.
 
-## Recommendations (V1 Baseline Implemented)
+## Recommendations (Current Implementation)
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
@@ -236,6 +236,11 @@ Beard suggestions are only considered when `gender` is `male`, and the worker en
 ```
 
 The response is `202 Accepted`. Poll `statusEndpoint` to track analysis completion.
+
+Current implementation note:
+- The worker runs staged quality gating, face detection, ONNX landmark extraction when enabled, and segmentation proxies.
+- `debugTelemetry.stages` includes per-stage model, model version, duration, metrics, and optional notes.
+- Invalid ONNX landmark artifacts now fail fast with explicit analysis error codes instead of silently falling back.
 
 ### RecommendationJobStatusResponse
 
@@ -293,8 +298,8 @@ The response is `202 Accepted`. Poll `statusEndpoint` to track analysis completi
 ```
 
 Current implementation note:
-- The worker performs staged heuristic analysis (quality, landmark proxies, segmentation proxies) and returns telemetry for each stage.
-- Full ONNX model-backed face detection and landmark inference is planned for V2.
+- The worker emits `schemaVersion: 2` queue messages for both style generation and recommendations.
+- Recommendations jobs use the same `style-jobs` transport and are handled by the worker's face-analysis path.
 
 ### SubmitRecommendationFeedbackRequest
 

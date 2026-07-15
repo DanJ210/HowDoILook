@@ -23,6 +23,7 @@
 - Treat recommendations as one async flow moving through backend endpoints, queue, worker processing, and status polling.
 - Keep shared request and queue contract changes aligned across backend models/services, worker handlers, and `ai-style-app/docs/api-contracts.md`.
 - When recommendations behavior changes, update both `ai-style-app/docs/architecture.md` and `ai-style-app/docs/face-analysis-recommendation-spec.md` in the same PR.
+- Development currently enables ONNX landmark extraction; invalid landmark artifacts should fail fast with explicit analysis error codes rather than falling back silently.
 
 ## Validation
 
@@ -31,6 +32,7 @@
 - Frontend production build: `cd ai-style-app/frontend && npm run build`
 - Backend build: `cd ai-style-app/backend && dotnet build`
 - Worker build: `cd ai-style-app/worker && dotnet build`
+- Focused recommendations checks: `dotnet test ai-style-app/tests/AiStyleApp.Tests/AiStyleApp.Tests.csproj --filter "FullyQualifiedName~FaceAnalysisJobHandlerTests|FullyQualifiedName~OnnxFaceLandmarkStageTests"`
 
 ## Configuration and secrets
 

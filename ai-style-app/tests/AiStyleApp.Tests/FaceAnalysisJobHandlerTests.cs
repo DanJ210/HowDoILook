@@ -5,8 +5,14 @@ using AiStyleApp.Data.Entities;
 using AiStyleApp.Data.Queue;
 using AiStyleApp.Worker.Handlers;
 using AiStyleApp.Worker.Services;
+using AiStyleApp.Worker.Services.Onnx;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.FileProviders;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace AiStyleApp.Tests;
 
@@ -93,9 +99,42 @@ public class FaceAnalysisJobHandlerTests
         Assert.NotNull(persisted.CompletedAtUtc);
     }
 
+    [Fact]
+    public async Task HandleAsync_RealOnnxLandmarks_SucceedsAndPersistsTelemetry()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = await SeedAnalysisJobAsync(db);
+
+        var imageBytes = CreateSyntheticFaceImageBytes();
+        var httpClientFactory = new StaticImageHttpClientFactory(imageBytes);
+        var pipeline = CreateRealPipeline(httpClientFactory);
+        var handler = CreateHandler(db, pipeline, httpClientFactory);
+
+        await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
+
+        var persisted = await db.FaceAnalysisJobs.FirstAsync(x => x.Id == analysisJob.Id);
+        Assert.True(
+            persisted.Status == "Succeeded",
+            $"Job failed with {persisted.ErrorCode}: {persisted.ErrorMessage}");
+        Assert.NotNull(persisted.FeatureVectorJson);
+
+        using var document = JsonDocument.Parse(persisted.FeatureVectorJson!);
+        var landmarkStage = document.RootElement.GetProperty("stageTelemetry")
+            .EnumerateArray()
+            .Single(stage => stage.GetProperty("Stage").GetString() == "landmarks");
+
+        Assert.Equal("onnx-landmarks", landmarkStage.GetProperty("Model").GetString());
+        Assert.Equal("v1", landmarkStage.GetProperty("ModelVersion").GetString());
+
+        var metrics = landmarkStage.GetProperty("Metrics");
+        Assert.InRange(metrics.GetProperty("landmarkConfidence").GetDouble(), 0.0, 1.0);
+        Assert.InRange(metrics.GetProperty("yaw").GetDouble(), -1.0, 1.0);
+        Assert.InRange(metrics.GetProperty("pitch").GetDouble(), -1.0, 1.0);
+    }
+
     private static FaceAnalysisJobHandler CreateHandler(
         AppDbContext db,
-        StubFaceAnalysisPipeline pipeline,
+        IFaceAnalysisPipeline pipeline,
         IHttpClientFactory httpClientFactory)
     {
         return new FaceAnalysisJobHandler(
@@ -103,6 +142,135 @@ public class FaceAnalysisJobHandlerTests
             httpClientFactory,
             pipeline,
             NullLogger<FaceAnalysisJobHandler>.Instance);
+    }
+
+    private static FaceAnalysisPipeline CreateRealPipeline(IHttpClientFactory httpClientFactory)
+    {
+        var landmarkModelPath = FindWorkerModelPath("fan2_68_landmark.onnx");
+        var landmarkStage = new OnnxFaceLandmarkStage(
+            new OnnxSessionFactory(),
+            Options.Create(new OnnxLandmarkOptions
+            {
+                ModelPath = landmarkModelPath,
+                ExecutionProvider = "CPU"
+            }),
+            new TestHostEnvironment(),
+            NullLogger<OnnxFaceLandmarkStage>.Instance);
+
+        return new FaceAnalysisPipeline(
+            httpClientFactory,
+            new HeuristicFaceDetectorStage(),
+            new HeuristicFaceQualityStage(),
+            landmarkStage,
+            new HeuristicFaceLandmarkStage(),
+            new HeuristicFaceRegionEstimationStage(),
+            new HeuristicFaceSegmentationStage(),
+            new RuleBasedRecommendationStage(),
+            Options.Create(new WorkerFeatureFlags
+            {
+                OnnxFaceDetection = false,
+                OnnxLandmarks = true,
+                OnnxRegionEstimation = false
+            }),
+            Options.Create(new FaceAnalysisThresholds
+            {
+                MinLandmarkConfidence = 0.0
+            }),
+            NullLogger<FaceAnalysisPipeline>.Instance);
+    }
+
+    private static string FindWorkerModelPath(string modelFileName)
+    {
+        var current = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (current is not null)
+        {
+            var candidate = Path.Combine(current.FullName, "worker", "Services", "Onnx", "Models", modelFileName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            current = current.Parent;
+        }
+
+        throw new FileNotFoundException($"Unable to locate worker model file '{modelFileName}'.");
+    }
+
+    private static byte[] CreateSyntheticFaceImageBytes()
+    {
+        const int size = 1536;
+        using var image = new Image<Rgba32>(size, size);
+        var center = size / 2;
+
+        for (var y = 0; y < image.Height; y++)
+        {
+            for (var x = 0; x < image.Width; x++)
+            {
+                var cell = ((x / 12) + (y / 12)) % 2 == 0;
+                image[x, y] = cell
+                    ? new Rgba32(220, 220, 220)
+                    : new Rgba32(40, 40, 40);
+            }
+        }
+
+        PaintEllipse(image, center, (int)(size * 0.56), (int)(size * 0.24), (int)(size * 0.32), new Rgba32(232, 198, 176));
+        PaintEllipse(image, center, (int)(size * 0.21), (int)(size * 0.29), (int)(size * 0.16), new Rgba32(66, 45, 34));
+        PaintEllipse(image, (int)(size * 0.44), (int)(size * 0.45), (int)(size * 0.05), (int)(size * 0.03), new Rgba32(255, 255, 255));
+        PaintEllipse(image, (int)(size * 0.60), (int)(size * 0.44), (int)(size * 0.05), (int)(size * 0.03), new Rgba32(255, 255, 255));
+        PaintCircle(image, (int)(size * 0.44), (int)(size * 0.45), (int)(size * 0.015), new Rgba32(25, 25, 25));
+        PaintCircle(image, (int)(size * 0.60), (int)(size * 0.44), (int)(size * 0.015), new Rgba32(25, 25, 25));
+        PaintRect(image, (int)(size * 0.48), (int)(size * 0.49), (int)(size * 0.52), (int)(size * 0.63), new Rgba32(162, 127, 106));
+        PaintEllipse(image, center, (int)(size * 0.65), (int)(size * 0.15), (int)(size * 0.02), new Rgba32(118, 54, 60));
+        PaintRect(image, (int)(size * 0.37), (int)(size * 0.43), (int)(size * 0.49), (int)(size * 0.44), new Rgba32(90, 62, 50));
+        PaintRect(image, (int)(size * 0.56), (int)(size * 0.42), (int)(size * 0.68), (int)(size * 0.43), new Rgba32(90, 62, 50));
+        PaintEllipse(image, (int)(size * 0.40), (int)(size * 0.58), (int)(size * 0.05), (int)(size * 0.04), new Rgba32(214, 166, 145));
+        PaintEllipse(image, (int)(size * 0.64), (int)(size * 0.58), (int)(size * 0.06), (int)(size * 0.05), new Rgba32(205, 157, 136));
+
+        using var stream = new MemoryStream();
+        image.Save(stream, new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder());
+        return stream.ToArray();
+    }
+
+    private static void PaintCircle(Image<Rgba32> image, int centerX, int centerY, int radius, Rgba32 color)
+        => PaintEllipse(image, centerX, centerY, radius, radius, color);
+
+    private static void PaintEllipse(Image<Rgba32> image, int centerX, int centerY, int radiusX, int radiusY, Rgba32 color)
+    {
+        var xStart = Math.Max(0, centerX - radiusX);
+        var xEnd = Math.Min(image.Width - 1, centerX + radiusX);
+        var yStart = Math.Max(0, centerY - radiusY);
+        var yEnd = Math.Min(image.Height - 1, centerY + radiusY);
+
+        for (var y = yStart; y <= yEnd; y++)
+        {
+            for (var x = xStart; x <= xEnd; x++)
+            {
+                var dx = (x - centerX) / (double)Math.Max(1, radiusX);
+                var dy = (y - centerY) / (double)Math.Max(1, radiusY);
+
+                if ((dx * dx) + (dy * dy) <= 1.0)
+                {
+                    image[x, y] = color;
+                }
+            }
+        }
+    }
+
+    private static void PaintRect(Image<Rgba32> image, int x1, int y1, int x2, int y2, Rgba32 color)
+    {
+        var left = Math.Max(0, Math.Min(x1, x2));
+        var right = Math.Min(image.Width - 1, Math.Max(x1, x2));
+        var top = Math.Max(0, Math.Min(y1, y2));
+        var bottom = Math.Min(image.Height - 1, Math.Max(y1, y2));
+
+        for (var y = top; y <= bottom; y++)
+        {
+            for (var x = left; x <= right; x++)
+            {
+                image[x, y] = color;
+            }
+        }
     }
 
     private static string CreateMessageBody(FaceAnalysisJobEntity analysisJob)
@@ -150,6 +318,41 @@ public class FaceAnalysisJobHandlerTests
             .Options;
 
         return new AppDbContext(options);
+    }
+
+    private sealed class TestHostEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+        public string ApplicationName { get; set; } = nameof(FaceAnalysisJobHandlerTests);
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private sealed class StaticImageHttpClientFactory(byte[] imageBytes) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name)
+            => new(new StaticImageHttpMessageHandler(imageBytes));
+    }
+
+    private sealed class StaticImageHttpMessageHandler(byte[] imageBytes) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Head)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            }
+
+            if (request.Method == HttpMethod.Get)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(imageBytes)
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.MethodNotAllowed));
+        }
     }
 
     private sealed class StubFaceAnalysisPipeline : IFaceAnalysisPipeline
