@@ -352,4 +352,3 @@ When feedback is submitted:
 - Keep beard-related suggestions optional and only applicable when `gender` is `male`.
 - Do not infer or persist sensitive traits.
 - Keep analysis features scoped to authenticated user ownership.
-
