@@ -139,12 +139,7 @@ All contracts below are additive and versioned.
     "message": "string | null"
   },
   "analysisSummary": {
-    "faceShapeDistribution": {
-      "oval": 0.1,
-      "round": 0.2,
-      "square": 0.6,
-      "oblong": 0.1
-    },
+    "faceShapeDistribution": null,
     "confidence": 0.87
   },
   "recommendations": [
@@ -161,10 +156,26 @@ All contracts below are additive and versioned.
       ]
     }
   ],
+  "debugTelemetry": {
+    "source": "worker-v1-staged-analysis",
+    "schemaVersion": 2,
+    "stages": [
+      {
+        "stage": "landmarks",
+        "notes": "square"
+      }
+    ]
+  },
   "errorCode": "string | null",
   "errorMessage": "string | null"
 }
 ```
+
+Current implementation note:
+
+- The worker persists canonical face shape in `face_analysis_jobs.feature_vector_json.faceShape` (for example, `"Square"`).
+- The status API exposes face shape via `debugTelemetry.stages[]` by reading the `landmarks` stage `notes` value (lowercase label such as `"square"`).
+- `analysisSummary.faceShapeDistribution` is currently a placeholder and is returned as `null`.
 
 ### SubmitRecommendationFeedbackRequest
 
