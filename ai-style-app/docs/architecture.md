@@ -242,6 +242,96 @@ Migration notes:
 9. Frontend polls status endpoint and renders either recommendations or retry guidance.
 10. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
 
+### Analytics and Data Collection
+
+**Purpose:** Collect recommendation system metrics and training datasets for model improvement and performance monitoring.
+
+**Components:**
+
+1. **AnalyticsService** (`Backend/Services/AnalyticsService.cs`)
+   - `ExportRecommendationsDataAsync()`: Joins `face_analysis_jobs` + `recommendation_feedback` for export as training dataset.
+   - `GetMetricsAsync()`: Computes aggregated KPIs (success rate, CTR, positive feedback rate, face shape distribution, top styles).
+
+2. **AnalyticsController** (`Backend/Controllers/AnalyticsController.cs`)
+   - `GET /api/analytics/export-recommendations` (JSON/CSV): Exports recommendation tuples with face shape, confidence, and user feedback.
+   - `GET /api/analytics/metrics`: Returns system health metrics over a date range.
+
+3. **MetricsLogger** (`Data/MetricsLogger.cs`)
+   - Writes structured JSON events to logs on job completion/failure and feedback submission.
+   - Events: `analysis.job.completed`, `analysis.job.failed`, `recommendation.feedback.submitted`.
+   - Used by both Backend and Worker services.
+
+4. **Wiring**
+   - Backend: `IAnalyticsService` and `IMetricsLogger` registered in `Program.cs`.
+   - Worker: `IMetricsLogger` registered in `Worker/Program.cs`.
+   - Both: `RecommendationService` and `FaceAnalysisJobHandler` call metrics logger after job state transitions.
+
+**Metrics Logged:**
+
+When a recommendation analysis succeeds:
+```json
+{
+  "eventType": "analysis.job.completed",
+  "jobId": "uuid",
+  "userId": "string",
+  "qualityPassed": true,
+  "analysisConfidence": 0.87,
+  "faceShape": "Round",
+  "recommendationCount": 5,
+  "durationMs": 1240
+}
+```
+
+When a recommendation analysis fails:
+```json
+{
+  "eventType": "analysis.job.failed",
+  "jobId": "uuid",
+  "userId": "string",
+  "errorCode": "ANALYSIS_NO_FACE_DETECTED",
+  "durationMs": 450
+}
+```
+
+When feedback is submitted:
+```json
+{
+  "eventType": "recommendation.feedback.submitted",
+  "jobId": "uuid",
+  "userId": "string",
+  "selectedStyleId": "short-quiff",
+  "rating": 5,
+  "recommendationRank": 1
+}
+```
+
+**Export Dataset Structure:**
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `analysisJobId` | Guid | Job identity, correlate with telemetry logs |
+| `userId` | string | User identity for anonymization/cohort analysis |
+| `faceShape` | string | Face geometry (Oval, Round, Square, Heart, Diamond, Oblong) |
+| `gender` | string | User-reported gender (for stratified analysis) |
+| `qualityPassed` | bool | Quality gate outcome |
+| `analysisConfidence` | double | Landmark extraction confidence [0, 1] |
+| `topRecommendationStyleId` | string | Highest-scoring recommendation |
+| `topRecommendationScore` | double | Score of top recommendation |
+| `recommendationCount` | int | Number of candidates returned |
+| `selectedStyleId` | string | User's chosen recommendation (null if no feedback) |
+| `feedbackRating` | int | User satisfaction [1–5] (null if no feedback) |
+| `recommendationRank` | int | Position of selected style in ranking (null if no feedback) |
+| `analysisCompletedAt` | DateTimeOffset | When analysis finished |
+| `feedbackSubmittedAt` | DateTimeOffset | When user submitted feedback (null if none) |
+
+**Workflow for Future Model Training:**
+
+1. Export historical data via `GET /api/analytics/export-recommendations?format=csv&from=<date>&to=<date>`.
+2. Aggregate by face shape + selected style to compute per-shape selection counts.
+3. Identify misclassified shapes (high feedback disparity across shapes).
+4. Retrain face shape classifier thresholds or recommendation priors based on observed user preferences.
+5. Monitor KPIs (`successRate`, `clickThroughRate`, `positiveFeedbackRate`) to detect regressions.
+
 ### Error Codes (Worker Baseline)
 
 - `ANALYSIS_IMAGE_UNREACHABLE`
