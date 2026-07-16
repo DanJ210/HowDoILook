@@ -5,7 +5,7 @@ using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace AiStyleApp.Backend.Services;
+namespace AiStyleApp.Api.Services;
 
 public interface IAnalyticsService
 {

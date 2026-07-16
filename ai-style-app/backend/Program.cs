@@ -1,6 +1,5 @@
 using AiStyleApp.Api.Infrastructure;
 using AiStyleApp.Api.Services;
-using AiStyleApp.Backend.Services;
 using AiStyleApp.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;

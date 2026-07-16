@@ -1,5 +1,5 @@
-using AiStyleApp.Backend.Controllers;
-using AiStyleApp.Backend.Services;
+using AiStyleApp.Api.Controllers;
+using AiStyleApp.Api.Services;
 using AiStyleApp.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

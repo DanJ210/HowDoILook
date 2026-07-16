@@ -1,11 +1,11 @@
 using System.Globalization;
 using System.Text;
-using AiStyleApp.Backend.Services;
+using AiStyleApp.Api.Services;
 using AiStyleApp.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace AiStyleApp.Backend.Controllers;
+namespace AiStyleApp.Api.Controllers;
 
 [ApiController]
 [Route("api/analytics")]

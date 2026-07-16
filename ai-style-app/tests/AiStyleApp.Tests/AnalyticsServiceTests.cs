@@ -1,4 +1,4 @@
-using AiStyleApp.Backend.Services;
+using AiStyleApp.Api.Services;
 using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
 using Microsoft.EntityFrameworkCore;
