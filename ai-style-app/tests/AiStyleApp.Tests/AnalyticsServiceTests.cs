@@ -105,6 +105,29 @@ public class AnalyticsServiceTests
         Assert.Equal(1, metrics.TopRecommendedStyles["classic-side-part"]);
     }
 
+    [Fact]
+    public async Task GetMetricsAsync_NonObjectFeatureVector_DoesNotThrowAndCountsUnknownFaceShape()
+    {
+        await using var db = CreateDbContext();
+        db.FaceAnalysisJobs.Add(new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/1.jpg",
+            Status = "Succeeded",
+            AnalysisConfidence = 0.82,
+            FeatureVectorJson = "[1,2,3]",
+            RecommendationsJson = "[{\"styleId\":\"short-quiff\",\"styleName\":\"Short Quiff\",\"score\":0.92,\"reasons\":[],\"constraints\":[]}]",
+            CompletedAtUtc = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var service = new AnalyticsService(db, NullLogger<AnalyticsService>.Instance);
+
+        var metrics = await service.GetMetricsAsync();
+
+        Assert.Equal(1, metrics.FaceShapeDistribution["Unknown"]);
+    }
+
     private static AppDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()

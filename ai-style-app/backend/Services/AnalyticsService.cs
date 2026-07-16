@@ -166,10 +166,11 @@ public class AnalyticsService : IAnalyticsService
         try
         {
             using var doc = JsonDocument.Parse(featureVectorJson);
-            if (doc.RootElement.TryGetProperty("faceShape", out var shapeElement))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("faceShape", out var shapeElement))
                 return shapeElement.GetString();
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
             _logger.LogWarning(ex, "Failed to extract faceShape from feature vector");
         }
