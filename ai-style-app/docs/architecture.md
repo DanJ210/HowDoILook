@@ -248,22 +248,22 @@ Migration notes:
 
 **Components:**
 
-1. **AnalyticsService** (`Backend/Services/AnalyticsService.cs`)
+1. **AnalyticsService** (`ai-style-app/backend/Services/AnalyticsService.cs`)
    - `ExportRecommendationsDataAsync()`: Joins `face_analysis_jobs` + `recommendation_feedback` for export as training dataset.
    - `GetMetricsAsync()`: Computes aggregated KPIs (success rate, CTR, positive feedback rate, face shape distribution, top styles).
 
-2. **AnalyticsController** (`Backend/Controllers/AnalyticsController.cs`)
+2. **AnalyticsController** (`ai-style-app/backend/Controllers/AnalyticsController.cs`)
    - `GET /api/analytics/export-recommendations` (JSON/CSV): Exports recommendation tuples with face shape, confidence, and user feedback.
    - `GET /api/analytics/metrics`: Returns system health metrics over a date range.
 
-3. **MetricsLogger** (`Data/MetricsLogger.cs`)
+3. **MetricsLogger** (`ai-style-app/data/MetricsLogger.cs`)
    - Writes structured JSON events to logs on job completion/failure and feedback submission.
    - Events: `analysis.job.completed`, `analysis.job.failed`, `recommendation.feedback.submitted`.
    - Used by both Backend and Worker services.
 
 4. **Wiring**
-   - Backend: `IAnalyticsService` and `IMetricsLogger` registered in `Program.cs`.
-   - Worker: `IMetricsLogger` registered in `Worker/Program.cs`.
+  - Backend: `IAnalyticsService` and `IMetricsLogger` registered in `ai-style-app/backend/Program.cs`.
+  - Worker: `IMetricsLogger` registered in `ai-style-app/worker/Program.cs`.
    - Both: `RecommendationService` and `FaceAnalysisJobHandler` call metrics logger after job state transitions.
 
 **Metrics Logged:**
