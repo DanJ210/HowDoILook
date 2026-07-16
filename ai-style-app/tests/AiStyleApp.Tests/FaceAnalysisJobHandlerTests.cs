@@ -141,7 +141,8 @@ public class FaceAnalysisJobHandlerTests
             db,
             httpClientFactory,
             pipeline,
-            NullLogger<FaceAnalysisJobHandler>.Instance);
+            NullLogger<FaceAnalysisJobHandler>.Instance,
+            new StubMetricsLogger());
     }
 
     private static FaceAnalysisPipeline CreateRealPipeline(IHttpClientFactory httpClientFactory)
@@ -401,5 +402,12 @@ public class FaceAnalysisJobHandlerTests
             var statusCode = request.Method == HttpMethod.Head ? headStatus : getStatus;
             return Task.FromResult(new HttpResponseMessage(statusCode));
         }
+    }
+
+    private sealed class StubMetricsLogger : IMetricsLogger
+    {
+        public void LogAnalysisJobCompleted(Guid jobId, string userId, bool qualityPassed, string? qualityFailureCode, double? analysisConfidence, string? faceShape, int recommendationCount, TimeSpan duration) { }
+        public void LogAnalysisJobFailed(Guid jobId, string userId, string errorCode, string errorMessage, TimeSpan duration) { }
+        public void LogRecommendationFeedbackSubmitted(Guid jobId, string userId, string? selectedStyleId, int? rating, string? tags, int? recommendationRank) { }
     }
 }

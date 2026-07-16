@@ -327,6 +327,114 @@ Current implementation note:
 
 The webhook verifies Replicate signature headers (`webhook-id`, `webhook-timestamp`, `webhook-signature`) using HMAC-SHA256. Set `Replicate__WebhookSigningSecret` to the signing secret from Replicate. The endpoint is not protected by JWT.
 
+## Analytics (Data Export & Metrics)
+
+| Method | Path | Auth | Query Params | Response |
+|--------|------|------|--------------|----------|
+| `GET` | `/api/analytics/export-recommendations` | Required | `format`, `from`, `to` | CSV/JSON |
+| `GET` | `/api/analytics/metrics` | Required | `from`, `to` | `RecommendationMetrics` |
+
+### ExportRecommendationsQuery
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `format` | `json` \| `csv` | `json` | Export format |
+| `from` | ISO 8601 datetime | — | Filter from date (UTC). Omit for no lower bound. |
+| `to` | ISO 8601 datetime | — | Filter to date (UTC). Omit for no upper bound. |
+
+**Example:**
+```
+GET /api/analytics/export-recommendations?format=csv&from=2026-01-01T00:00:00Z&to=2026-01-31T23:59:59Z
+```
+
+**Response (JSON):**
+
+```json
+{
+  "format": "json",
+  "count": 1250,
+  "periodStart": "2026-01-01T00:00:00Z",
+  "periodEnd": "2026-01-31T23:59:59Z",
+  "data": [
+    {
+      "analysisJobId": "uuid",
+      "userId": "string",
+      "faceShape": "Round | Oval | Square | Heart | Diamond | Oblong",
+      "gender": "none | male | female | null",
+      "qualityPassed": true,
+      "analysisConfidence": 0.87,
+      "topRecommendationStyleId": "short-quiff",
+      "topRecommendationScore": 0.92,
+      "recommendationCount": 5,
+      "selectedStyleId": "short-quiff | null",
+      "feedbackRating": 5,
+      "feedbackTags": "[\"great-match\"] | null",
+      "analysisCompletedAt": "2026-01-15T14:23:45Z",
+      "feedbackSubmittedAt": "2026-01-15T14:25:30Z",
+      "recommendationRank": 1
+    }
+  ]
+}
+```
+
+**Response (CSV):** Comma-separated with headers. Each row represents one analysis job joined with optional feedback data.
+
+**Purpose:** Collect recommendation tuples (face shape, recommendations, selected style, rating) for model training, audit trails, and performance analysis.
+
+### GetMetricsQuery
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `from` | ISO 8601 datetime | — | Filter from date (UTC). Omit for no lower bound. |
+| `to` | ISO 8601 datetime | — | Filter to date (UTC). Omit for no upper bound. |
+
+**Response:**
+
+```json
+{
+  "totalAnalyses": 1250,
+  "successfulAnalyses": 1200,
+  "failedAnalyses": 50,
+  "successRate": 0.96,
+  "analysesWithFeedback": 450,
+  "clickThroughRate": 0.36,
+  "positiveFeedbackRate": 0.84,
+  "averageConfidence": 0.85,
+  "faceShapeDistribution": {
+    "Oval": 320,
+    "Round": 280,
+    "Square": 210,
+    "Heart": 180,
+    "Diamond": 150,
+    "Oblong": 110
+  },
+  "topRecommendedStyles": {
+    "short-quiff": 145,
+    "classic-side-part": 98,
+    "textured-crop": 87,
+    "modern-fade": 65,
+    "slicked-back": 55
+  },
+  "periodStart": "2026-01-01T00:00:00Z",
+  "periodEnd": "2026-01-31T23:59:59Z",
+  "computedAtUtc": "2026-02-01T10:00:00Z"
+}
+```
+
+**Metrics definitions:**
+- **Success rate**: `successfulAnalyses / totalAnalyses` — percentage of analysis jobs that completed without errors.
+- **Click-through rate (CTR)**: `analysesWithFeedback / totalAnalyses` — percentage of users who submitted feedback.
+- **Positive feedback rate**: `positiveFeedbackCount / analysesWithFeedback` — percentage of feedback ratings ≥ 4.
+- **Average confidence**: Mean of `analysis_confidence` across all completed jobs.
+- **Face shape distribution**: Count of completed jobs per face shape.
+- **Top recommended styles**: Top 5 styles by selection frequency (regardless of rating).
+
+**Purpose:** Monitor recommendation system health and performance (success rate, user engagement, recommendation quality, face geometry distribution).
+
 ## Uploads
 
 | Method | Path | Auth | Request Body | Response |

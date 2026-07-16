@@ -10,7 +10,11 @@ public class WorkerFeatureFlags
 public class FaceAnalysisThresholds
 {
     public double MinFaceDetectionConfidence { get; set; } = 0.75;
-    public double MinLandmarkConfidence { get; set; } = 0.70;
+    public double MinLandmarkConfidence { get; set; } = 0.55;
+    public double HighFaceDetectionConfidenceForLandmarkRelaxation { get; set; } = 0.90;
+    public double LandmarkConfidenceRelaxationWhenPoseStable { get; set; } = 0.05;
+    public double MaxStablePoseYaw { get; set; } = 0.20;
+    public double MaxStablePosePitch { get; set; } = 0.20;
 }
 
 public class OnnxFaceDetectionOptions

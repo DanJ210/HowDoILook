@@ -11,11 +11,13 @@ public class RecommendationService : IRecommendationService
 {
     private readonly AppDbContext _db;
     private readonly IQueuePublisher _queue;
+    private readonly IMetricsLogger _metricsLogger;
 
-    public RecommendationService(AppDbContext db, IQueuePublisher queue)
+    public RecommendationService(AppDbContext db, IQueuePublisher queue, IMetricsLogger metricsLogger)
     {
         _db = db;
         _queue = queue;
+        _metricsLogger = metricsLogger;
     }
 
     public async Task<Guid> CreateAndEnqueueAsync(
@@ -120,6 +122,16 @@ public class RecommendationService : IRecommendationService
 
         _db.RecommendationFeedback.Add(feedback);
         await _db.SaveChangesAsync(ct);
+
+        // Log feedback metrics for monitoring and analysis
+        var recommendationRank = GetRecommendationRank(analysisJob.RecommendationsJson, request.SelectedStyleId);
+        _metricsLogger.LogRecommendationFeedbackSubmitted(
+            request.AnalysisJobId,
+            userId,
+            request.SelectedStyleId,
+            request.Rating,
+            feedback.FeedbackTagsJson,
+            recommendationRank);
     }
 
     private static IReadOnlyList<RecommendationItemResponse> ParseRecommendations(string? recommendationsJson)
@@ -253,5 +265,30 @@ public class RecommendationService : IRecommendationService
 
         value = default;
         return false;
+    }
+
+    private static int? GetRecommendationRank(string? recommendationsJson, string? selectedStyleId)
+    {
+        if (string.IsNullOrEmpty(recommendationsJson) || string.IsNullOrEmpty(selectedStyleId))
+            return null;
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<List<RecommendationItemResponse>>(recommendationsJson);
+            if (parsed == null)
+                return null;
+
+            for (int i = 0; i < parsed.Count; i++)
+            {
+                if (parsed[i].StyleId == selectedStyleId)
+                    return i + 1; // Rank is 1-based
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through to return null
+        }
+
+        return null;
     }
 }

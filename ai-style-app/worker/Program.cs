@@ -44,6 +44,7 @@ builder.Services.AddScoped<IFaceRegionEstimationStage, HeuristicFaceRegionEstima
 builder.Services.AddScoped<IFaceSegmentationStage, HeuristicFaceSegmentationStage>();
 builder.Services.AddScoped<IRecommendationStage, RuleBasedRecommendationStage>();
 builder.Services.AddScoped<IFaceAnalysisPipeline, FaceAnalysisPipeline>();
+builder.Services.AddSingleton<IMetricsLogger, MetricsLogger>();
 
 builder.Services.AddHostedService<JobWorker>();
 builder.Services.AddScoped<StyleJobHandler>();
