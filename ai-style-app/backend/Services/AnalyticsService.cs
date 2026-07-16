@@ -187,11 +187,11 @@ public class AnalyticsService : IAnalyticsService
         try
         {
             using var doc = JsonDocument.Parse(recommendationsJson);
-            if (doc.RootElement.TryGetProperty("topStyles", out var stylesElement) &&
-                stylesElement.ValueKind == JsonValueKind.Array)
+            var stylesElement = GetRecommendationArrayElement(doc.RootElement);
+            if (stylesElement is { ValueKind: JsonValueKind.Array })
             {
                 var rank = 1;
-                foreach (var styleElement in stylesElement.EnumerateArray())
+                foreach (var styleElement in stylesElement.Value.EnumerateArray())
                 {
                     if (styleElement.TryGetProperty("styleId", out var styleIdElement) &&
                         styleElement.TryGetProperty("score", out var scoreElement) &&
@@ -213,6 +213,23 @@ public class AnalyticsService : IAnalyticsService
         }
 
         return results;
+    }
+
+    private static JsonElement? GetRecommendationArrayElement(JsonElement rootElement)
+    {
+        if (rootElement.ValueKind == JsonValueKind.Array)
+        {
+            return rootElement;
+        }
+
+        if (rootElement.ValueKind == JsonValueKind.Object &&
+            rootElement.TryGetProperty("topStyles", out var stylesElement) &&
+            stylesElement.ValueKind == JsonValueKind.Array)
+        {
+            return stylesElement;
+        }
+
+        return null;
     }
 
     private int? GetRecommendationRank(List<RecommendationEntry> recommendations, string? selectedStyleId)

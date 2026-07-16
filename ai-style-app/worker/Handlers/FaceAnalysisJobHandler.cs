@@ -224,7 +224,11 @@ catch (FaceAnalysisException ex)
         try
         {
             using var doc = JsonDocument.Parse(recommendationsJson);
-            // Only try to get property if the root element is an object
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                return doc.RootElement.GetArrayLength();
+            }
+
             if (doc.RootElement.ValueKind == JsonValueKind.Object &&
                 doc.RootElement.TryGetProperty("topStyles", out var stylesElement) &&
                 stylesElement.ValueKind == JsonValueKind.Array)
