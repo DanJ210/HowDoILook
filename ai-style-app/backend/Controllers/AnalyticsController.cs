@@ -2,12 +2,14 @@ using System.Globalization;
 using System.Text;
 using AiStyleApp.Backend.Services;
 using AiStyleApp.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AiStyleApp.Backend.Controllers;
 
 [ApiController]
 [Route("api/analytics")]
+[Authorize]
 public class AnalyticsController : ControllerBase
 {
     private readonly IAnalyticsService _analyticsService;
