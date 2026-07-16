@@ -379,7 +379,7 @@ GET /api/analytics/export-recommendations?format=csv&from=2026-01-01T00:00:00Z&t
 }
 ```
 
-**Response (CSV):** Tab-separated with headers. Each row represents one analysis job joined with optional feedback data.
+**Response (CSV):** Comma-separated with headers. Each row represents one analysis job joined with optional feedback data.
 
 **Purpose:** Collect recommendation tuples (face shape, recommendations, selected style, rating) for model training, audit trails, and performance analysis.
 
