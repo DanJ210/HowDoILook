@@ -191,7 +191,7 @@ catch (FaceAnalysisException ex)
             analysisJob.Id,
             analysisJob.UserId,
             errorCode,
-            errorMessage,
+            analysisJob.ErrorMessage ?? errorMessage,
             duration);
     }
 
