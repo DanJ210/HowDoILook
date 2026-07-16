@@ -325,6 +325,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             ? _landmarkModelStage.Extract(faceRegionForLandmarks, detection.PrimaryFace)
             : _landmarkStage.Extract(faceRegionForLandmarks);
         landmarkStopwatch.Stop();
+        var landmarkConfidenceThreshold = ComputeLandmarkConfidenceThreshold(detection, landmarks);
         var faceShape = FaceShapeClassifier.Classify(
             landmarks.JawWidthRatio,
             landmarks.ForeheadHeightRatio,
@@ -339,17 +340,18 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
                 ["landmarkConfidence"] = landmarks.LandmarkConfidence,
                 ["yaw"] = landmarks.Yaw,
                 ["pitch"] = landmarks.Pitch,
+                ["landmarkConfidenceThresholdApplied"] = landmarkConfidenceThreshold,
                 ["jawWidthRatio"] = landmarks.JawWidthRatio,
                 ["foreheadHeightRatio"] = landmarks.ForeheadHeightRatio,
                 ["faceElongation"] = landmarks.FaceElongation
             },
             Notes: faceShape.ToString().ToLowerInvariant()));
 
-        if (_features.OnnxLandmarks && landmarks.LandmarkConfidence < _thresholds.MinLandmarkConfidence)
+        if (_features.OnnxLandmarks && landmarks.LandmarkConfidence < landmarkConfidenceThreshold)
         {
             throw new FaceAnalysisException(
                 "ANALYSIS_LANDMARK_CONFIDENCE_TOO_LOW",
-                "Landmark confidence is too low. Try a clearer, front-facing photo.");
+                $"Landmark confidence is too low (value: {landmarks.LandmarkConfidence:F2}, required: {landmarkConfidenceThreshold:F2}). Try a clearer, front-facing photo.");
         }
 
         var segmentationStopwatch = Stopwatch.StartNew();
@@ -414,6 +416,25 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             FeatureVectorJson: JsonSerializer.Serialize(featureVector),
             AnalysisConfidence: confidence,
             RecommendationsJson: JsonSerializer.Serialize(recommendations));
+    }
+
+    private double ComputeLandmarkConfidenceThreshold(FaceDetectionResult detection, LandmarkFeatures landmarks)
+    {
+        var baseline = Math.Clamp(_thresholds.MinLandmarkConfidence, 0.0, 1.0);
+
+        var hasHighDetectionConfidence =
+            detection.PrimaryFaceConfidence >= _thresholds.HighFaceDetectionConfidenceForLandmarkRelaxation;
+        var hasStablePose =
+            Math.Abs(landmarks.Yaw) <= _thresholds.MaxStablePoseYaw
+            && Math.Abs(landmarks.Pitch) <= _thresholds.MaxStablePosePitch;
+
+        if (!hasHighDetectionConfidence || !hasStablePose)
+        {
+            return baseline;
+        }
+
+        var relaxed = baseline - _thresholds.LandmarkConfidenceRelaxationWhenPoseStable;
+        return Math.Clamp(relaxed, 0.0, 1.0);
     }
 
     private async Task<byte[]> DownloadImageBytesAsync(string imageUrl, CancellationToken ct)
