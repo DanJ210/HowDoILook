@@ -111,9 +111,14 @@ public class AnalyticsService : IAnalyticsService
             .Where(j => j.Feedback.Any())
             .Count(j => j.Feedback.Any(f => f.Rating.HasValue && f.Rating.Value >= 4));
 
-        var avgConfidence = jobs
+        var confidences = jobs
             .Where(j => j.AnalysisConfidence.HasValue)
-            .Average(j => j.AnalysisConfidence.GetValueOrDefault());
+            .Select(j => j.AnalysisConfidence.GetValueOrDefault())
+            .ToList();
+
+        var avgConfidence = confidences.Count > 0
+            ? confidences.Average()
+            : 0;
 
         var faceShapeDistribution = jobs
             .GroupBy(j => ExtractFaceShape(j.FeatureVectorJson))
