@@ -36,6 +36,11 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
+            if (!IsSupportedExportFormat(format))
+            {
+                return BadRequest(new { error = $"Invalid format: {format}. Supported formats are 'json' and 'csv'." });
+            }
+
             DateTimeOffset? fromDate = ParseDateTimeOffset(from);
             DateTimeOffset? toDate = ParseDateTimeOffset(to);
 
@@ -156,4 +161,8 @@ public class AnalyticsController : ControllerBase
 
         return value;
     }
+
+    private static bool IsSupportedExportFormat(string format)
+        => format.Equals("json", StringComparison.OrdinalIgnoreCase)
+            || format.Equals("csv", StringComparison.OrdinalIgnoreCase);
 }
