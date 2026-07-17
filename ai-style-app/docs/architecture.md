@@ -2,26 +2,29 @@
 
 ## System Overview
 
+Product direction (2026-07): the app is recommendations-first. Canonical flow is upload -> analyze -> publish post -> generate 1 best variant based on telemetry and mapping logic. Pre-MVP, experimentation mode is enabled at 100% traffic and generates 3 additional variants for ranking-data collection while best-selection quality is being trained.
+
 ```mermaid
 graph TD
     User["Browser (Vue 3 + Vite + Tailwind)"]
     API["Backend — ASP.NET Core Web API"]
     Queue["Azure Storage Queue (style-jobs)"]
     Worker["Worker — .NET 10 BackgroundService"]
-    DB["PostgreSQL (style_items, style_jobs)"]
+  DB["PostgreSQL (face_analysis_jobs, recommendation_posts, recommendation_generation_jobs)"]
     Replicate["Replicate AI API"]
     Webhook["POST /api/webhooks/replicate"]
 
     User -->|"HTTP /api/*  (JWT)"| API
-    API -->|"Persist style_item + style_job"| DB
-    API -->|"Enqueue job"| Queue
+  API -->|"Persist analysis job + recommendation post"| DB
+  API -->|"Enqueue analysis job"| Queue
     Queue -->|"Dequeue message"| Worker
-    Worker -->|"Update job status"| DB
-    Worker -->|"Submit prediction"| Replicate
+  Worker -->|"Write ranked recommendations + best recommendation"| DB
+  Worker -->|"Enqueue best-variant generation job"| Queue
+  Worker -->|"Submit prediction(s)"| Replicate
     Replicate -->|"Webhook callback (HMAC)"| Webhook
-    Webhook -->|"Update job result"| DB
-    User -->|"Poll GET /api/jobs/{id}"| API
-    API -->|"Query job status"| DB
+  Webhook -->|"Update variant generation results"| DB
+  User -->|"Poll GET /api/recommendations/jobs/{id}"| API
+  API -->|"Query post + recommendations + variants"| DB
 ```
 
 ## Components
@@ -29,43 +32,45 @@ graph TD
 ### Frontend (`/frontend`)
 - **Vue 3 + Vite** SPA served on `http://localhost:5173` in development.
 - **Tailwind CSS 4** via `@tailwindcss/vite` plugin (v4 `@import "tailwindcss"` syntax).
-- **Pinia** stores: `auth`, `style`, `job`.
+- **Pinia** stores: `auth`, `recommendations`, `job`.
 - `auth` store: Dev login via `POST /api/auth/token`, persists JWT to `localStorage`.
 - **Top auth bar + account route**: persistent header actions expose `Dev Login`, `Account`, and `Logout`, and `/account` shows the current session state plus shortcuts back to generation and job history.
-- `style` store: CRUD + `generate()` which enqueues a job and starts polling.
-- `job` store: Polls `GET /api/jobs/{id}` with exponential backoff (2 s → 10 s cap) until terminal.
-- **Jobs page** (`JobsPage`): authenticated job history powered by `GET /api/jobs`, with inline `PUT /api/jobs/{id}/visibility` toggles for public/private result sharing.
+- `recommendations` store: starts recommendation analysis, polls job status, and renders the published best recommendation with its generated best variant.
+- `job` store: Polls `GET /api/recommendations/jobs/{id}` with exponential backoff (2 s -> 10 s cap) until terminal.
+- **Recommendations page**: authenticated analysis/generation workflow with recommendation-first UX and public-post visibility from first publish.
 - Calls the backend via `fetch` proxied through Vite dev server (`/api → localhost:5000`).
-- **Public feed** (`HomePage`): anonymous infinite-scroll grid of public results using cursor-based pagination (`GET /api/style/feed?take=12&before=<ISO>`). The feed uses an `IntersectionObserver` sentinel to load the next page automatically as the user scrolls.
+- **Public feed** (`HomePage`): anonymous infinite-scroll grid of public recommendation posts where each item includes the main recommendation and its best generated variant. The feed uses cursor-based pagination and `IntersectionObserver` sentinel loading.
 - **`useBackendRequestState` composable**: shared loading/error/offline state across all data-fetching pages. Detects network failures (`statusCode: 0`) and schedules automatic retries for read operations. Submit flows use `handleError` without a retry function so errors surface immediately without re-submitting.
 
 ### Backend (`/backend`)
 - **ASP.NET Core Web API** on `http://localhost:5000` / `https://localhost:5001` in development.
 - Validates JWT on protected routes.
-- Persists style items and job records to PostgreSQL via EF Core 8.
-- Enqueues `StyleJob` messages to Azure Storage Queue.
+- Persists face analysis jobs, recommendation posts, and recommendation generation jobs to PostgreSQL via EF Core 8.
+- Enqueues recommendation analysis and recommendation generation jobs to Azure Storage Queue.
 - Accepts image uploads via `POST /api/upload/image` and exposes `GET /api/upload/public/{userId}/{fileName}` for external model fetches.
-- Receives Replicate webhook callbacks (`POST /api/webhooks/replicate`), verifies HMAC-SHA256 signature, updates job status and result in the database, and can enqueue a follow-up beard stage for multi-step jobs.
-- On the final successful webhook callback, archives the generated image to blob storage and stores a permanent `result_image_url`.
+- Receives Replicate webhook callbacks (`POST /api/webhooks/replicate`), verifies HMAC-SHA256 signature, and updates recommendation variant generation status/results.
+- Archives generated images to blob storage and stores permanent `result_image_url` values for recommendation variants.
 - Exposes Swagger at `/swagger` in development.
 - Auto-applies EF Core migrations on startup in Development.
 
 ### Worker (`/worker`)
 - **BackgroundService** that polls the Azure Storage Queue every 5 seconds.
-- Deserializes each message as a `StyleJob` (from `AiStyleApp.Data.Queue` shared library).
-- Marks the job `Processing` in PostgreSQL, validates/normalizes image + haircut/color/beard inputs, submits a prediction to the Replicate API, stores the returned `external_prediction_id`.
+- Deserializes each message from the shared queue contract and routes by `jobType` (`face-analysis` or `recommendation-generation`).
+- For face-analysis jobs, computes telemetry, ranks candidates, persists one best recommendation, and schedules one best-variant generation job.
+- Pre-MVP, experimentation mode is enabled at 100% traffic and schedules three additional variant jobs for ranking feedback capture.
+- For recommendation-generation jobs, submits predictions to Replicate and stores returned `external_prediction_id` values.
 - Retries up to 3 times on Replicate API failure; marks `Failed` on exhaustion.
 - Deletes the message from the queue only after successful processing.
-- Uses `flux-kontext-apps/change-haircut` for hair edits and a separately configured beard-edit model for beard stages, resolving `latest_version.id` dynamically from Replicate.
+- Uses configured Replicate hair and beard models to render recommendation variants, resolving `latest_version.id` dynamically from Replicate.
 
 ### Shared Data Library (`/data`)
 - **`AiStyleApp.Data`** class library referenced by both Backend and Worker.
-- Contains EF Core entities (`StyleItemEntity`, `StyleJobEntity`), `AppDbContext`, and the `StyleJob` queue message contract.
+- Contains EF Core entities for analysis, recommendation posts, and generation jobs, `AppDbContext`, and shared queue message contracts.
 - EF Core migrations live here.
 
 ### Infrastructure (`/infrastructure`)
 - Azure Storage Queue: `style-jobs`
-- PostgreSQL: `ai_style_app` database with `style_items` and `style_jobs` tables
+- PostgreSQL: `ai_style_app` database with recommendation analysis and recommendation generation tables
 - Local emulation: Azurite (queue), PostgreSQL running on port 5432
 
 ## Unit Testing Footprint
@@ -78,7 +83,9 @@ graph TD
   - `tests/AiStyleApp.Tests/StyleServiceTests.cs` — style generation service coverage (currently stale: still references removed beard fields)
   - `frontend/src/types/api.test.ts` — API type shape validation
 
-## Database Schema
+## Database Schema (Legacy Snapshot)
+
+Note: this snapshot reflects older style-generation-first tables and is being replaced by recommendation-first schema documentation in `docs/api-contracts.md` and `docs/face-analysis-recommendation-spec.md`.
 
 ### `style_items`
 
@@ -128,19 +135,21 @@ graph TD
 
 ## Data Flow
 
-1. User uploads a photo (`POST /api/upload/image`) and fills out Generate Style fields (Name, Description, optional prompt, haircut, hair color, gender, visibility).
-2. Frontend calls `POST /api/style/generate` with a JWT and the uploaded `imageUrl`.
-3. Backend creates a `StyleItemEntity` and `StyleJobEntity` (status `Queued`) in PostgreSQL, then enqueues a `StyleJob` message including image and hair parameters.
-4. Backend returns `202 Accepted` with `jobId` and `statusEndpoint`.
-5. Frontend navigates to the job status page and begins polling `GET /api/jobs/{id}`.
-6. Worker dequeues the message, marks the job `Processing`, verifies the image is externally reachable, and submits a prediction to Replicate (`flux-kontext-apps/change-haircut`).
-7. Replicate sends a webhook callback to `POST /api/webhooks/replicate`.
-8. Backend verifies the HMAC signature, updates the job to `Succeeded` (or `Failed`) with `result_json`, and asynchronously archives the generated image.
-9. Frontend polling detects the terminal status and displays the result (or error).
+1. User uploads a photo (`POST /api/upload/image`) and submits recommendation preferences.
+2. Frontend calls `POST /api/recommendations` with JWT, image URL, gender, and preferences.
+3. Backend creates analysis + recommendation post records in `Queued`/`Publishing` states and enqueues a face-analysis job.
+4. Frontend polls `GET /api/recommendations/jobs/{analysisJobId}`.
+5. Worker processes analysis, extracts ONNX telemetry, ranks candidates, and persists one best recommendation.
+6. Worker enqueues one best-variant recommendation-generation job for Replicate.
+7. Replicate sends webhook callback to `POST /api/webhooks/replicate` for best-variant completion.
+8. Backend verifies HMAC signatures, updates generated variant states/results, and archives final images.
+9. Frontend renders the public recommendation post with the main best recommendation and generated best variant.
 
-## Appendix: Face Analysis and Recommendations (Current Implementation)
+Experimental note: for pre-MVP data collection, the system runs three-variant mode for 100% of sessions and captures 1/2/3 rankings.
 
-This appendix describes the current face-analysis and recommendation flow while preserving the async style-generation flow.
+## Recommendation-First Flow (Canonical)
+
+This section describes the canonical app flow where recommendation analysis is the product entry point and generation is downstream from ranked recommendation output.
 
 ### Current Baseline Components
 

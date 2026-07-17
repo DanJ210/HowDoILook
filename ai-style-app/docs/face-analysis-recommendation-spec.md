@@ -10,7 +10,9 @@ Define a production-ready V1 for accurate face analysis and intelligent style re
 - shared data/contracts in data
 - async queue-driven processing
 
-This spec focuses on analysis and recommendation only. It does not replace the existing style generation pipeline.
+This spec defines the primary product flow: upload -> analyze -> publish post -> generate 1 best variant based on telemetry and recommendation mapping.
+
+Temporary exploration mode: until best-style determination quality is validated with enough data, pre-MVP runs experimentation mode at 100% traffic, generating three additional variants and collecting 1/2/3 ranking feedback.
 
 Implementation status:
 
@@ -23,7 +25,10 @@ Implementation status:
 ### Goals
 
 - Produce stable, explainable face-analysis features from user photos.
-- Generate ranked style recommendations with confidence and short rationale.
+- Generate one best style recommendation with confidence and short rationale.
+- Publish the recommendation post first, then progressively populate generated variant results.
+- Generate one best variant through Replicate as the primary visual result.
+- Run a three-variant experimentation mode for 100% of pre-MVP sessions to collect ranking data.
 - Keep analysis async and resilient using the current backend -> queue -> worker pattern.
 - Keep beard recommendations optional and only applicable when gender is male.
 - Capture feedback signals to improve recommendation quality over time.
@@ -62,6 +67,12 @@ flowchart LR
     D --> E[Worker: Face Analysis Handler]
     E --> C
     E --> F[Recommendation Engine]
+  F --> G[Create Public Recommendation Post]
+  G --> D
+  D --> H[Worker: Recommendation Generation Handler]
+  H --> I[Replicate]
+  I --> J[Webhook]
+  J --> C
     F --> C
     C --> B
     B --> A
@@ -83,8 +94,15 @@ flowchart LR
 4. Extract landmarks and normalized geometry features.
 5. Run region segmentation and derive region metrics.
 6. Build analysis feature vector and confidence metrics.
-7. Rank recommendation candidates with reasons.
-8. Persist result and emit completion status.
+7. Rank recommendation candidates with reasons and select one best recommendation.
+8. Create public recommendation post with the best recommendation as primary.
+9. Enqueue one best-variant generation job.
+10. Persist generation progress/results and emit completion status.
+
+Experimental mode extension (pre-MVP default):
+
+11. Enqueue three variant generation jobs for ranking-data collection.
+12. Persist 1/2/3 ranking feedback and learning metrics.
 
 ## 5.2 Quality Gate Rules (Initial)
 
@@ -122,8 +140,10 @@ All contracts below are additive and versioned.
 ```json
 {
   "analysisJobId": "uuid",
+  "recommendationPostId": "uuid",
   "status": "Queued",
-  "statusEndpoint": "/api/recommendations/jobs/{analysisJobId}"
+  "statusEndpoint": "/api/recommendations/jobs/{analysisJobId}",
+  "publicEndpoint": "/api/recommendations/posts/{recommendationPostId}"
 }
 ```
 
@@ -132,6 +152,8 @@ All contracts below are additive and versioned.
 ```json
 {
   "analysisJobId": "uuid",
+  "recommendationPostId": "uuid",
+  "publishStatus": "Published",
   "status": "Queued | Processing | Succeeded | Failed",
   "qualityGate": {
     "passed": true,
@@ -139,21 +161,33 @@ All contracts below are additive and versioned.
     "message": "string | null"
   },
   "analysisSummary": {
-    "faceShapeDistribution": null,
+    "faceShape": "Square",
     "confidence": 0.87
   },
-  "recommendations": [
+  "bestRecommendation": {
+    "styleId": "string",
+    "styleName": "string",
+    "score": 0.92,
+    "reasons": [
+      "Balances jaw width",
+      "Fits medium maintenance preference"
+    ],
+    "constraints": [
+      "Requires moderate top volume"
+    ]
+  },
+  "bestVariant": {
+    "generationJobId": "uuid",
+    "status": "Queued | Processing | Succeeded | Failed",
+    "resultImageUrl": "string | null"
+  },
+  "experimentalVariants": [
     {
-      "styleId": "string",
-      "styleName": "string",
-      "score": 0.92,
-      "reasons": [
-        "Balances jaw width",
-        "Fits medium maintenance preference"
-      ],
-      "constraints": [
-        "Requires moderate top volume"
-      ]
+      "slot": 1,
+      "generationJobId": "uuid",
+      "status": "Queued | Processing | Succeeded | Failed",
+      "resultImageUrl": "string | null",
+      "selectedRank": "1 | 2 | 3 | null"
     }
   ],
   "debugTelemetry": {
@@ -175,16 +209,28 @@ Current implementation note:
 
 - The worker persists canonical face shape in `face_analysis_jobs.feature_vector_json.faceShape` (for example, `"Square"`).
 - The status API exposes face shape via `debugTelemetry.stages[]` by reading the `landmarks` stage `notes` value (lowercase label such as `"square"`).
-- `analysisSummary.faceShapeDistribution` is currently a placeholder and is returned as `null`.
+- `analysisSummary.faceShape` is the canonical shape label for recommendation and posting decisions.
 
-### SubmitRecommendationFeedbackRequest
+### SubmitRecommendationRatingsRequest (Pre-MVP Default)
 
 ```json
 {
   "analysisJobId": "uuid",
-  "selectedStyleId": "string | null",
-  "rating": 1,
-  "feedbackTags": ["tooBold", "notMyStyle"],
+  "rankings": [
+    {
+      "generationJobId": "uuid",
+      "rank": 1
+    },
+    {
+      "generationJobId": "uuid",
+      "rank": 2
+    },
+    {
+      "generationJobId": "uuid",
+      "rank": 3
+    }
+  ],
+  "feedbackTags": ["greatMatch", "tooBold"],
   "comment": "string | null"
 }
 ```
@@ -196,7 +242,7 @@ Extend existing style-jobs message schema to support analysis jobs.
 ```json
 {
   "jobId": "uuid",
-  "jobType": "StyleGeneration | FaceAnalysis",
+  "jobType": "FaceAnalysis | RecommendationGeneration",
   "schemaVersion": 2,
   "imageUrl": "string",
   "gender": "string | null",
@@ -205,7 +251,7 @@ Extend existing style-jobs message schema to support analysis jobs.
 ```
 
 Notes:
-- Existing style generation fields remain for backward compatibility.
+- Existing style-generation-first behavior is deprecated for this direction.
 - Worker routes by jobType.
 
 ## 7. Database Changes (EF Core)
@@ -253,7 +299,7 @@ Add endpoints under /api/recommendations.
 
 1. POST /api/recommendations
 - Auth required.
-- Creates face_analysis_jobs row with status Queued.
+- Creates face_analysis_jobs row with status Queued and creates recommendation post in Published state.
 - Enqueues FaceAnalysis job message.
 - Returns 202 Accepted.
 
@@ -261,9 +307,9 @@ Add endpoints under /api/recommendations.
 - Auth required.
 - Returns analysis status and recommendations payload.
 
-3. POST /api/recommendations/feedback
+3. POST /api/recommendations/jobs/{id}/ratings
 - Auth required.
-- Stores recommendation feedback for learning loop.
+- Stores 1/2/3 ranking feedback across experimental variants for learning loop.
 
 ## 9. Worker Design
 
@@ -290,15 +336,120 @@ Add new handler in worker/Handlers.
 
 ## 9.3 Recommendation Engine (V1)
 
-Hybrid scoring approach:
+Use a deterministic hybrid scorer to select one best look bundle:
 
-- Rule score from style constraints and geometric heuristics.
-- Preference score from maintenance/styleVibe inputs.
-- Confidence penalty when analysis confidence is low.
+- Hair style
+- Hair color
+- Beard style (optional)
+- Beard color (optional)
 
-Final score = 0.6 * ruleScore + 0.3 * preferenceScore + 0.1 * confidenceScore
+Each candidate bundle is scored using telemetry + user preferences + rule constraints.
 
-Keep top 5 recommendations with explanation reasons.
+### 9.3.1 Candidate Catalog Contract
+
+Each candidate in the style catalog should include:
+
+- candidateId
+- hairStyleId
+- supportedFaceShapes (with compatibility score per shape)
+- minHairDensity and maxHairDensity
+- maintenanceLevel (low, medium, high)
+- supportedVibes (professional, casual, trendy)
+- beardAllowed (true or false)
+- beardStyleId (or NoChange)
+- defaultHairColorStrategy (NoChange, natural, contrast)
+- defaultBeardColorStrategy (NoChange, matchHair, natural)
+
+### 9.3.2 Hard Constraints (Fail Candidate)
+
+A candidate is invalid when any of the following are true:
+
+- qualityGate.passed is false
+- faceCount is not exactly 1
+- gender is not male and beardStyleId is not NoChange
+- allowBeardSuggestions is false and beardStyleId is not NoChange
+- hairDensityEstimate is outside candidate min and max bounds
+- analysisConfidence is below minimum threshold (default 0.65)
+
+Invalid candidates are excluded before weighted ranking.
+
+### 9.3.3 Normalized Inputs (0 to 1)
+
+Normalize the following for scoring:
+
+- faceShapeFit: catalog compatibility for detected face shape
+- geometryFit: jaw, forehead, elongation, symmetry fit against candidate profile
+- hairDensityFit: closeness to candidate density range
+- beardDensityFit: closeness to candidate beard profile (male only)
+- preferenceFit: maintenance and styleVibe alignment
+- colorFit: hair and beard color compatibility to skin tone and natural contrast
+- confidenceFit: analysisConfidence after quality adjustment
+
+### 9.3.4 Weighted Candidate Score
+
+Base score:
+
+scoreBase(c) =
+0.35 * faceShapeFit(c) +
+0.20 * geometryFit(c) +
+0.15 * preferenceFit(c) +
+0.10 * hairDensityFit(c) +
+0.10 * colorFit(c) +
+0.10 * beardDensityFit(c)
+
+For non-male or beard-disabled flows, set beardDensityFit(c) to 0 and re-normalize by dividing by 0.90.
+
+Quality and confidence attenuation:
+
+qualityFactor = clamp(0.70, 1.00, qualityConfidence)
+confidenceFactor = clamp(0.60, 1.00, analysisConfidence)
+
+finalScore(c) = scoreBase(c) * qualityFactor * confidenceFactor
+
+### 9.3.5 Best Look Selection
+
+- Rank valid candidates by finalScore descending.
+- Select top candidate as bestRecommendation.
+- Generate explanation reasons from top 2 to 3 contributing components.
+- Persist contribution breakdown for audit and tuning.
+
+Example reason mapping:
+
+- High faceShapeFit and geometryFit -> "Balances jaw width and forehead ratio"
+- High preferenceFit -> "Matches your requested maintenance level"
+- High colorFit -> "Color choice preserves natural contrast"
+
+### 9.3.6 Color and Beard Resolution Rules
+
+After top candidate is selected:
+
+- Hair color:
+  - If allowHairColorChange is false, use NoChange
+  - Else apply candidate defaultHairColorStrategy
+- Beard:
+  - If gender is not male, beardStyle is NoChange and beardColor is NoChange
+  - If allowBeardSuggestions is false, beardStyle is NoChange and beardColor is NoChange
+  - Else apply candidate beard style and defaultBeardColorStrategy
+
+### 9.3.7 Fallback Behavior
+
+If no candidate survives constraints:
+
+- Return ANALYSIS_LOW_CONFIDENCE_FOR_BEST_SELECTION
+- Use safe fallback bundle:
+  - conservative hair style
+  - hair color NoChange
+  - beard NoChange
+- Mark recommendation as low-confidence in status payload
+
+### 9.3.8 Experimentation Mode (Pre-MVP Default: 100% Traffic)
+
+For pre-MVP recommendation sessions:
+
+- Select top 3 candidates from the same scorer
+- Apply diversity filter so variants are not near-duplicates
+- Keep bestRecommendation and bestVariant unchanged as canonical output
+- Treat variant rankings (1, 2, 3) as training labels for future model tuning
 
 ## 10. Frontend Changes
 
@@ -313,8 +464,8 @@ UX requirements:
 
 - Reuse upload flow and job polling pattern.
 - Show quality gate failures with specific retake guidance.
-- Display ranked recommendations with reasons and confidence indicator.
-- Allow user feedback submission after selection.
+- Display the best recommendation and best generated variant with reasons and confidence indicator.
+- Pre-MVP, display three variants and allow ranking submission as 1, 2, and 3 for all recommendation sessions.
 
 ## 11. Security and Privacy
 
@@ -331,9 +482,9 @@ Emit metrics per stage:
 - analysis_jobs_total
 - analysis_success_rate
 - quality_gate_fail_rate by failureCode
-- recommendation_click_through_rate
-- recommendation_feedback_rate
-- recommendation_average_rating
+- recommendation_best_variant_success_rate
+- recommendation_best_variant_selection_confidence
+- recommendation_experiment_ranking_submission_rate
 
 Log with correlationId and jobId across backend and worker.
 
@@ -376,13 +527,16 @@ Validation commands:
 - Recommendation request returns 202 and creates async job.
 - Worker completes analysis and returns top recommendations for valid single-face input.
 - Poor-quality input yields user-actionable failure response.
-- Feedback endpoint stores user response linked to analysis job.
-- No regression to existing style-generation flow.
+- Best recommendation is exposed as the primary recommendation for public post views.
+- One best generated variant is created and shown on the public post.
+- Ranking endpoint stores 1/2/3 user response linked to analysis and experimental generation jobs for all pre-MVP recommendation sessions.
 - Contracts are documented in docs/api-contracts.md before merge.
 
 ## 16. V2 Plan: ONNX Face Telemetry + Replicate Style Generation
 
-V1 validated async flow and recommendation plumbing. V2 makes recommendations image-driven by adding true face-aware ONNX inference while preserving existing Replicate haircut/beard generation.
+The V2 title keeps naming continuity with existing docs, but the product flow remains recommendation-first with publish-first behavior.
+
+V1 validated async flow and recommendation plumbing. V2 makes recommendations image-driven by adding true face-aware ONNX inference and strengthens recommendation-to-generation quality.
 
 ### 16.1 V2 Objectives
 
@@ -529,16 +683,16 @@ Outputs:
 
 ## 21. Replicate Integration Constraints
 
-Replicate stays the rendering engine for final style generation in V2.
+Replicate stays the rendering engine for recommendation variant generation in V2.
 
 Rules:
 
 1. Recommendation chooses style template and parameters.
-2. Existing style generation endpoints queue Replicate jobs unchanged.
+2. Recommendation ranking output queues one best-variant Replicate generation job.
 3. Telemetry influences what style to generate, not how Replicate is called.
 4. Hair and beard stages remain optional and compatible with current two-stage pipeline.
 
-### 21.1 Recommendation-to-Generation Decision Contract (Internal)
+### 21.1 Recommendation-to-Generation Decision Contract
 
 Use a single internal payload for the handoff between recommendation output and style generation request building.
 
@@ -588,7 +742,7 @@ Use a single internal payload for the handoff between recommendation output and 
 - Beard fields must be `No change` unless `gender == male` and `allowBeardSuggestions == true`.
 - If `qualityPassed == false` or `analysisConfidence < minimumConfidenceRequired`, do not enqueue style generation.
 - `pipelineMode` must be one of `HairOnly`, `BeardOnly`, `HairThenBeard` and map directly to the existing style job pipeline behavior.
-- This is an internal contract between recommendation and generation services; public API DTOs stay unchanged.
+- This contract is reflected by public recommendation status DTOs and includes experimentation fields (pre-MVP: populated for 100% of sessions).
 
 ## 22. API and UI Additions (V2)
 
