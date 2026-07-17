@@ -451,6 +451,29 @@ For pre-MVP recommendation sessions:
 - Keep bestRecommendation and bestVariant unchanged as canonical output
 - Treat variant rankings (1, 2, 3) as training labels for future model tuning
 
+### 9.3.9 Experimentation Feature Flag Contract
+
+Use these configuration keys to control experimentation behavior:
+
+- `Features:ExperimentationModeEnabled` (bool)
+- `Features:ExperimentationTrafficPercent` (int 0 to 100)
+
+Pre-MVP required values:
+
+- `Features:ExperimentationModeEnabled = true`
+- `Features:ExperimentationTrafficPercent = 100`
+
+Application rule:
+
+- Experimentation is applied when mode is enabled and user bucket hash is less than traffic percent.
+- With pre-MVP values, experimentation is applied to all sessions.
+
+Post-MVP target progression:
+
+1. `ExperimentationModeEnabled = true`, `ExperimentationTrafficPercent = 20`
+2. `ExperimentationModeEnabled = true`, `ExperimentationTrafficPercent = 5`
+3. `ExperimentationModeEnabled = false`, `ExperimentationTrafficPercent = 0`
+
 ## 10. Frontend Changes
 
 Add recommendation flow in frontend/src:
@@ -770,6 +793,8 @@ Use staged rollout:
 2. `Features:OnnxLandmarks`
 3. `Features:OnnxRegionEstimation`
 4. `Features:RecommendationResearchMappingV2`
+5. `Features:ExperimentationModeEnabled`
+6. `Features:ExperimentationTrafficPercent`
 
 `Features:OnnxFaceDetection`, `Features:OnnxLandmarks`, and `Features:OnnxRegionEstimation` are configuration-driven and may be enabled per environment as rollout progresses.
 
@@ -777,7 +802,9 @@ Rollout sequence:
 
 1. Shadow mode: run ONNX and heuristic in parallel, persist both (internal only).
 2. Compare telemetry stability and recommendation deltas.
-3. Promote ONNX output to primary when acceptance thresholds are met.
+3. Keep experimentation flags at pre-MVP values (`true` and `100`) while collecting ranking labels.
+4. Promote ONNX output to primary when acceptance thresholds are met.
+5. Ramp experimentation traffic down post-MVP using the progression in section 9.3.9.
 
 ## 24. Acceptance Criteria (V2)
 

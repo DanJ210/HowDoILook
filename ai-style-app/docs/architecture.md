@@ -58,6 +58,7 @@ graph TD
 - Deserializes each message from the shared queue contract and routes by `jobType` (`face-analysis` or `recommendation-generation`).
 - For face-analysis jobs, computes telemetry, ranks candidates, persists one best recommendation, and schedules one best-variant generation job.
 - Pre-MVP, experimentation mode is enabled at 100% traffic and schedules three additional variant jobs for ranking feedback capture.
+- Experimentation flags: `Features:ExperimentationModeEnabled=true` and `Features:ExperimentationTrafficPercent=100` (pre-MVP).
 - For recommendation-generation jobs, submits predictions to Replicate and stores returned `external_prediction_id` values.
 - Retries up to 3 times on Replicate API failure; marks `Failed` on exhaustion.
 - Deletes the message from the queue only after successful processing.

@@ -214,6 +214,20 @@ Queued → Processing → Succeeded
 | `GET` | `/api/recommendations/jobs/{id}` | Required | — | `RecommendationJobStatusResponse` |
 | `POST` | `/api/recommendations/jobs/{id}/ratings` | Required | `SubmitRecommendationRatingsRequest` | 202 |
 
+### Feature Flags Contract
+
+Runtime behavior is controlled by the following configuration keys.
+
+| Key | Type | Pre-MVP Value | Post-MVP Target | Description |
+|---|---|---|---|---|
+| `Features:ExperimentationModeEnabled` | bool | `true` | `false` after model confidence is validated | Enables generation and collection of experimental variants/rankings. |
+| `Features:ExperimentationTrafficPercent` | int (0-100) | `100` | `20` during ramp-down, then `0` | Percentage of recommendation sessions that receive experimental variants. |
+
+Selection rule:
+
+- Experimentation is applied when `ExperimentationModeEnabled = true` and user bucket hash is less than `ExperimentationTrafficPercent`.
+- Pre-MVP this evaluates true for all sessions because percent is 100.
+
 ### CreateRecommendationsRequest
 
 ```json
@@ -284,6 +298,12 @@ Current implementation note:
     "status": "Queued | Processing | Succeeded | Failed",
     "resultImageUrl": "string | null"
   },
+  "experiment": {
+    "enabled": true,
+    "trafficPercent": 100,
+    "applied": true,
+    "bucketKey": "userId-hash"
+  },
   "experimentalVariants": [
     {
       "slot": 1,
@@ -339,6 +359,7 @@ Current implementation note:
 - API consumers should treat `bestRecommendation` as the primary public posting recommendation.
 - API consumers should treat `bestVariant` as the canonical generated outcome for the post.
 - Pre-MVP, `experimentalVariants` are populated for 100% of recommendation sessions.
+- The `experiment` object reports whether experimentation was configured and actually applied for the job.
 
 ### SubmitRecommendationRatingsRequest
 
