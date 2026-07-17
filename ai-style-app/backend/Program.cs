@@ -4,6 +4,7 @@ using AiStyleApp.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,7 +12,25 @@ var builder = WebApplication.CreateBuilder(args);
 // Controllers
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Paste only the JWT access token returned by POST /api/auth/token."
+    });
+
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("Bearer", document, null)] = new List<string>()
+    });
+
+    options.OperationFilter<SwaggerOperationDefaultsFilter>();
+});
 
 // CORS — allow frontend dev origin in development only
 builder.Services.AddCors(options =>
@@ -40,6 +59,55 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var authorization = context.Request.Headers.Authorization.ToString();
+
+                if (authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                {
+                    var token = authorization["Bearer ".Length..].Trim();
+
+                    // Swagger bearer auth expects token-only input; strip an accidental extra prefix.
+                    if (token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        token = token["Bearer ".Length..].Trim();
+                    }
+
+                    context.Token = token;
+                }
+
+                return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = context =>
+            {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("JwtAuth");
+
+                logger.LogWarning(context.Exception,
+                    "JWT authentication failed. Issuer={Issuer}; Audience={Audience}",
+                    builder.Configuration["Jwt:Issuer"],
+                    builder.Configuration["Jwt:Audience"]);
+
+                return Task.CompletedTask;
+            },
+            OnChallenge = context =>
+            {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("JwtAuth");
+
+                if (!string.IsNullOrWhiteSpace(context.ErrorDescription))
+                {
+                    logger.LogWarning("JWT challenge error: {Error}. {Description}", context.Error, context.ErrorDescription);
+                }
+
+                return Task.CompletedTask;
+            }
         };
     });
 
