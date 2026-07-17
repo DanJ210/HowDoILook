@@ -55,12 +55,20 @@ public record RecommendationItemResponse(
     IReadOnlyList<string> Constraints
 );
 
+public record RecommendationExperimentResponse(
+    bool Enabled,
+    int TrafficPercent,
+    bool Applied,
+    string BucketKey
+);
+
 public record RecommendationJobStatusResponse(
     Guid AnalysisJobId,
     string Status,
     RecommendationQualityGateResponse QualityGate,
     RecommendationAnalysisSummaryResponse AnalysisSummary,
     IReadOnlyList<RecommendationItemResponse> Recommendations,
+    RecommendationExperimentResponse Experiment,
     RecommendationDebugTelemetryResponse? DebugTelemetry,
     string? ErrorCode,
     string? ErrorMessage

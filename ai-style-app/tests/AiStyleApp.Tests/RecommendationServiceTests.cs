@@ -2,6 +2,7 @@ using AiStyleApp.Api.Services;
 using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace AiStyleApp.Tests;
 
@@ -26,7 +27,13 @@ public class RecommendationServiceTests
         db.FaceAnalysisJobs.Add(analysisJob);
         await db.SaveChangesAsync();
 
-        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger());
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Features:ExperimentationModeEnabled"] = "true",
+            ["Features:ExperimentationTrafficPercent"] = "100"
+        }).Build();
+
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
 
         var result = await service.GetStatusAsync(analysisJob.Id, "user-1");
 

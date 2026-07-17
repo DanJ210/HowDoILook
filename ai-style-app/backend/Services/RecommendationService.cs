@@ -1,9 +1,12 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using AiStyleApp.Api.Models;
 using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
 using AiStyleApp.Data.Queue;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace AiStyleApp.Api.Services;
 
@@ -12,12 +15,14 @@ public class RecommendationService : IRecommendationService
     private readonly AppDbContext _db;
     private readonly IQueuePublisher _queue;
     private readonly IMetricsLogger _metricsLogger;
+    private readonly IConfiguration _configuration;
 
-    public RecommendationService(AppDbContext db, IQueuePublisher queue, IMetricsLogger metricsLogger)
+    public RecommendationService(AppDbContext db, IQueuePublisher queue, IMetricsLogger metricsLogger, IConfiguration configuration)
     {
         _db = db;
         _queue = queue;
         _metricsLogger = metricsLogger;
+        _configuration = configuration;
     }
 
     public async Task<Guid> CreateAndEnqueueAsync(
@@ -78,6 +83,8 @@ public class RecommendationService : IRecommendationService
             return null;
         }
 
+        var experiment = BuildExperimentMetadata(userId);
+
         return new RecommendationJobStatusResponse(
             AnalysisJobId: analysisJob.Id,
             Status: analysisJob.Status,
@@ -89,6 +96,7 @@ public class RecommendationService : IRecommendationService
                 FaceShapeDistribution: null,
                 Confidence: analysisJob.AnalysisConfidence),
             Recommendations: ParseRecommendations(analysisJob.RecommendationsJson),
+            Experiment: experiment,
             DebugTelemetry: ParseDebugTelemetry(analysisJob.FeatureVectorJson),
             ErrorCode: analysisJob.ErrorCode,
             ErrorMessage: analysisJob.ErrorMessage);
@@ -290,5 +298,31 @@ public class RecommendationService : IRecommendationService
         }
 
         return null;
+    }
+
+    private RecommendationExperimentResponse BuildExperimentMetadata(string userId)
+    {
+        var enabled = _configuration.GetValue("Features:ExperimentationModeEnabled", false);
+        var trafficPercentRaw = _configuration.GetValue("Features:ExperimentationTrafficPercent", 0);
+        var trafficPercent = Math.Clamp(trafficPercentRaw, 0, 100);
+
+        var bucket = ComputeStableBucket(userId);
+        var applied = enabled && bucket < trafficPercent;
+        var bucketKey = $"user-hash-{bucket:00}";
+
+        return new RecommendationExperimentResponse(
+            Enabled: enabled,
+            TrafficPercent: trafficPercent,
+            Applied: applied,
+            BucketKey: bucketKey);
+    }
+
+    private static int ComputeStableBucket(string userId)
+    {
+        var value = string.IsNullOrWhiteSpace(userId) ? "anonymous" : userId.Trim();
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var hash = SHA256.HashData(bytes);
+        var sample = BitConverter.ToUInt32(hash, 0);
+        return (int)(sample % 100);
     }
 }
