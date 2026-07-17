@@ -32,14 +32,14 @@ public class RecommendationsController : ControllerBase
             return BadRequest("ImageUrl is required.");
         }
 
-        var analysisJobId = await _recommendations.CreateAndEnqueueAsync(request, UserId, ct);
+        var (analysisJobId, recommendationPostId) = await _recommendations.CreateAndEnqueueAsync(request, UserId, ct);
 
         var response = new CreateRecommendationsResponse(
             AnalysisJobId: analysisJobId,
-            RecommendationPostId: null,
+            RecommendationPostId: recommendationPostId,
             Status: "Queued",
             StatusEndpoint: Url.Action(nameof(GetById), new { id = analysisJobId }) ?? $"/api/recommendations/jobs/{analysisJobId}",
-            PublicEndpoint: null);
+            PublicEndpoint: $"/api/style/{recommendationPostId}");
 
         return AcceptedAtAction(nameof(GetById), new { id = analysisJobId }, response);
     }

@@ -10,6 +10,30 @@ namespace AiStyleApp.Tests;
 public class RecommendationServiceTests
 {
     [Fact]
+    public async Task CreateAndEnqueueAsync_CreatesPublishFirstRecommendationPost()
+    {
+        await using var db = CreateDbContext();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var request = new CreateRecommendationsRequest(
+            ImageUrl: "https://example.com/photo.jpg",
+            Gender: "female",
+            Preferences: null);
+
+        var (analysisJobId, recommendationPostId) = await service.CreateAndEnqueueAsync(request, "user-1");
+
+        Assert.NotEqual(Guid.Empty, analysisJobId);
+        Assert.NotEqual(Guid.Empty, recommendationPostId);
+
+        var post = await db.StyleItems.FirstOrDefaultAsync(x => x.Id == recommendationPostId);
+        Assert.NotNull(post);
+        Assert.True(post!.IsResultPublic);
+        Assert.Contains(analysisJobId.ToString(), post.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SubmitRatingsAsync_PersistsOneFeedbackEntryPerRanking()
     {
         await using var db = CreateDbContext();

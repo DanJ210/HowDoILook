@@ -278,6 +278,14 @@ catch (FaceAnalysisException ex)
             .Take(experimentApplied ? 4 : 1)
             .ToList();
 
+        var existingPrimaryPost = await _db.StyleItems
+            .Include(x => x.Jobs)
+            .FirstOrDefaultAsync(
+                x => x.UserId == analysisJob.UserId
+                     && x.IsResultPublic
+                     && x.Description.Contains(analysisJob.Id.ToString()),
+                cancellationToken);
+
         var styleItems = new List<StyleItemEntity>(selected.Count);
         var styleJobs = new List<StyleJobEntity>(selected.Count);
 
@@ -290,17 +298,31 @@ catch (FaceAnalysisException ex)
             var template = ResolveTemplate(candidate.StyleId, analysisJob.Gender);
             var isPrimary = index == 0;
 
-            var item = new StyleItemEntity
+            StyleItemEntity item;
+            if (isPrimary && existingPrimaryPost is not null)
             {
-                UserId = analysisJob.UserId,
-                Name = isPrimary
-                    ? $"Recommended: {styleName}"
-                    : $"Experimental {index}: {styleName}",
-                Description = BuildDescription(analysisJob.Id, styleName, candidate.Score, isPrimary, experimentApplied),
-                Prompt = BuildPrompt(styleName, candidate.Reasons),
-                ImageUrl = analysisJob.ImageUrl,
-                IsResultPublic = isPrimary
-            };
+                item = existingPrimaryPost;
+                item.Name = $"Recommended: {styleName}";
+                item.Description = BuildDescription(analysisJob.Id, styleName, candidate.Score, isPrimary, experimentApplied);
+                item.Prompt = BuildPrompt(styleName, candidate.Reasons);
+                item.ImageUrl = analysisJob.ImageUrl;
+                item.IsResultPublic = true;
+                item.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            }
+            else
+            {
+                item = new StyleItemEntity
+                {
+                    UserId = analysisJob.UserId,
+                    Name = isPrimary
+                        ? $"Recommended: {styleName}"
+                        : $"Experimental {index}: {styleName}",
+                    Description = BuildDescription(analysisJob.Id, styleName, candidate.Score, isPrimary, experimentApplied),
+                    Prompt = BuildPrompt(styleName, candidate.Reasons),
+                    ImageUrl = analysisJob.ImageUrl,
+                    IsResultPublic = isPrimary
+                };
+            }
 
             var job = new StyleJobEntity
             {
@@ -328,11 +350,17 @@ catch (FaceAnalysisException ex)
             job.IsBeardStagePending = job.PipelineMode == StyleJobPipelineMode.HairThenBeard;
 
             item.Jobs.Add(job);
-            styleItems.Add(item);
+            if (!(isPrimary && existingPrimaryPost is not null))
+            {
+                styleItems.Add(item);
+            }
             styleJobs.Add(job);
         }
 
-        _db.StyleItems.AddRange(styleItems);
+        if (styleItems.Count > 0)
+        {
+            _db.StyleItems.AddRange(styleItems);
+        }
         await _db.SaveChangesAsync(cancellationToken);
 
         foreach (var job in styleJobs)

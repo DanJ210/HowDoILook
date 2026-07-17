@@ -25,7 +25,7 @@ public class RecommendationService : IRecommendationService
         _configuration = configuration;
     }
 
-    public async Task<Guid> CreateAndEnqueueAsync(
+    public async Task<(Guid AnalysisJobId, Guid RecommendationPostId)> CreateAndEnqueueAsync(
         CreateRecommendationsRequest request,
         string userId,
         CancellationToken ct = default)
@@ -46,7 +46,18 @@ public class RecommendationService : IRecommendationService
             Status = "Queued"
         };
 
+        var recommendationPost = new StyleItemEntity
+        {
+            UserId = userId,
+            Name = "Recommendation Post (Processing)",
+            Description = $"Primary recommendation from analysis job {analysisJob.Id}. Pending analysis.",
+            Prompt = "Pending recommendation generation",
+            ImageUrl = request.ImageUrl,
+            IsResultPublic = true
+        };
+
         _db.FaceAnalysisJobs.Add(analysisJob);
+        _db.StyleItems.Add(recommendationPost);
         await _db.SaveChangesAsync(ct);
 
         var queueMessage = new StyleJob(
@@ -66,7 +77,7 @@ public class RecommendationService : IRecommendationService
 
         await _queue.PublishAsync(queueMessage, ct);
 
-        return analysisJob.Id;
+        return (analysisJob.Id, recommendationPost.Id);
     }
 
     public async Task<RecommendationJobStatusResponse?> GetStatusAsync(

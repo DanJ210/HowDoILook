@@ -236,6 +236,65 @@ public class FaceAnalysisJobHandlerTests
                 Assert.True(styleItems[0].IsResultPublic);
         }
 
+        [Fact]
+        public async Task HandleAsync_ReusesExistingPrimaryRecommendationPostPlaceholder()
+        {
+                await using var db = CreateDbContext();
+                var analysisJob = await SeedAnalysisJobAsync(db);
+
+                var placeholder = new StyleItemEntity
+                {
+                        UserId = analysisJob.UserId,
+                        Name = "Recommendation Post (Processing)",
+                        Description = $"Primary recommendation from analysis job {analysisJob.Id}. Pending analysis.",
+                        Prompt = "Pending recommendation generation",
+                        ImageUrl = analysisJob.ImageUrl,
+                        IsResultPublic = true
+                };
+
+                db.StyleItems.Add(placeholder);
+                await db.SaveChangesAsync();
+
+                const string recommendationsJson = """
+                [
+                    {"styleId":"textured-crop","styleName":"Textured Crop","score":0.94,"reasons":["r1"],"constraints":[]}
+                ]
+                """;
+
+                const string featureVectorJson = """
+                {
+                    "experiment": {
+                        "enabled": true,
+                        "trafficPercent": 100,
+                        "applied": false,
+                        "bucketKey": "user-hash-01"
+                    }
+                }
+                """;
+
+                var pipeline = new StubFaceAnalysisPipeline
+                {
+                        AnalyzeResult = new FaceAnalysisPipelineResult(
+                                QualityPassed: true,
+                                QualityFailureCode: null,
+                                QualityMessage: null,
+                                FeatureVectorJson: featureVectorJson,
+                                AnalysisConfidence: 0.94,
+                                RecommendationsJson: recommendationsJson)
+                };
+
+                var queue = new StubWorkerQueuePublisher();
+                var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK), queue);
+
+                await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
+
+                Assert.Single(queue.Messages);
+                var allPublicItems = await db.StyleItems.AsNoTracking().Where(x => x.IsResultPublic).ToListAsync();
+                Assert.Single(allPublicItems);
+                Assert.Equal(placeholder.Id, allPublicItems[0].Id);
+                Assert.StartsWith("Recommended:", allPublicItems[0].Name, StringComparison.Ordinal);
+        }
+
     private static FaceAnalysisJobHandler CreateHandler(
         AppDbContext db,
         IFaceAnalysisPipeline pipeline,
