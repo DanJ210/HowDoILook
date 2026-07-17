@@ -86,17 +86,87 @@ public class RecommendationService : IRecommendationService
         var experiment = ParseExperimentFromFeatureVector(analysisJob.FeatureVectorJson)
             ?? BuildExperimentMetadata(userId);
 
+        var recommendations = ParseRecommendations(analysisJob.RecommendationsJson);
+        var bestRecommendation = recommendations.FirstOrDefault();
+        var faceShape = ParseFaceShape(analysisJob.FeatureVectorJson);
+
+        var linkedStyleItems = await _db.StyleItems
+            .AsNoTracking()
+            .Include(x => x.Jobs)
+            .Where(x => x.UserId == userId && x.Description.Contains(analysisJob.Id.ToString()))
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
+
+        var primaryStyleItem = linkedStyleItems.FirstOrDefault(x => x.IsResultPublic)
+            ?? linkedStyleItems.FirstOrDefault();
+        var bestJob = primaryStyleItem?.Jobs
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .FirstOrDefault();
+
+        RecommendationVariantResponse? bestVariant = null;
+        if (bestJob is not null)
+        {
+            bestVariant = new RecommendationVariantResponse(
+                GenerationJobId: bestJob.Id,
+                Status: bestJob.Status,
+                ResultImageUrl: bestJob.ResultImageUrl);
+        }
+
+        var experimentalItems = linkedStyleItems
+            .Where(x => primaryStyleItem is null || x.Id != primaryStyleItem.Id)
+            .Take(3)
+            .ToList();
+
+        var feedbackBySelectionId = await _db.RecommendationFeedback
+            .AsNoTracking()
+            .Where(x => x.AnalysisJobId == analysisJobId)
+            .ToDictionaryAsync(
+                x => x.SelectedStyleId ?? string.Empty,
+                x => x.Rating,
+                ct);
+
+        var experimentalVariants = new List<RecommendationExperimentalVariantResponse>();
+        for (var i = 0; i < experimentalItems.Count; i++)
+        {
+            var item = experimentalItems[i];
+            var job = item.Jobs.OrderByDescending(x => x.CreatedAtUtc).FirstOrDefault();
+            if (job is null)
+            {
+                continue;
+            }
+
+            var key = job.Id.ToString();
+            var selectedRank = feedbackBySelectionId.TryGetValue(key, out var rank) && rank.HasValue
+                ? rank.Value.ToString()
+                : null;
+
+            experimentalVariants.Add(new RecommendationExperimentalVariantResponse(
+                Slot: i + 1,
+                GenerationJobId: job.Id,
+                Status: job.Status,
+                ResultImageUrl: job.ResultImageUrl,
+                SelectedRank: selectedRank));
+        }
+
+        var recommendationPostId = primaryStyleItem?.Id;
+        var publishStatus = primaryStyleItem is null ? null : "Published";
+
         return new RecommendationJobStatusResponse(
             AnalysisJobId: analysisJob.Id,
+            RecommendationPostId: recommendationPostId,
+            PublishStatus: publishStatus,
             Status: analysisJob.Status,
             QualityGate: new RecommendationQualityGateResponse(
                 Passed: analysisJob.QualityPassed,
                 FailureCode: analysisJob.QualityFailureCode,
                 Message: analysisJob.QualityMessage),
             AnalysisSummary: new RecommendationAnalysisSummaryResponse(
-                FaceShapeDistribution: null,
+                FaceShape: faceShape,
                 Confidence: analysisJob.AnalysisConfidence),
-            Recommendations: ParseRecommendations(analysisJob.RecommendationsJson),
+            BestRecommendation: bestRecommendation,
+            BestVariant: bestVariant,
+            ExperimentalVariants: experimentalVariants,
+            Recommendations: recommendations,
             Experiment: experiment,
             DebugTelemetry: ParseDebugTelemetry(analysisJob.FeatureVectorJson),
             ErrorCode: analysisJob.ErrorCode,
@@ -332,6 +402,51 @@ public class RecommendationService : IRecommendationService
 
         value = default;
         return false;
+    }
+
+    private static string? ParseFaceShape(string? featureVectorJson)
+    {
+        if (string.IsNullOrWhiteSpace(featureVectorJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            var root = doc.RootElement;
+
+            if (TryGetPropertyIgnoreCase(root, "faceShape", out var shapeNode)
+                && shapeNode.ValueKind == JsonValueKind.String)
+            {
+                return shapeNode.GetString();
+            }
+
+            if (TryGetPropertyIgnoreCase(root, "stageTelemetry", out var telemetryNode)
+                && telemetryNode.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var stage in telemetryNode.EnumerateArray())
+                {
+                    if (!TryGetPropertyIgnoreCase(stage, "stage", out var stageName)
+                        || !string.Equals(stageName.GetString(), "landmarks", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (TryGetPropertyIgnoreCase(stage, "notes", out var notes)
+                        && notes.ValueKind == JsonValueKind.String)
+                    {
+                        return notes.GetString();
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+
+        return null;
     }
 
     private static int? GetRecommendationRank(string? recommendationsJson, string? selectedStyleId)

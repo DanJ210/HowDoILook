@@ -81,6 +81,98 @@ public class RecommendationServiceTests
     }
 
     [Fact]
+    public async Task GetStatusAsync_PopulatesBestAndExperimentalVariants_FromLinkedStyleItems()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded",
+            QualityPassed = true,
+            AnalysisConfidence = 0.82,
+            RecommendationsJson = "[{\"styleId\":\"textured-crop\",\"styleName\":\"Textured Crop\",\"score\":0.94,\"reasons\":[],\"constraints\":[]}]",
+            FeatureVectorJson = "{\"faceShape\":\"Square\"}"
+        };
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+
+        var primaryItem = new StyleItemEntity
+        {
+            UserId = "user-1",
+            Name = "Recommended: Textured Crop",
+            Description = $"Primary recommendation from analysis job {analysisJob.Id}",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            IsResultPublic = true
+        };
+
+        var primaryJob = new StyleJobEntity
+        {
+            StyleItemId = primaryItem.Id,
+            UserId = "user-1",
+            JobType = "generate-style",
+            Status = "Succeeded",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            ResultImageUrl = "https://example.com/best.jpg"
+        };
+        primaryItem.Jobs.Add(primaryJob);
+
+        var experimentalItem = new StyleItemEntity
+        {
+            UserId = "user-1",
+            Name = "Experimental 1: Classic Side Part",
+            Description = $"Experimental recommendation from analysis job {analysisJob.Id}",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            IsResultPublic = false
+        };
+
+        var experimentalJob = new StyleJobEntity
+        {
+            StyleItemId = experimentalItem.Id,
+            UserId = "user-1",
+            JobType = "generate-style",
+            Status = "Processing",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl
+        };
+        experimentalItem.Jobs.Add(experimentalJob);
+
+        db.StyleItems.AddRange(primaryItem, experimentalItem);
+        db.RecommendationFeedback.Add(new RecommendationFeedbackEntity
+        {
+            AnalysisJobId = analysisJob.Id,
+            UserId = "user-1",
+            SelectedStyleId = experimentalJob.Id.ToString(),
+            Rating = 2
+        });
+
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Features:ExperimentationModeEnabled"] = "true",
+            ["Features:ExperimentationTrafficPercent"] = "100"
+        }).Build();
+
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+        var result = await service.GetStatusAsync(analysisJob.Id, "user-1");
+
+        Assert.NotNull(result);
+        Assert.Equal(primaryItem.Id, result!.RecommendationPostId);
+        Assert.Equal("Published", result.PublishStatus);
+        Assert.Equal("Square", result.AnalysisSummary.FaceShape);
+        Assert.NotNull(result.BestVariant);
+        Assert.Equal(primaryJob.Id, result.BestVariant!.GenerationJobId);
+        Assert.Single(result.ExperimentalVariants);
+        Assert.Equal(experimentalJob.Id, result.ExperimentalVariants[0].GenerationJobId);
+        Assert.Equal("2", result.ExperimentalVariants[0].SelectedRank);
+    }
+
+    [Fact]
     public async Task GetStatusAsync_UsesExperimentMetadataFromFeatureVector_WhenPresent()
     {
         await using var db = CreateDbContext();

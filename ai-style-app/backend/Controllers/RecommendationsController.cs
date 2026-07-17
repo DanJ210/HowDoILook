@@ -36,8 +36,10 @@ public class RecommendationsController : ControllerBase
 
         var response = new CreateRecommendationsResponse(
             AnalysisJobId: analysisJobId,
+            RecommendationPostId: null,
             Status: "Queued",
-            StatusEndpoint: Url.Action(nameof(GetById), new { id = analysisJobId }) ?? $"/api/recommendations/jobs/{analysisJobId}");
+            StatusEndpoint: Url.Action(nameof(GetById), new { id = analysisJobId }) ?? $"/api/recommendations/jobs/{analysisJobId}",
+            PublicEndpoint: null);
 
         return AcceptedAtAction(nameof(GetById), new { id = analysisJobId }, response);
     }

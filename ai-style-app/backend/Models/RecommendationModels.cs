@@ -15,8 +15,10 @@ public record CreateRecommendationsRequest(
 
 public record CreateRecommendationsResponse(
     Guid AnalysisJobId,
+    Guid? RecommendationPostId,
     string Status,
-    string StatusEndpoint
+    string StatusEndpoint,
+    string? PublicEndpoint
 );
 
 public record RecommendationQualityGateResponse(
@@ -26,7 +28,7 @@ public record RecommendationQualityGateResponse(
 );
 
 public record RecommendationAnalysisSummaryResponse(
-    Dictionary<string, double>? FaceShapeDistribution,
+    string? FaceShape,
     double? Confidence
 );
 
@@ -62,11 +64,30 @@ public record RecommendationExperimentResponse(
     string BucketKey
 );
 
+public record RecommendationVariantResponse(
+    Guid GenerationJobId,
+    string Status,
+    string? ResultImageUrl
+);
+
+public record RecommendationExperimentalVariantResponse(
+    int Slot,
+    Guid GenerationJobId,
+    string Status,
+    string? ResultImageUrl,
+    string? SelectedRank
+);
+
 public record RecommendationJobStatusResponse(
     Guid AnalysisJobId,
+    Guid? RecommendationPostId,
+    string? PublishStatus,
     string Status,
     RecommendationQualityGateResponse QualityGate,
     RecommendationAnalysisSummaryResponse AnalysisSummary,
+    RecommendationItemResponse? BestRecommendation,
+    RecommendationVariantResponse? BestVariant,
+    IReadOnlyList<RecommendationExperimentalVariantResponse> ExperimentalVariants,
     IReadOnlyList<RecommendationItemResponse> Recommendations,
     RecommendationExperimentResponse Experiment,
     RecommendationDebugTelemetryResponse? DebugTelemetry,
