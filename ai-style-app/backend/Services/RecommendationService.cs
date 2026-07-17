@@ -143,6 +143,64 @@ public class RecommendationService : IRecommendationService
             recommendationRank);
     }
 
+    public async Task SubmitRatingsAsync(
+        Guid analysisJobId,
+        SubmitRecommendationRatingsRequest request,
+        string userId,
+        CancellationToken ct = default)
+    {
+        var analysisJob = await _db.FaceAnalysisJobs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == analysisJobId && x.UserId == userId, ct);
+
+        if (analysisJob is null)
+        {
+            throw new InvalidOperationException("Analysis job not found.");
+        }
+
+        if (request.Rankings is null || request.Rankings.Count == 0)
+        {
+            throw new ArgumentException("At least one ranking is required.", nameof(request));
+        }
+
+        foreach (var ranking in request.Rankings)
+        {
+            if (ranking.Rank is < 1 or > 3)
+            {
+                throw new ArgumentException("Rank must be between 1 and 3.", nameof(request));
+            }
+        }
+
+        var serializedTags = request.FeedbackTags is null
+            ? null
+            : JsonSerializer.Serialize(request.FeedbackTags);
+
+        var entries = request.Rankings.Select(ranking => new RecommendationFeedbackEntity
+        {
+            AnalysisJobId = analysisJobId,
+            UserId = userId,
+            // Store generationJobId string in selected_style_id for pre-MVP experimentation ranking labels.
+            SelectedStyleId = ranking.GenerationJobId.ToString(),
+            Rating = ranking.Rank,
+            FeedbackTagsJson = serializedTags,
+            Comment = request.Comment
+        }).ToList();
+
+        _db.RecommendationFeedback.AddRange(entries);
+        await _db.SaveChangesAsync(ct);
+
+        foreach (var ranking in request.Rankings)
+        {
+            _metricsLogger.LogRecommendationFeedbackSubmitted(
+                analysisJobId,
+                userId,
+                ranking.GenerationJobId.ToString(),
+                ranking.Rank,
+                serializedTags,
+                ranking.Rank);
+        }
+    }
+
     private static IReadOnlyList<RecommendationItemResponse> ParseRecommendations(string? recommendationsJson)
     {
         if (string.IsNullOrWhiteSpace(recommendationsJson))

@@ -74,4 +74,35 @@ public class RecommendationsController : ControllerBase
             return NotFound();
         }
     }
+
+    [HttpPost("jobs/{id:guid}/ratings")]
+    public async Task<IActionResult> SubmitRatings(
+        Guid id,
+        [FromBody] SubmitRecommendationRatingsRequest request,
+        CancellationToken ct)
+    {
+        if (request.AnalysisJobId.HasValue && request.AnalysisJobId.Value != id)
+        {
+            return BadRequest("AnalysisJobId in body must match route id when provided.");
+        }
+
+        if (request.Rankings is null || request.Rankings.Count == 0)
+        {
+            return BadRequest("At least one ranking is required.");
+        }
+
+        try
+        {
+            await _recommendations.SubmitRatingsAsync(id, request, UserId, ct);
+            return Accepted();
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
 }

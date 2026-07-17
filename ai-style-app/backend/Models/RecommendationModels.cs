@@ -81,3 +81,15 @@ public record SubmitRecommendationFeedbackRequest(
     IReadOnlyList<string>? FeedbackTags,
     string? Comment
 );
+
+public record RecommendationRankingInput(
+    Guid GenerationJobId,
+    int Rank
+);
+
+public record SubmitRecommendationRatingsRequest(
+    Guid? AnalysisJobId,
+    IReadOnlyList<RecommendationRankingInput> Rankings,
+    IReadOnlyList<string>? FeedbackTags,
+    string? Comment
+);

@@ -1,3 +1,4 @@
+using AiStyleApp.Api.Models;
 using AiStyleApp.Api.Services;
 using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
@@ -8,6 +9,77 @@ namespace AiStyleApp.Tests;
 
 public class RecommendationServiceTests
 {
+    [Fact]
+    public async Task SubmitRatingsAsync_PersistsOneFeedbackEntryPerRanking()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded"
+        };
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var request = new SubmitRecommendationRatingsRequest(
+            AnalysisJobId: analysisJob.Id,
+            Rankings: new[]
+            {
+                new RecommendationRankingInput(Guid.NewGuid(), 1),
+                new RecommendationRankingInput(Guid.NewGuid(), 2)
+            },
+            FeedbackTags: new[] { "greatMatch" },
+            Comment: "top 2 look strong");
+
+        await service.SubmitRatingsAsync(analysisJob.Id, request, "user-1");
+
+        var saved = db.RecommendationFeedback
+            .Where(x => x.AnalysisJobId == analysisJob.Id)
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToList();
+
+        Assert.Equal(2, saved.Count);
+        Assert.Equal(1, saved[0].Rating);
+        Assert.Equal(2, saved[1].Rating);
+        Assert.Equal("top 2 look strong", saved[0].Comment);
+    }
+
+    [Fact]
+    public async Task SubmitRatingsAsync_InvalidRank_ThrowsArgumentException()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded"
+        };
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var request = new SubmitRecommendationRatingsRequest(
+            AnalysisJobId: analysisJob.Id,
+            Rankings: new[]
+            {
+                new RecommendationRankingInput(Guid.NewGuid(), 4)
+            },
+            FeedbackTags: null,
+            Comment: null);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SubmitRatingsAsync(analysisJob.Id, request, "user-1"));
+    }
+
     [Fact]
     public async Task GetStatusAsync_UsesExperimentMetadataFromFeatureVector_WhenPresent()
     {
