@@ -83,7 +83,8 @@ public class RecommendationService : IRecommendationService
             return null;
         }
 
-        var experiment = BuildExperimentMetadata(userId);
+        var experiment = ParseExperimentFromFeatureVector(analysisJob.FeatureVectorJson)
+            ?? BuildExperimentMetadata(userId);
 
         return new RecommendationJobStatusResponse(
             AnalysisJobId: analysisJob.Id,
@@ -315,6 +316,55 @@ public class RecommendationService : IRecommendationService
             TrafficPercent: trafficPercent,
             Applied: applied,
             BucketKey: bucketKey);
+    }
+
+    private static RecommendationExperimentResponse? ParseExperimentFromFeatureVector(string? featureVectorJson)
+    {
+        if (string.IsNullOrWhiteSpace(featureVectorJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            var root = doc.RootElement;
+
+            if (!TryGetPropertyIgnoreCase(root, "experiment", out var experimentNode)
+                || experimentNode.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var enabled = TryGetPropertyIgnoreCase(experimentNode, "enabled", out var enabledNode)
+                && enabledNode.ValueKind is JsonValueKind.True or JsonValueKind.False
+                && enabledNode.GetBoolean();
+
+            var trafficPercent = 0;
+            if (TryGetPropertyIgnoreCase(experimentNode, "trafficPercent", out var trafficNode)
+                && trafficNode.TryGetInt32(out var parsedTraffic))
+            {
+                trafficPercent = Math.Clamp(parsedTraffic, 0, 100);
+            }
+
+            var applied = TryGetPropertyIgnoreCase(experimentNode, "applied", out var appliedNode)
+                && appliedNode.ValueKind is JsonValueKind.True or JsonValueKind.False
+                && appliedNode.GetBoolean();
+
+            var bucketKey = TryGetPropertyIgnoreCase(experimentNode, "bucketKey", out var bucketNode)
+                ? bucketNode.GetString() ?? "unknown"
+                : "unknown";
+
+            return new RecommendationExperimentResponse(
+                Enabled: enabled,
+                TrafficPercent: trafficPercent,
+                Applied: applied,
+                BucketKey: bucketKey);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
     }
 
     private static int ComputeStableBucket(string userId)

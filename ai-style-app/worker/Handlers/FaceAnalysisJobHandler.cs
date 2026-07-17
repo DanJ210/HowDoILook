@@ -103,6 +103,7 @@ if (!Uri.TryCreate(analysisJob.ImageUrl, UriKind.Absolute, out var uri) ||
                 analysisJob.ImageUrl,
                 analysisJob.Gender,
                 analysisJob.PreferencesJson,
+                analysisJob.UserId,
                 cancellationToken);
 
             analysisJob.QualityPassed = pipelineResult.QualityPassed;

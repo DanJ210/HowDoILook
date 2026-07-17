@@ -375,6 +375,7 @@ public class FaceAnalysisJobHandlerTests
             string imageUrl,
             string? gender,
             string? preferencesJson,
+            string? userId,
             CancellationToken ct)
         {
             Calls++;

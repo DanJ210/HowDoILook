@@ -22,7 +22,7 @@ public class FaceAnalysisPipelineThresholdTests
             pitch: 0.04,
             minLandmarkConfidence: 0.55);
 
-        var result = await pipeline.AnalyzeAsync("https://example.com/photo.jpg", "male", null, CancellationToken.None);
+        var result = await pipeline.AnalyzeAsync("https://example.com/photo.jpg", "male", null, "user-1", CancellationToken.None);
 
         Assert.True(result.QualityPassed);
         Assert.NotNull(result.FeatureVectorJson);
@@ -41,7 +41,7 @@ public class FaceAnalysisPipelineThresholdTests
             minLandmarkConfidence: 0.55);
 
         var ex = await Assert.ThrowsAsync<FaceAnalysisException>(() =>
-            pipeline.AnalyzeAsync("https://example.com/photo.jpg", "male", null, CancellationToken.None));
+            pipeline.AnalyzeAsync("https://example.com/photo.jpg", "male", null, "user-1", CancellationToken.None));
 
         Assert.Equal("ANALYSIS_LANDMARK_CONFIDENCE_TOO_LOW", ex.Code);
         Assert.Contains("value: 0.52", ex.Message, StringComparison.Ordinal);
