@@ -806,6 +806,45 @@ Rollout sequence:
 4. Promote ONNX output to primary when acceptance thresholds are met.
 5. Ramp experimentation traffic down post-MVP using the progression in section 9.3.9.
 
+### 23.1 Implementation Checklist (Flag Wiring)
+
+Set the following in both backend and worker configuration.
+
+Appsettings keys:
+
+- `Features:ExperimentationModeEnabled`
+- `Features:ExperimentationTrafficPercent`
+
+Environment variable equivalents:
+
+- `Features__ExperimentationModeEnabled`
+- `Features__ExperimentationTrafficPercent`
+
+Pre-MVP required values:
+
+- `Features:ExperimentationModeEnabled = true`
+- `Features:ExperimentationTrafficPercent = 100`
+
+File-level checklist:
+
+1. `ai-style-app/backend/appsettings.json`
+  - Add `Features:ExperimentationModeEnabled`
+  - Add `Features:ExperimentationTrafficPercent`
+2. `ai-style-app/backend/appsettings.Development.json`
+  - Override to pre-MVP values (`true`, `100`) for local development
+3. `ai-style-app/worker/appsettings.json`
+  - Add `Features:ExperimentationModeEnabled`
+  - Add `Features:ExperimentationTrafficPercent`
+4. `ai-style-app/worker/appsettings.Development.json`
+  - Override to pre-MVP values (`true`, `100`) for local development
+5. Deployment environment
+  - Set `Features__ExperimentationModeEnabled=true`
+  - Set `Features__ExperimentationTrafficPercent=100`
+6. Runtime verification
+  - Confirm `RecommendationJobStatusResponse.experiment.enabled=true`
+  - Confirm `RecommendationJobStatusResponse.experiment.applied=true`
+  - Confirm `RecommendationJobStatusResponse.experiment.trafficPercent=100`
+
 ## 24. Acceptance Criteria (V2)
 
 - For valid portraits, face detection returns exactly one primary face with confidence >= threshold.
