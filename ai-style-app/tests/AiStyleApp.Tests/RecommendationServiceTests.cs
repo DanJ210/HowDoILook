@@ -276,7 +276,7 @@ public class RecommendationServiceTests
         Assert.True(result.Experiment!.Enabled);
         Assert.Equal(100, result.Experiment.TrafficPercent);
         Assert.True(result.Experiment.Applied);
-        Assert.StartsWith("user-hash-", result.Experiment.BucketKey, StringComparison.Ordinal);
+        Assert.Equal("user-hash-42", result.Experiment.BucketKey);
     }
 
     [Fact]

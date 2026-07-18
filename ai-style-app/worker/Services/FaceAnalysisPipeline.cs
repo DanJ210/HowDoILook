@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Diagnostics;
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp;
@@ -442,7 +443,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         var value = string.IsNullOrWhiteSpace(userId) ? "anonymous" : userId.Trim();
         var bytes = System.Text.Encoding.UTF8.GetBytes(value);
         var hash = SHA256.HashData(bytes);
-        var sample = BitConverter.ToUInt32(hash, 0);
+        var sample = BinaryPrimitives.ReadUInt32LittleEndian(hash.AsSpan(0, sizeof(uint)));
         return (int)(sample % 100);
     }
 
