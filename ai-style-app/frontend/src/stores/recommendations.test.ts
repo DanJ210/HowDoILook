@@ -6,6 +6,8 @@ import type { RecommendationJobStatusResponse } from '@/types/api'
 function createRecommendationStatus(overrides: Partial<RecommendationJobStatusResponse> = {}): RecommendationJobStatusResponse {
   return {
     analysisJobId: 'job-1',
+    recommendationPostId: null,
+    publishStatus: null,
     status: 'Queued',
     qualityGate: {
       passed: null,
@@ -13,10 +15,19 @@ function createRecommendationStatus(overrides: Partial<RecommendationJobStatusRe
       message: null
     },
     analysisSummary: {
-      faceShapeDistribution: null,
+      faceShape: null,
       confidence: null
     },
+    bestRecommendation: null,
+    bestVariant: null,
+    experimentalVariants: [],
     recommendations: [],
+    experiment: {
+      enabled: true,
+      trafficPercent: 100,
+      applied: true,
+      bucketKey: 'user-hash-00'
+    },
     debugTelemetry: null,
     errorCode: null,
     errorMessage: null,
@@ -125,5 +136,25 @@ describe('recommendations store', () => {
         comment: null
       })
     ).rejects.toMatchObject({ message: 'feedback failed', statusCode: 500 })
+  })
+
+  it('submits recommendation ratings successfully', async () => {
+    const store = useRecommendationsStore()
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      store.submitRatings('job-1', {
+        analysisJobId: 'job-1',
+        rankings: [
+          { generationJobId: 'gen-1', rank: 1 },
+          { generationJobId: 'gen-2', rank: 2 },
+          { generationJobId: 'gen-3', rank: 3 }
+        ],
+        feedbackTags: ['greatFit'],
+        comment: 'Good spread'
+      })
+    ).resolves.toBeUndefined()
   })
 })

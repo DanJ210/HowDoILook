@@ -5,6 +5,7 @@ import type {
   CreateRecommendationsRequest,
   CreateRecommendationsResponse,
   RecommendationJobStatusResponse,
+  SubmitRecommendationRatingsRequest,
   SubmitRecommendationFeedbackRequest,
   UploadImageResponse
 } from '@/types/api'
@@ -115,6 +116,10 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     await api.post<void>('/recommendations/feedback', request)
   }
 
+  async function submitRatings(analysisJobId: string, request: SubmitRecommendationRatingsRequest): Promise<void> {
+    await api.post<void>(`/recommendations/jobs/${analysisJobId}/ratings`, request)
+  }
+
   return {
     jobs,
     activePollingIds,
@@ -125,6 +130,7 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     stopPolling,
     getPollingState,
     getPollingError,
-    submitFeedback
+    submitFeedback,
+    submitRatings
   }
 })
