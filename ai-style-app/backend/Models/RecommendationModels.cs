@@ -95,14 +95,6 @@ public record RecommendationJobStatusResponse(
     string? ErrorMessage
 );
 
-public record SubmitRecommendationFeedbackRequest(
-    Guid AnalysisJobId,
-    string? SelectedStyleId,
-    int? Rating,
-    IReadOnlyList<string>? FeedbackTags,
-    string? Comment
-);
-
 public record RecommendationRankingInput(
     Guid GenerationJobId,
     int Rank

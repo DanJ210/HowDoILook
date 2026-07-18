@@ -358,7 +358,7 @@ scale:
 - [ ] Add `RecommendationsController` with:
   - [ ] `POST /api/recommendations`
   - [ ] `GET /api/recommendations/jobs/{id}`
-  - [ ] `POST /api/recommendations/feedback`
+  - [ ] `POST /api/recommendations/jobs/{id}/ratings`
 - [ ] Add request/response models in `backend/Models`.
 - [ ] Add service layer interfaces/implementations in `backend/Services`.
 - [ ] Enforce user ownership checks on recommendation job and feedback access.

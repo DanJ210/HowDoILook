@@ -56,27 +56,6 @@ public class RecommendationsController : ControllerBase
         return Ok(status);
     }
 
-    [HttpPost("feedback")]
-    public async Task<IActionResult> SubmitFeedback(
-        [FromBody] SubmitRecommendationFeedbackRequest request,
-        CancellationToken ct)
-    {
-        if (request.AnalysisJobId == Guid.Empty)
-        {
-            return BadRequest("AnalysisJobId is required.");
-        }
-
-        try
-        {
-            await _recommendations.SubmitFeedbackAsync(request, UserId, ct);
-            return Accepted();
-        }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
-    }
-
     [HttpPost("jobs/{id:guid}/ratings")]
     public async Task<IActionResult> SubmitRatings(
         Guid id,

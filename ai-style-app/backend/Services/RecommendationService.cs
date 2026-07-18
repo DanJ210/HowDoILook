@@ -184,46 +184,6 @@ public class RecommendationService : IRecommendationService
             ErrorMessage: analysisJob.ErrorMessage);
     }
 
-    public async Task SubmitFeedbackAsync(
-        SubmitRecommendationFeedbackRequest request,
-        string userId,
-        CancellationToken ct = default)
-    {
-        var analysisJob = await _db.FaceAnalysisJobs
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == request.AnalysisJobId && x.UserId == userId, ct);
-
-        if (analysisJob is null)
-        {
-            throw new InvalidOperationException("Analysis job not found.");
-        }
-
-        var feedback = new RecommendationFeedbackEntity
-        {
-            AnalysisJobId = request.AnalysisJobId,
-            UserId = userId,
-            SelectedStyleId = request.SelectedStyleId,
-            Rating = request.Rating,
-            FeedbackTagsJson = request.FeedbackTags is null
-                ? null
-                : JsonSerializer.Serialize(request.FeedbackTags),
-            Comment = request.Comment
-        };
-
-        _db.RecommendationFeedback.Add(feedback);
-        await _db.SaveChangesAsync(ct);
-
-        // Log feedback metrics for monitoring and analysis
-        var recommendationRank = GetRecommendationRank(analysisJob.RecommendationsJson, request.SelectedStyleId);
-        _metricsLogger.LogRecommendationFeedbackSubmitted(
-            request.AnalysisJobId,
-            userId,
-            request.SelectedStyleId,
-            request.Rating,
-            feedback.FeedbackTagsJson,
-            recommendationRank);
-    }
-
     public async Task SubmitRatingsAsync(
         Guid analysisJobId,
         SubmitRecommendationRatingsRequest request,
@@ -455,31 +415,6 @@ public class RecommendationService : IRecommendationService
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
         {
             return null;
-        }
-
-        return null;
-    }
-
-    private static int? GetRecommendationRank(string? recommendationsJson, string? selectedStyleId)
-    {
-        if (string.IsNullOrEmpty(recommendationsJson) || string.IsNullOrEmpty(selectedStyleId))
-            return null;
-
-        try
-        {
-            var parsed = JsonSerializer.Deserialize<List<RecommendationItemResponse>>(recommendationsJson);
-            if (parsed == null)
-                return null;
-
-            for (int i = 0; i < parsed.Count; i++)
-            {
-                if (parsed[i].StyleId == selectedStyleId)
-                    return i + 1; // Rank is 1-based
-            }
-        }
-        catch (JsonException)
-        {
-            // Fall through to return null
         }
 
         return null;

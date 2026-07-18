@@ -6,7 +6,6 @@ import type {
   CreateRecommendationsResponse,
   RecommendationJobStatusResponse,
   SubmitRecommendationRatingsRequest,
-  SubmitRecommendationFeedbackRequest,
   UploadImageResponse
 } from '@/types/api'
 import { TERMINAL_STATUSES } from '@/types/api'
@@ -112,10 +111,6 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     return pollingError.value[jobId] ?? null
   }
 
-  async function submitFeedback(request: SubmitRecommendationFeedbackRequest): Promise<void> {
-    await api.post<void>('/recommendations/feedback', request)
-  }
-
   async function submitRatings(analysisJobId: string, request: SubmitRecommendationRatingsRequest): Promise<void> {
     await api.post<void>(`/recommendations/jobs/${analysisJobId}/ratings`, request)
   }
@@ -130,7 +125,6 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     stopPolling,
     getPollingState,
     getPollingError,
-    submitFeedback,
     submitRatings
   }
 })

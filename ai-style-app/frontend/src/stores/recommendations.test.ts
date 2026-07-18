@@ -104,40 +104,6 @@ describe('recommendations store', () => {
     expect(store.getJob('job-1')?.errorCode).toBe('ANALYSIS_QUALITY_TOO_BLURRY')
   })
 
-  it('submits recommendation feedback successfully', async () => {
-    const store = useRecommendationsStore()
-
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await expect(
-      store.submitFeedback({
-        analysisJobId: 'job-1',
-        selectedStyleId: 'textured-crop',
-        rating: 4,
-        feedbackTags: ['greatFit'],
-        comment: 'Solid suggestion.'
-      })
-    ).resolves.toBeUndefined()
-  })
-
-  it('surfaces feedback submission errors', async () => {
-    const store = useRecommendationsStore()
-
-    const fetchMock = vi.fn().mockResolvedValue(new Response('feedback failed', { status: 500 }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await expect(
-      store.submitFeedback({
-        analysisJobId: 'job-1',
-        selectedStyleId: null,
-        rating: null,
-        feedbackTags: null,
-        comment: null
-      })
-    ).rejects.toMatchObject({ message: 'feedback failed', statusCode: 500 })
-  })
-
   it('submits recommendation ratings successfully', async () => {
     const store = useRecommendationsStore()
 
@@ -156,5 +122,21 @@ describe('recommendations store', () => {
         comment: 'Good spread'
       })
     ).resolves.toBeUndefined()
+  })
+
+  it('surfaces ratings submission errors', async () => {
+    const store = useRecommendationsStore()
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response('ratings failed', { status: 500 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      store.submitRatings('job-1', {
+        analysisJobId: 'job-1',
+        rankings: [{ generationJobId: 'gen-1', rank: 1 }],
+        feedbackTags: null,
+        comment: null
+      })
+    ).rejects.toMatchObject({ message: 'ratings failed', statusCode: 500 })
   })
 })

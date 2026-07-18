@@ -188,14 +188,6 @@ export interface RecommendationDebugTelemetry {
   stages: RecommendationStageTelemetry[]
 }
 
-export interface SubmitRecommendationFeedbackRequest {
-  analysisJobId: string
-  selectedStyleId: string | null
-  rating: number | null
-  feedbackTags: string[] | null
-  comment: string | null
-}
-
 export interface RecommendationRankingInput {
   generationJobId: string
   rank: 1 | 2 | 3

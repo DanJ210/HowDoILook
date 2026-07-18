@@ -116,7 +116,7 @@ async function startRecommendation() {
   }
 }
 
-async function submitFeedback() {
+async function submitRatings() {
   if (!activeJobId.value) return
 
   const rankings = Object.entries(variantRanks.value)
@@ -557,7 +557,7 @@ onUnmounted(() => {
               <button
                 type="button"
                 :disabled="isSubmittingFeedback"
-                @click="submitFeedback"
+                @click="submitRatings"
                 class="mt-3 w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {{ isSubmittingFeedback ? 'Submitting…' : 'Submit rankings' }}
