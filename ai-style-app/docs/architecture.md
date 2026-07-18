@@ -156,7 +156,7 @@ This section describes the canonical app flow where recommendation analysis is t
 
 - **Backend**
   - Recommendations endpoints under `/api/recommendations` are implemented.
-  - Analysis job persistence (`face_analysis_jobs`) and feedback persistence (`recommendation_feedback`) are implemented.
+  - Analysis job persistence (`face_analysis_jobs`) and ratings persistence (`recommendation_feedback`) are implemented.
   - Queue publish support for `jobType = face-analysis` is implemented.
 
 - **Worker**
@@ -169,7 +169,7 @@ This section describes the canonical app flow where recommendation analysis is t
 
 - **Frontend**
   - Recommendations page and store integration are implemented.
-  - Polling, failure messaging, recommendation rendering, feedback submission, and telemetry display are implemented.
+  - Polling, failure messaging, recommendation rendering, ratings submission, and telemetry display are implemented.
 
 ### Data Model Additions
 
@@ -250,7 +250,7 @@ Migration notes:
 7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector (including `faceShape`) + stage telemetry (landmarks `notes` contains the shape label).
 8. Worker persists recommendation payload and marks analysis job terminal status.
 9. Frontend polls status endpoint and renders either recommendations or retry guidance.
-10. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
+10. Frontend submits optional rankings, backend persists to `recommendation_feedback`.
 
 ### Analytics and Data Collection
 
@@ -260,14 +260,14 @@ Migration notes:
 
 1. **AnalyticsService** (`ai-style-app/backend/Services/AnalyticsService.cs`)
    - `ExportRecommendationsDataAsync()`: Joins `face_analysis_jobs` + `recommendation_feedback` for export as training dataset.
-   - `GetMetricsAsync()`: Computes aggregated KPIs (success rate, CTR, positive feedback rate, face shape distribution, top styles).
+  - `GetMetricsAsync()`: Computes aggregated KPIs (success rate, CTR, positive ranking rate, face shape distribution, top styles).
 
 2. **AnalyticsController** (`ai-style-app/backend/Controllers/AnalyticsController.cs`)
-   - `GET /api/analytics/export-recommendations` (JSON/CSV): Exports recommendation tuples with face shape, confidence, and user feedback.
+  - `GET /api/analytics/export-recommendations` (JSON/CSV): Exports recommendation tuples with face shape, confidence, and user rankings.
    - `GET /api/analytics/metrics`: Returns system health metrics over a date range.
 
 3. **MetricsLogger** (`ai-style-app/data/MetricsLogger.cs`)
-   - Writes structured JSON events to logs on job completion/failure and feedback submission.
+  - Writes structured JSON events to logs on job completion/failure and ratings submission.
    - Events: `analysis.job.completed`, `analysis.job.failed`, `recommendation.feedback.submitted`.
    - Used by both Backend and Worker services.
 

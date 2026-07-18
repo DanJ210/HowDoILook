@@ -381,7 +381,7 @@ scale:
 - [ ] Add recommendation types in `frontend/src/types`.
 - [ ] Add recommendation store in `frontend/src/stores`.
 - [ ] Add recommendation page and polling UX.
-- [ ] Add feedback submission flow after style selection.
+- [ ] Add rankings submission flow after style generation.
 
 ### Documentation and Contracts
 

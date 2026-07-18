@@ -253,7 +253,7 @@ Beard suggestions are only considered when `gender` is `male`, and the worker en
   "recommendationPostId": "uuid",
   "status": "Queued",
   "statusEndpoint": "/api/recommendations/jobs/{analysisJobId}",
-  "publicEndpoint": "/api/recommendations/posts/{recommendationPostId}"
+  "publicEndpoint": "/api/style/{recommendationPostId}"
 }
 ```
 
@@ -389,7 +389,7 @@ Rules:
 
 - Rankings are unique and must include only ranks 1, 2, and 3.
 - Rankings must reference generation jobs owned by the same `analysisJobId`.
-- Pre-MVP, ratings are accepted for all recommendation sessions and require at least one experimental variant to succeed.
+- Pre-MVP, rankings are accepted for all recommendation sessions and require at least one experimental variant to succeed.
 
 ## Webhooks
 

@@ -16,7 +16,7 @@ Temporary exploration mode: until best-style determination quality is validated 
 
 Implementation status:
 
-- The recommendations API, feedback persistence, queue publishing, and worker handler are implemented.
+- The recommendations API, ratings persistence, queue publishing, and worker handler are implemented.
 - ONNX landmark extraction is supported and can be enabled via worker configuration with `fan2_68_landmark.onnx`.
 - Invalid ONNX landmark model files now fail fast with explicit analysis error codes.
 
@@ -31,7 +31,7 @@ Implementation status:
 - Run a three-variant experimentation mode for 100% of pre-MVP sessions to collect ranking data.
 - Keep analysis async and resilient using the current backend -> queue -> worker pattern.
 - Keep beard recommendations optional and only applicable when gender is male.
-- Capture feedback signals to improve recommendation quality over time.
+- Capture ranking signals to improve recommendation quality over time.
 
 ### Non-Goals
 
@@ -49,7 +49,7 @@ Implementation status:
 - Region segmentation-derived features (hairline/forehead/jaw/beard coverage where applicable).
 - Rule-based + weighted ranking recommender.
 - Recommendation explanation strings for UI trust.
-- Recommendation feedback capture.
+- Recommendation rankings capture.
 
 ### Out of Scope (V1)
 
@@ -143,7 +143,7 @@ All contracts below are additive and versioned.
   "recommendationPostId": "uuid",
   "status": "Queued",
   "statusEndpoint": "/api/recommendations/jobs/{analysisJobId}",
-  "publicEndpoint": "/api/recommendations/posts/{recommendationPostId}"
+  "publicEndpoint": "/api/style/{recommendationPostId}"
 }
 ```
 
@@ -309,7 +309,7 @@ Add endpoints under /api/recommendations.
 
 3. POST /api/recommendations/jobs/{id}/ratings
 - Auth required.
-- Stores 1/2/3 ranking feedback across experimental variants for learning loop.
+- Stores 1/2/3 rankings across experimental variants for learning loop.
 
 ## 9. Worker Design
 
@@ -526,7 +526,7 @@ Log with correlationId and jobId across backend and worker.
 Backend tests:
 - request validation and auth behavior
 - status endpoint ownership checks
-- feedback persistence validation
+- ratings persistence validation
 
 Worker tests:
 - quality gate pass/fail transitions
@@ -536,7 +536,7 @@ Worker tests:
 Frontend tests:
 - polling lifecycle and terminal states
 - quality failure message rendering
-- recommendation selection and feedback submission
+- recommendation ranking selection and ratings submission
 
 Validation commands:
 
