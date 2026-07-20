@@ -214,7 +214,7 @@ Runtime behavior is controlled by the following configuration keys.
 
 | Key | Type | Pre-MVP Value | Post-MVP Target | Description |
 |---|---|---|---|---|
-| `Features:ExperimentationModeEnabled` | bool | `true` | `false` after model confidence is validated | Enables generation and collection of experimental variants/rankings. |
+| `Features:ExperimentationModeEnabled` | bool | `true` | `false` after model confidence is validated | Enables generation and collection of experimental variants and feedback. |
 | `Features:ExperimentationTrafficPercent` | int (0-100) | `100` | `20` during ramp-down, then `0` | Percentage of recommendation sessions that receive experimental variants. |
 
 Selection rule:
@@ -376,7 +376,8 @@ Current implementation note:
   "analysisJobId": "uuid",
   "selectedStyleId": "string | null",
   "rating": 1,
-  "feedbackTags": ["greatMatch", "tooBold"]
+  "feedbackTags": ["greatMatch", "tooBold"],
+  "comment": "string | null"
 }
 ```
 
@@ -385,6 +386,8 @@ Rules:
 - Feedback is optional and can be submitted after a recommendation has been generated.
 - `selectedStyleId` should reference the chosen recommendation style when available.
 - `rating` is typically a 1-5 score when provided.
+- `feedbackTags` are optional labels describing the feedback.
+- `comment` is optional freeform feedback text.
 
 ## Webhooks
 

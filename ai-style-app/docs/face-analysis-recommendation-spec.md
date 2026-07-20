@@ -457,7 +457,7 @@ For pre-MVP recommendation sessions:
 - Select top 3 candidates from the same scorer
 - Apply diversity filter so variants are not near-duplicates
 - Keep bestRecommendation and bestVariant unchanged as canonical output
-- Treat variant rankings (1, 2, 3) as training labels for future model tuning
+- Treat feedback on generated variants as training signals for future model tuning
 
 ### 9.3.9 Experimentation Feature Flag Contract
 

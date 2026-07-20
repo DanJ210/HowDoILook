@@ -146,7 +146,7 @@ Note: this snapshot reflects older style-generation-first tables and is being re
 8. Backend verifies HMAC signatures, updates generated variant states/results, and archives final images.
 9. Frontend renders the public recommendation post with the main best recommendation and generated best variant.
 
-Experimental note: for pre-MVP data collection, the system runs three-variant mode for 100% of sessions and captures 1/2/3 rankings.
+Experimental note: for pre-MVP data collection, the system runs three-variant mode for 100% of sessions and captures feedback about the generated variants.
 
 ## Recommendation-First Flow (Canonical)
 
