@@ -246,8 +246,8 @@ If you deploy with environment variables, use the .NET configuration keys below:
 | `Replicate__ApiToken` | Backend, Worker | Replicate API token |
 | `Replicate__WebhookSigningSecret` | Backend | HMAC secret for webhook verification |
 | `Replicate__WebhookBaseUrl` | Worker | Publicly reachable base URL for callbacks |
-| `Features__ExperimentationModeEnabled` | Backend, Worker | Enables experimentation variant generation and ranking capture (pre-MVP: `true`) |
-| `Features__ExperimentationTrafficPercent` | Backend, Worker | Session percentage for experimentation mode (pre-MVP: `100`) |
+| `Features__ExperimentationModeEnabled` | Backend, Worker | Enables experimentation bucketing and metadata capture (pre-MVP: `true`) |
+| `Features__ExperimentationTrafficPercent` | Backend, Worker | Session percentage for experimentation bucketing (pre-MVP: `100`) |
 
 Map these to .NET configuration using double-underscore notation, for example `Replicate__ApiToken`.
 

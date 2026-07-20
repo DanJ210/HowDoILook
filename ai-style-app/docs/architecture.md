@@ -10,21 +10,21 @@ graph TD
     API["Backend — ASP.NET Core Web API"]
     Queue["Azure Storage Queue (style-jobs)"]
     Worker["Worker — .NET 10 BackgroundService"]
-  DB["PostgreSQL (face_analysis_jobs, recommendation_posts, recommendation_generation_jobs)"]
+  DB["PostgreSQL (face_analysis_jobs, recommendation_feedback)"]
     Replicate["Replicate AI API"]
     Webhook["POST /api/webhooks/replicate"]
 
     User -->|"HTTP /api/*  (JWT)"| API
-  API -->|"Persist analysis job + recommendation post"| DB
+  API -->|"Persist analysis job + feedback records"| DB
   API -->|"Enqueue analysis job"| Queue
     Queue -->|"Dequeue message"| Worker
-  Worker -->|"Write ranked recommendations + best recommendation"| DB
+  Worker -->|"Write analysis results + recommendation payload"| DB
   Worker -->|"Enqueue best-variant generation job"| Queue
   Worker -->|"Submit prediction(s)"| Replicate
     Replicate -->|"Webhook callback (HMAC)"| Webhook
   Webhook -->|"Update variant generation results"| DB
   User -->|"Poll GET /api/recommendations/jobs/{id}"| API
-  API -->|"Query post + recommendations + variants"| DB
+  API -->|"Query analysis results + recommendations + feedback"| DB
 ```
 
 ## Components
@@ -138,7 +138,7 @@ Note: this snapshot reflects older style-generation-first tables and is being re
 
 1. User uploads a photo (`POST /api/upload/image`) and submits recommendation preferences.
 2. Frontend calls `POST /api/recommendations` with JWT, image URL, gender, and preferences.
-3. Backend creates analysis + recommendation post records in `Queued`/`Publishing` states and enqueues a face-analysis job.
+3. Backend creates analysis records and a public post placeholder in `Queued`/`Publishing` states, then enqueues a face-analysis job.
 4. Frontend polls `GET /api/recommendations/jobs/{analysisJobId}`.
 5. Worker processes analysis, extracts ONNX telemetry, ranks candidates, and persists one best recommendation.
 6. Worker enqueues one best-variant recommendation-generation job for Replicate.
