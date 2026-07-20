@@ -190,6 +190,26 @@ All contracts below are additive and versioned.
       "selectedRank": "1 | 2 | 3 | null"
     }
   ],
+  "recommendations": [
+    {
+      "styleId": "string",
+      "styleName": "string",
+      "score": 0.92,
+      "reasons": [
+        "Balances jaw width",
+        "Fits medium maintenance preference"
+      ],
+      "constraints": [
+        "Requires moderate top volume"
+      ]
+    }
+  ],
+  "experiment": {
+    "enabled": true,
+    "trafficPercent": 100,
+    "applied": true,
+    "bucketKey": "userId-hash"
+  },
   "debugTelemetry": {
     "source": "worker-v1-staged-analysis",
     "schemaVersion": 2,

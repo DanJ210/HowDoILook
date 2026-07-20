@@ -86,12 +86,6 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "isResultPublic": false,
   "createdAt": "ISO 8601 datetime",
   "latestJobId": "uuid | null",
-  "latestJobStatus": "Queued | Processing | Succeeded | Failed | TimedOut | Canceled | null"
-}
-```
-
-### GenerateStyleRequest
-
 ```json
 {
   "name": "string",
@@ -298,12 +292,6 @@ Current implementation note:
     "status": "Queued | Processing | Succeeded | Failed",
     "resultImageUrl": "string | null"
   },
-  "experiment": {
-    "enabled": true,
-    "trafficPercent": 100,
-    "applied": true,
-    "bucketKey": "userId-hash"
-  },
   "experimentalVariants": [
     {
       "slot": 1,
@@ -327,6 +315,26 @@ Current implementation note:
       "selectedRank": "1 | 2 | 3 | null"
     }
   ],
+  "recommendations": [
+    {
+      "styleId": "string",
+      "styleName": "string",
+      "score": 0.92,
+      "reasons": [
+        "Balances jaw width",
+        "Fits medium maintenance preference"
+      ],
+      "constraints": [
+        "Requires moderate top volume"
+      ]
+    }
+  ],
+  "experiment": {
+    "enabled": true,
+    "trafficPercent": 100,
+    "applied": true,
+    "bucketKey": "userId-hash"
+  },
   "debugTelemetry": {
     "source": "worker-v1-staged-analysis",
     "schemaVersion": 2,
