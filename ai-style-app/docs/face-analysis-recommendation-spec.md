@@ -231,17 +231,34 @@ Current implementation note:
 - The status API exposes face shape via `debugTelemetry.stages[]` by reading the `landmarks` stage `notes` value (lowercase label such as `"square"`).
 - `analysisSummary.faceShape` is the canonical shape label for recommendation and posting decisions.
 
-### SubmitRecommendationFeedbackRequest
+### SubmitRecommendationRatingsRequest
 
 ```json
 {
-  "analysisJobId": "uuid",
-  "selectedStyleId": "string | null",
-  "rating": 5,
+  "analysisJobId": "uuid | null",
+  "rankings": [
+    {
+      "generationJobId": "uuid",
+      "rank": 1
+    },
+    {
+      "generationJobId": "uuid",
+      "rank": 2
+    }
+  ],
   "feedbackTags": ["greatMatch", "tooBold"],
   "comment": "string | null"
 }
 ```
+
+Rules:
+
+- Route `id` is the canonical analysis job ID.
+- If `analysisJobId` is provided in the body, it must match route `id`.
+- At least one ranking is required.
+- Each ranking `rank` must be between 1 and 3.
+- Duplicate `generationJobId` values are rejected.
+- Duplicate `rank` values are rejected.
 
 ## 6.2 Queue Contract Extension (data/Queue)
 
@@ -250,7 +267,7 @@ Extend existing style-jobs message schema to support analysis jobs.
 ```json
 {
   "jobId": "uuid",
-  "jobType": "FaceAnalysis | RecommendationGeneration",
+  "jobType": "face-analysis | generate-style",
   "schemaVersion": 2,
   "imageUrl": "string",
   "gender": "string | null",
@@ -260,7 +277,8 @@ Extend existing style-jobs message schema to support analysis jobs.
 
 Notes:
 - Existing style-generation-first behavior is deprecated for this direction.
-- Worker routes by jobType.
+- Queue jobType values are lowercase in runtime messages.
+- Worker router special-cases `face-analysis`; all other job types are handled by the style job handler (currently `generate-style`).
 
 ## 7. Database Changes (EF Core)
 
@@ -315,9 +333,9 @@ Add endpoints under /api/recommendations.
 - Auth required.
 - Returns analysis status and recommendations payload.
 
-3. POST /api/recommendations/feedback
+3. POST /api/recommendations/jobs/{id}/ratings
 - Auth required.
-- Stores feedback for the selected recommendation and rating for learning loop.
+- Stores ranking feedback for experimental generation jobs in the learning loop.
 
 ## 9. Worker Design
 
