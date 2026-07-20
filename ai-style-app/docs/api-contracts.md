@@ -2,7 +2,7 @@
 
 All endpoints are prefixed with `/api`. Protected endpoints require `Authorization: Bearer <token>`.
 
-Direction (2026-07): recommendation-first contracts are canonical. The default flow is publish-first recommendation posts with one best recommendation and one generated best variant. Pre-MVP, experimentation mode is enabled for 100% of sessions and generates three additional variants for ranking feedback. Backward compatibility with style-generation-first contracts is not required.
+Direction (2026-07): recommendation-first contracts are canonical. The default flow is publish-first recommendation posts with one best recommendation and one generated best variant. Pre-MVP, experimentation mode is enabled for 100% of sessions and generates three additional variants for feedback collection. Backward compatibility with style-generation-first contracts is not required.
 
 ## Authentication
 
@@ -212,7 +212,7 @@ Queued → Processing → Succeeded
 |--------|------|------|--------------|----------|
 | `POST` | `/api/recommendations` | Required | `CreateRecommendationsRequest` | `CreateRecommendationsResponse` (202) |
 | `GET` | `/api/recommendations/jobs/{id}` | Required | — | `RecommendationJobStatusResponse` |
-| `POST` | `/api/recommendations/jobs/{id}/ratings` | Required | `SubmitRecommendationRatingsRequest` | 202 |
+| `POST` | `/api/recommendations/feedback` | Required | `SubmitRecommendationFeedbackRequest` | 202 |
 
 ### Feature Flags Contract
 
@@ -361,35 +361,22 @@ Current implementation note:
 - Pre-MVP, `experimentalVariants` are populated for 100% of recommendation sessions.
 - The `experiment` object reports whether experimentation was configured and actually applied for the job.
 
-### SubmitRecommendationRatingsRequest
+### SubmitRecommendationFeedbackRequest
 
 ```json
 {
   "analysisJobId": "uuid",
-  "rankings": [
-    {
-      "generationJobId": "uuid",
-      "rank": 1
-    },
-    {
-      "generationJobId": "uuid",
-      "rank": 2
-    },
-    {
-      "generationJobId": "uuid",
-      "rank": 3
-    }
-  ],
-  "comment": "string | null",
+  "selectedStyleId": "string | null",
+  "rating": 1,
   "feedbackTags": ["greatMatch", "tooBold"]
 }
 ```
 
 Rules:
 
-- Rankings are unique and must include only ranks 1, 2, and 3.
-- Rankings must reference generation jobs owned by the same `analysisJobId`.
-- Pre-MVP, rankings are accepted for all recommendation sessions and require at least one experimental variant to succeed.
+- Feedback is optional and can be submitted after a recommendation has been generated.
+- `selectedStyleId` should reference the chosen recommendation style when available.
+- `rating` is typically a 1-5 score when provided.
 
 ## Webhooks
 

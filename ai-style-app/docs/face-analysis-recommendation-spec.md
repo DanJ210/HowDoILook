@@ -12,11 +12,11 @@ Define a production-ready V1 for accurate face analysis and intelligent style re
 
 This spec defines the primary product flow: upload -> analyze -> publish post -> generate 1 best variant based on telemetry and recommendation mapping.
 
-Temporary exploration mode: until best-style determination quality is validated with enough data, pre-MVP runs experimentation mode at 100% traffic, generating three additional variants and collecting 1/2/3 ranking feedback.
+Temporary exploration mode: until best-style determination quality is validated with enough data, pre-MVP runs experimentation mode at 100% traffic, generating three additional variants and collecting feedback on the generated styles.
 
 Implementation status:
 
-- The recommendations API, ratings persistence, queue publishing, and worker handler are implemented.
+- The recommendations API, feedback persistence, queue publishing, and worker handler are implemented.
 - ONNX landmark extraction is supported and can be enabled via worker configuration with `fan2_68_landmark.onnx`.
 - Invalid ONNX landmark model files now fail fast with explicit analysis error codes.
 
@@ -31,7 +31,7 @@ Implementation status:
 - Run a three-variant experimentation mode for 100% of pre-MVP sessions to collect ranking data.
 - Keep analysis async and resilient using the current backend -> queue -> worker pattern.
 - Keep beard recommendations optional and only applicable when gender is male.
-- Capture ranking signals to improve recommendation quality over time.
+- Capture feedback signals to improve recommendation quality over time.
 
 ### Non-Goals
 
@@ -49,7 +49,7 @@ Implementation status:
 - Region segmentation-derived features (hairline/forehead/jaw/beard coverage where applicable).
 - Rule-based + weighted ranking recommender.
 - Recommendation explanation strings for UI trust.
-- Recommendation rankings capture.
+- Recommendation feedback capture.
 
 ### Out of Scope (V1)
 
@@ -101,8 +101,8 @@ flowchart LR
 
 Experimental mode extension (pre-MVP default):
 
-11. Enqueue three variant generation jobs for ranking-data collection.
-12. Persist 1/2/3 ranking feedback and learning metrics.
+11. Enqueue three variant generation jobs for feedback collection.
+12. Persist feedback and learning metrics.
 
 ## 5.2 Quality Gate Rules (Initial)
 
@@ -211,25 +211,13 @@ Current implementation note:
 - The status API exposes face shape via `debugTelemetry.stages[]` by reading the `landmarks` stage `notes` value (lowercase label such as `"square"`).
 - `analysisSummary.faceShape` is the canonical shape label for recommendation and posting decisions.
 
-### SubmitRecommendationRatingsRequest (Pre-MVP Default)
+### SubmitRecommendationFeedbackRequest
 
 ```json
 {
   "analysisJobId": "uuid",
-  "rankings": [
-    {
-      "generationJobId": "uuid",
-      "rank": 1
-    },
-    {
-      "generationJobId": "uuid",
-      "rank": 2
-    },
-    {
-      "generationJobId": "uuid",
-      "rank": 3
-    }
-  ],
+  "selectedStyleId": "string | null",
+  "rating": 5,
   "feedbackTags": ["greatMatch", "tooBold"],
   "comment": "string | null"
 }
@@ -307,9 +295,9 @@ Add endpoints under /api/recommendations.
 - Auth required.
 - Returns analysis status and recommendations payload.
 
-3. POST /api/recommendations/jobs/{id}/ratings
+3. POST /api/recommendations/feedback
 - Auth required.
-- Stores 1/2/3 rankings across experimental variants for learning loop.
+- Stores feedback for the selected recommendation and rating for learning loop.
 
 ## 9. Worker Design
 
@@ -526,7 +514,7 @@ Log with correlationId and jobId across backend and worker.
 Backend tests:
 - request validation and auth behavior
 - status endpoint ownership checks
-- ratings persistence validation
+- feedback persistence validation
 
 Worker tests:
 - quality gate pass/fail transitions
@@ -536,7 +524,7 @@ Worker tests:
 Frontend tests:
 - polling lifecycle and terminal states
 - quality failure message rendering
-- recommendation ranking selection and ratings submission
+- recommendation selection and feedback submission
 
 Validation commands:
 

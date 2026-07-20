@@ -358,7 +358,7 @@ scale:
 - [ ] Add `RecommendationsController` with:
   - [ ] `POST /api/recommendations`
   - [ ] `GET /api/recommendations/jobs/{id}`
-  - [ ] `POST /api/recommendations/jobs/{id}/ratings`
+  - [ ] `POST /api/recommendations/feedback`
 - [ ] Add request/response models in `backend/Models`.
 - [ ] Add service layer interfaces/implementations in `backend/Services`.
 - [ ] Enforce user ownership checks on recommendation job and feedback access.
@@ -381,7 +381,7 @@ scale:
 - [ ] Add recommendation types in `frontend/src/types`.
 - [ ] Add recommendation store in `frontend/src/stores`.
 - [ ] Add recommendation page and polling UX.
-- [ ] Add rankings submission flow after style generation.
+- [ ] Add feedback submission flow after style selection.
 
 ### Documentation and Contracts
 
