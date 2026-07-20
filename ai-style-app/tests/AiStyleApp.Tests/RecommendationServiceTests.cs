@@ -105,6 +105,69 @@ public class RecommendationServiceTests
     }
 
     [Fact]
+    public async Task SubmitRatingsAsync_DuplicateGenerationJobId_ThrowsArgumentException()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded"
+        };
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var duplicateJobId = Guid.NewGuid();
+        var request = new SubmitRecommendationRatingsRequest(
+            AnalysisJobId: analysisJob.Id,
+            Rankings: new[]
+            {
+                new RecommendationRankingInput(duplicateJobId, 1),
+                new RecommendationRankingInput(duplicateJobId, 2)
+            },
+            FeedbackTags: null,
+            Comment: null);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SubmitRatingsAsync(analysisJob.Id, request, "user-1"));
+    }
+
+    [Fact]
+    public async Task SubmitRatingsAsync_DuplicateRank_ThrowsArgumentException()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded"
+        };
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var request = new SubmitRecommendationRatingsRequest(
+            AnalysisJobId: analysisJob.Id,
+            Rankings: new[]
+            {
+                new RecommendationRankingInput(Guid.NewGuid(), 1),
+                new RecommendationRankingInput(Guid.NewGuid(), 1)
+            },
+            FeedbackTags: null,
+            Comment: null);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SubmitRatingsAsync(analysisJob.Id, request, "user-1"));
+    }
+
+    [Fact]
     public async Task GetStatusAsync_PopulatesBestAndExperimentalVariants_FromLinkedStyleItems()
     {
         await using var db = CreateDbContext();
@@ -193,6 +256,101 @@ public class RecommendationServiceTests
         Assert.Equal(primaryJob.Id, result.BestVariant!.GenerationJobId);
         Assert.Single(result.ExperimentalVariants);
         Assert.Equal(experimentalJob.Id, result.ExperimentalVariants[0].GenerationJobId);
+        Assert.Equal("2", result.ExperimentalVariants[0].SelectedRank);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_DuplicateFeedbackForSameSelection_UsesLatestEntry()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded",
+            QualityPassed = true,
+            AnalysisConfidence = 0.82,
+            RecommendationsJson = "[]",
+            FeatureVectorJson = "{\"faceShape\":\"Square\"}"
+        };
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+
+        var primaryItem = new StyleItemEntity
+        {
+            UserId = "user-1",
+            Name = "Recommended",
+            Description = $"Primary recommendation from analysis job {analysisJob.Id}",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            IsResultPublic = true
+        };
+        primaryItem.Jobs.Add(new StyleJobEntity
+        {
+            StyleItemId = primaryItem.Id,
+            UserId = "user-1",
+            JobType = "generate-style",
+            Status = "Succeeded",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            ResultImageUrl = "https://example.com/best.jpg"
+        });
+
+        var experimentalItem = new StyleItemEntity
+        {
+            UserId = "user-1",
+            Name = "Experimental",
+            Description = $"Experimental recommendation from analysis job {analysisJob.Id}",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            IsResultPublic = false
+        };
+
+        var experimentalJob = new StyleJobEntity
+        {
+            StyleItemId = experimentalItem.Id,
+            UserId = "user-1",
+            JobType = "generate-style",
+            Status = "Succeeded",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            ResultImageUrl = "https://example.com/exp.jpg"
+        };
+        experimentalItem.Jobs.Add(experimentalJob);
+
+        db.StyleItems.AddRange(primaryItem, experimentalItem);
+        db.RecommendationFeedback.AddRange(
+            new RecommendationFeedbackEntity
+            {
+                AnalysisJobId = analysisJob.Id,
+                UserId = "user-1",
+                SelectedStyleId = experimentalJob.Id.ToString(),
+                Rating = 1,
+                CreatedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1)
+            },
+            new RecommendationFeedbackEntity
+            {
+                AnalysisJobId = analysisJob.Id,
+                UserId = "user-1",
+                SelectedStyleId = experimentalJob.Id.ToString(),
+                Rating = 2,
+                CreatedAtUtc = DateTimeOffset.UtcNow
+            });
+
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Features:ExperimentationModeEnabled"] = "true",
+            ["Features:ExperimentationTrafficPercent"] = "100"
+        }).Build();
+
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+        var result = await service.GetStatusAsync(analysisJob.Id, "user-1");
+
+        Assert.NotNull(result);
+        Assert.Single(result!.ExperimentalVariants);
         Assert.Equal("2", result.ExperimentalVariants[0].SelectedRank);
     }
 

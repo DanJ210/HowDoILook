@@ -206,7 +206,7 @@ Queued → Processing → Succeeded
 |--------|------|------|--------------|----------|
 | `POST` | `/api/recommendations` | Required | `CreateRecommendationsRequest` | `CreateRecommendationsResponse` (202) |
 | `GET` | `/api/recommendations/jobs/{id}` | Required | — | `RecommendationJobStatusResponse` |
-| `POST` | `/api/recommendations/feedback` | Required | `SubmitRecommendationFeedbackRequest` | 202 |
+| `POST` | `/api/recommendations/jobs/{id}/ratings` | Required | `SubmitRecommendationRatingsRequest` | 202 |
 
 ### Feature Flags Contract
 
@@ -369,13 +369,21 @@ Current implementation note:
 - Pre-MVP, `experimentalVariants` are populated for 100% of recommendation sessions.
 - The `experiment` object reports whether experimentation was configured and actually applied for the job.
 
-### SubmitRecommendationFeedbackRequest
+### SubmitRecommendationRatingsRequest
 
 ```json
 {
-  "analysisJobId": "uuid",
-  "selectedStyleId": "string | null",
-  "rating": 1,
+  "analysisJobId": "uuid | null",
+  "rankings": [
+    {
+      "generationJobId": "uuid",
+      "rank": 1
+    },
+    {
+      "generationJobId": "uuid",
+      "rank": 2
+    }
+  ],
   "feedbackTags": ["greatMatch", "tooBold"],
   "comment": "string | null"
 }
@@ -383,9 +391,12 @@ Current implementation note:
 
 Rules:
 
-- Feedback is optional and can be submitted after a recommendation has been generated.
-- `selectedStyleId` should reference the chosen recommendation style when available.
-- `rating` is typically a 1-5 score when provided.
+- The route `id` is the canonical analysis job ID.
+- If `analysisJobId` is provided in the body, it must match route `id`.
+- At least one ranking is required.
+- Each ranking `rank` must be between 1 and 3.
+- Duplicate `generationJobId` values are rejected.
+- Duplicate `rank` values are rejected.
 - `feedbackTags` are optional labels describing the feedback.
 - `comment` is optional freeform feedback text.
 
@@ -573,7 +584,7 @@ Rules:
 
 ## Queue Message Contract
 
-Messages enqueued to `style-jobs` are emitted in schema v2 for recommendation analysis and recommendation generation.
+Messages enqueued to `style-jobs` are emitted in schema v2 for recommendation analysis and style generation.
 
 ### Schema v1 (Legacy)
 
@@ -597,14 +608,14 @@ Messages enqueued to `style-jobs` are emitted in schema v2 for recommendation an
 
 ### Schema v2 (Current)
 
-V2 supports recommendation analysis and recommendation generation jobs.
+V2 supports recommendation analysis and style generation jobs.
 
 ```json
 {
   "JobId": "uuid",
   "StyleItemId": "uuid",
   "UserId": "string",
-  "JobType": "face-analysis | recommendation-generation",
+  "JobType": "face-analysis | generate-style",
   "Prompt": "string",
   "EnqueuedAtUtc": "ISO 8601 datetime",
   "CorrelationId": "string",

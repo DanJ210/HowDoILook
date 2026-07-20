@@ -128,13 +128,20 @@ public class RecommendationService : IRecommendationService
             .Take(3)
             .ToList();
 
-        var feedbackBySelectionId = await _db.RecommendationFeedback
+        var feedbackRows = await _db.RecommendationFeedback
             .AsNoTracking()
             .Where(x => x.AnalysisJobId == analysisJobId)
-            .ToDictionaryAsync(
-                x => x.SelectedStyleId ?? string.Empty,
-                x => x.Rating,
-                ct);
+            .Where(x => !string.IsNullOrWhiteSpace(x.SelectedStyleId))
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(ct);
+
+        var feedbackBySelectionId = feedbackRows
+            .GroupBy(x => x.SelectedStyleId!)
+            .ToDictionary(
+                x => x.Key,
+                x => x.First().Rating,
+                StringComparer.Ordinal);
 
         var experimentalVariants = new List<RecommendationExperimentalVariantResponse>();
         for (var i = 0; i < experimentalItems.Count; i++)
@@ -210,6 +217,16 @@ public class RecommendationService : IRecommendationService
             {
                 throw new ArgumentException("Rank must be between 1 and 3.", nameof(request));
             }
+        }
+
+        if (request.Rankings.GroupBy(x => x.GenerationJobId).Any(g => g.Count() > 1))
+        {
+            throw new ArgumentException("Duplicate GenerationJobId values are not allowed.", nameof(request));
+        }
+
+        if (request.Rankings.GroupBy(x => x.Rank).Any(g => g.Count() > 1))
+        {
+            throw new ArgumentException("Duplicate rank values are not allowed.", nameof(request));
         }
 
         var serializedTags = request.FeedbackTags is null

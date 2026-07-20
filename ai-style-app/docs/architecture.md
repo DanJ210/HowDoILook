@@ -55,11 +55,11 @@ graph TD
 
 ### Worker (`/worker`)
 - **BackgroundService** that polls the Azure Storage Queue every 5 seconds.
-- Deserializes each message from the shared queue contract and routes by `jobType` (`face-analysis` or `recommendation-generation`).
+- Deserializes each message from the shared queue contract and routes by `jobType`: `face-analysis` goes to the face-analysis handler; all other values are handled by the style job handler (typically `generate-style`).
 - For face-analysis jobs, computes telemetry, ranks candidates, persists one best recommendation, and schedules one best-variant generation job.
 - Pre-MVP, experimentation mode is enabled at 100% traffic and schedules three additional variant jobs for feedback capture.
 - Experimentation flags: `Features:ExperimentationModeEnabled=true` and `Features:ExperimentationTrafficPercent=100` (pre-MVP).
-- For recommendation-generation jobs, submits predictions to Replicate and stores returned `external_prediction_id` values.
+- For style generation jobs (`jobType` typically `generate-style`), submits predictions to Replicate and stores returned `external_prediction_id` values.
 - Retries up to 3 times on Replicate API failure; marks `Failed` on exhaustion.
 - Deletes the message from the queue only after successful processing.
 - Uses configured Replicate hair and beard models to render recommendation variants, resolving `latest_version.id` dynamically from Replicate.
@@ -141,7 +141,7 @@ Note: this snapshot reflects older style-generation-first tables and is being re
 3. Backend creates analysis records and a public post placeholder in `Queued`/`Publishing` states, then enqueues a face-analysis job.
 4. Frontend polls `GET /api/recommendations/jobs/{analysisJobId}`.
 5. Worker processes analysis, extracts ONNX telemetry, ranks candidates, and persists one best recommendation.
-6. Worker enqueues one best-variant recommendation-generation job for Replicate.
+6. Worker enqueues one best-variant style generation job (`jobType = generate-style`) for Replicate.
 7. Replicate sends webhook callback to `POST /api/webhooks/replicate` for best-variant completion.
 8. Backend verifies HMAC signatures, updates generated variant states/results, and archives final images.
 9. Frontend renders the public recommendation post with the main best recommendation and generated best variant.
@@ -244,7 +244,7 @@ Migration notes:
 
 1. User submits recommendation request with image URL and preferences.
 2. Backend writes `face_analysis_jobs` row with `Queued` status.
-3. Backend enqueues queue message (`jobType = FaceAnalysis`, `schemaVersion = 2`).
+3. Backend enqueues queue message (`jobType = face-analysis`, `schemaVersion = 2`).
 4. Worker dequeues message and marks analysis job `Processing`.
 5. Worker validates image URL format/reachability.
 7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector (including `faceShape`) + stage telemetry (landmarks `notes` contains the shape label).
