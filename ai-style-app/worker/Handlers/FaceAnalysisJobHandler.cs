@@ -349,7 +349,7 @@ catch (FaceAnalysisException ex)
 
             job.IsBeardStagePending = job.PipelineMode == StyleJobPipelineMode.HairThenBeard;
 
-            item.Jobs.Add(job);
+            _db.StyleJobs.Add(job);
             if (!(isPrimary && existingPrimaryPost is not null))
             {
                 styleItems.Add(item);

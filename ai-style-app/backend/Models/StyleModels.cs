@@ -16,28 +16,6 @@ public record CreateStyleItemRequest(
     string Description
 );
 
-// ── Generate-style (async) ───────────────────────────────────────────────────
-
-public record GenerateStyleRequest(
-    string Name,
-    string Description,
-    string? Prompt = null,
-    string? ImageUrl = null,
-    bool IsResultPublic = false,
-    string? Haircut = null,
-    string? HairColor = null,
-    string? BeardStyle = null,
-    string? BeardColor = null,
-    string? Gender = null
-);
-
-public record GenerateStyleResponse(
-    Guid JobId,
-    Guid StyleItemId,
-    string Status,
-    string StatusEndpoint
-);
-
 public record PublicFeedItemResponse(
     Guid StyleItemId,
     Guid JobId,
