@@ -69,7 +69,7 @@ flowchart LR
     E --> F[Recommendation Engine]
   F --> G[Create Public Recommendation Post]
   G --> D
-  D --> H[Worker: Recommendation Generation Handler]
+  D --> H[Worker: Style Job Handler (generate-style)]
   H --> I[Replicate]
   I --> J[Webhook]
   J --> C
