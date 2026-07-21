@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Diagnostics;
+using System.Buffers.Binary;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -72,7 +74,7 @@ public record StageTelemetry(
 
 public interface IFaceAnalysisPipeline
 {
-    Task<FaceAnalysisPipelineResult> AnalyzeAsync(string imageUrl, string? gender, string? preferencesJson, CancellationToken ct);
+    Task<FaceAnalysisPipelineResult> AnalyzeAsync(string imageUrl, string? gender, string? preferencesJson, string? userId, CancellationToken ct);
 }
 
 public interface IFaceQualityStage
@@ -239,12 +241,13 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         _logger = logger;
     }
 
-    public async Task<FaceAnalysisPipelineResult> AnalyzeAsync(string imageUrl, string? gender, string? preferencesJson, CancellationToken ct)
+    public async Task<FaceAnalysisPipelineResult> AnalyzeAsync(string imageUrl, string? gender, string? preferencesJson, string? userId, CancellationToken ct)
     {
         var imageBytes = await DownloadImageBytesAsync(imageUrl, ct);
         using var image = Image.Load<Rgba32>(imageBytes);
 
         var preferences = ParsePreferences(preferencesJson);
+        var experiment = BuildExperiment(userId);
 
         var stageTelemetry = new List<StageTelemetry>();
 
@@ -375,6 +378,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         {
             source = "worker-v1-staged-analysis",
             schemaVersion = 2,
+            experiment,
             imageInfo = new
             {
                 width = image.Width,
@@ -416,6 +420,31 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             FeatureVectorJson: JsonSerializer.Serialize(featureVector),
             AnalysisConfidence: confidence,
             RecommendationsJson: JsonSerializer.Serialize(recommendations));
+    }
+
+    private object BuildExperiment(string? userId)
+    {
+        var enabled = _features.ExperimentationModeEnabled;
+        var trafficPercent = Math.Clamp(_features.ExperimentationTrafficPercent, 0, 100);
+        var bucket = ComputeStableBucket(userId);
+        var applied = enabled && bucket < trafficPercent;
+
+        return new
+        {
+            enabled,
+            trafficPercent,
+            applied,
+            bucketKey = $"user-hash-{bucket:00}"
+        };
+    }
+
+    private static int ComputeStableBucket(string? userId)
+    {
+        var value = string.IsNullOrWhiteSpace(userId) ? "anonymous" : userId.Trim();
+        var bytes = System.Text.Encoding.UTF8.GetBytes(value);
+        var hash = SHA256.HashData(bytes);
+        var sample = BinaryPrimitives.ReadUInt32LittleEndian(hash.AsSpan(0, sizeof(uint)));
+        return (int)(sample % 100);
     }
 
     private double ComputeLandmarkConfidenceThreshold(FaceDetectionResult detection, LandmarkFeatures landmarks)

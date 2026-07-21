@@ -108,8 +108,10 @@ export interface CreateRecommendationsRequest {
 
 export interface CreateRecommendationsResponse {
   analysisJobId: string
+  recommendationPostId: string | null
   status: JobStatus
   statusEndpoint: string
+  publicEndpoint: string | null
 }
 
 export interface RecommendationQualityGate {
@@ -119,7 +121,7 @@ export interface RecommendationQualityGate {
 }
 
 export interface RecommendationAnalysisSummary {
-  faceShapeDistribution: Record<string, number> | null
+  faceShape: string | null
   confidence: number | null
 }
 
@@ -133,13 +135,40 @@ export interface RecommendationItem {
 
 export interface RecommendationJobStatusResponse {
   analysisJobId: string
+  recommendationPostId: string | null
+  publishStatus: string | null
   status: JobStatus
   qualityGate: RecommendationQualityGate
   analysisSummary: RecommendationAnalysisSummary
+  bestRecommendation: RecommendationItem | null
+  bestVariant: RecommendationVariant | null
+  experimentalVariants: RecommendationExperimentalVariant[]
   recommendations: RecommendationItem[]
+  experiment: RecommendationExperiment
   debugTelemetry: RecommendationDebugTelemetry | null
   errorCode: string | null
   errorMessage: string | null
+}
+
+export interface RecommendationVariant {
+  generationJobId: string
+  status: JobStatus
+  resultImageUrl: string | null
+}
+
+export interface RecommendationExperimentalVariant {
+  slot: number
+  generationJobId: string
+  status: JobStatus
+  resultImageUrl: string | null
+  selectedRank: string | null
+}
+
+export interface RecommendationExperiment {
+  enabled: boolean
+  trafficPercent: number
+  applied: boolean
+  bucketKey: string
 }
 
 export interface RecommendationStageTelemetry {
@@ -159,10 +188,14 @@ export interface RecommendationDebugTelemetry {
   stages: RecommendationStageTelemetry[]
 }
 
-export interface SubmitRecommendationFeedbackRequest {
-  analysisJobId: string
-  selectedStyleId: string | null
-  rating: number | null
+export interface RecommendationRankingInput {
+  generationJobId: string
+  rank: 1 | 2 | 3
+}
+
+export interface SubmitRecommendationRatingsRequest {
+  analysisJobId?: string
+  rankings: RecommendationRankingInput[]
   feedbackTags: string[] | null
   comment: string | null
 }

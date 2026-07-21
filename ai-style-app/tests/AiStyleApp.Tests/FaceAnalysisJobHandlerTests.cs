@@ -25,7 +25,8 @@ public class FaceAnalysisJobHandlerTests
         var analysisJob = await SeedAnalysisJobAsync(db, imageUrl: "relative/image.jpg");
 
         var pipeline = new StubFaceAnalysisPipeline();
-        var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK));
+        var queue = new StubWorkerQueuePublisher();
+        var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK), queue);
 
         await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
 
@@ -49,7 +50,8 @@ public class FaceAnalysisJobHandlerTests
                 "Image appears too blurry. Try a sharper photo with better focus.")
         };
 
-        var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK));
+        var queue = new StubWorkerQueuePublisher();
+        var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK), queue);
 
         await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
 
@@ -84,7 +86,8 @@ public class FaceAnalysisJobHandlerTests
                 RecommendationsJson: recommendationsJson)
         };
 
-        var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK));
+        var queue = new StubWorkerQueuePublisher();
+        var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK), queue);
 
         await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
 
@@ -95,6 +98,7 @@ public class FaceAnalysisJobHandlerTests
         Assert.Equal(0.941, persisted.AnalysisConfidence);
         Assert.Equal(recommendationsJson, persisted.RecommendationsJson);
         Assert.Equal(analysisJob.PreferencesJson, pipeline.LastPreferencesJson);
+        Assert.Single(queue.Messages);
         Assert.NotNull(persisted.StartedAtUtc);
         Assert.NotNull(persisted.CompletedAtUtc);
     }
@@ -108,7 +112,7 @@ public class FaceAnalysisJobHandlerTests
         var imageBytes = CreateSyntheticFaceImageBytes();
         var httpClientFactory = new StaticImageHttpClientFactory(imageBytes);
         var pipeline = CreateRealPipeline(httpClientFactory);
-        var handler = CreateHandler(db, pipeline, httpClientFactory);
+        var handler = CreateHandler(db, pipeline, httpClientFactory, new StubWorkerQueuePublisher());
 
         await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
 
@@ -132,15 +136,176 @@ public class FaceAnalysisJobHandlerTests
         Assert.InRange(metrics.GetProperty("pitch").GetDouble(), -1.0, 1.0);
     }
 
+        [Fact]
+        public async Task HandleAsync_ExperimentApplied_EnqueuesPrimaryAndThreeExperimentalVariants()
+        {
+                await using var db = CreateDbContext();
+                var analysisJob = await SeedAnalysisJobAsync(db, preferencesJson: "{\"allowBeardSuggestions\":true}");
+
+                const string recommendationsJson = """
+                [
+                    {"styleId":"textured-crop","styleName":"Textured Crop","score":0.94,"reasons":["r1"],"constraints":[]},
+                    {"styleId":"classic-side-part","styleName":"Classic Side Part","score":0.90,"reasons":["r2"],"constraints":[]},
+                    {"styleId":"short-quiff","styleName":"Short Quiff","score":0.88,"reasons":["r3"],"constraints":[]},
+                    {"styleId":"short-boxed-beard","styleName":"Short Boxed Beard Pairing","score":0.86,"reasons":["r4"],"constraints":[]},
+                    {"styleId":"other-style","styleName":"Other Style","score":0.80,"reasons":["r5"],"constraints":[]}
+                ]
+                """;
+
+                const string featureVectorJson = """
+                {
+                    "experiment": {
+                        "enabled": true,
+                        "trafficPercent": 100,
+                        "applied": true,
+                        "bucketKey": "user-hash-01"
+                    }
+                }
+                """;
+
+                var pipeline = new StubFaceAnalysisPipeline
+                {
+                        AnalyzeResult = new FaceAnalysisPipelineResult(
+                                QualityPassed: true,
+                                QualityFailureCode: null,
+                                QualityMessage: null,
+                                FeatureVectorJson: featureVectorJson,
+                                AnalysisConfidence: 0.941,
+                                RecommendationsJson: recommendationsJson)
+                };
+
+                var queue = new StubWorkerQueuePublisher();
+                var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK), queue);
+
+                await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
+
+                Assert.Equal(4, queue.Messages.Count);
+
+                var styleItems = await db.StyleItems.AsNoTracking().OrderBy(x => x.CreatedAtUtc).ToListAsync();
+                Assert.Equal(4, styleItems.Count);
+                Assert.True(styleItems[0].IsResultPublic);
+                Assert.False(styleItems[1].IsResultPublic);
+                Assert.False(styleItems[2].IsResultPublic);
+                Assert.False(styleItems[3].IsResultPublic);
+        }
+
+        [Fact]
+        public async Task HandleAsync_ExperimentNotApplied_EnqueuesOnlyPrimaryVariant()
+        {
+                await using var db = CreateDbContext();
+                var analysisJob = await SeedAnalysisJobAsync(db);
+
+                const string recommendationsJson = """
+                [
+                    {"styleId":"textured-crop","styleName":"Textured Crop","score":0.94,"reasons":["r1"],"constraints":[]},
+                    {"styleId":"classic-side-part","styleName":"Classic Side Part","score":0.90,"reasons":["r2"],"constraints":[]}
+                ]
+                """;
+
+                const string featureVectorJson = """
+                {
+                    "experiment": {
+                        "enabled": true,
+                        "trafficPercent": 100,
+                        "applied": false,
+                        "bucketKey": "user-hash-81"
+                    }
+                }
+                """;
+
+                var pipeline = new StubFaceAnalysisPipeline
+                {
+                        AnalyzeResult = new FaceAnalysisPipelineResult(
+                                QualityPassed: true,
+                                QualityFailureCode: null,
+                                QualityMessage: null,
+                                FeatureVectorJson: featureVectorJson,
+                                AnalysisConfidence: 0.941,
+                                RecommendationsJson: recommendationsJson)
+                };
+
+                var queue = new StubWorkerQueuePublisher();
+                var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK), queue);
+
+                await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
+
+                Assert.Single(queue.Messages);
+
+                var styleItems = await db.StyleItems.AsNoTracking().ToListAsync();
+                Assert.Single(styleItems);
+                Assert.True(styleItems[0].IsResultPublic);
+        }
+
+        [Fact]
+        public async Task HandleAsync_ReusesExistingPrimaryRecommendationPostPlaceholder()
+        {
+                await using var db = CreateDbContext();
+                var analysisJob = await SeedAnalysisJobAsync(db);
+
+                var placeholder = new StyleItemEntity
+                {
+                        UserId = analysisJob.UserId,
+                        Name = "Recommendation Post (Processing)",
+                        Description = $"Primary recommendation from analysis job {analysisJob.Id}. Pending analysis.",
+                        Prompt = "Pending recommendation generation",
+                        ImageUrl = analysisJob.ImageUrl,
+                        IsResultPublic = true
+                };
+
+                db.StyleItems.Add(placeholder);
+                await db.SaveChangesAsync();
+
+                const string recommendationsJson = """
+                [
+                    {"styleId":"textured-crop","styleName":"Textured Crop","score":0.94,"reasons":["r1"],"constraints":[]}
+                ]
+                """;
+
+                const string featureVectorJson = """
+                {
+                    "experiment": {
+                        "enabled": true,
+                        "trafficPercent": 100,
+                        "applied": false,
+                        "bucketKey": "user-hash-01"
+                    }
+                }
+                """;
+
+                var pipeline = new StubFaceAnalysisPipeline
+                {
+                        AnalyzeResult = new FaceAnalysisPipelineResult(
+                                QualityPassed: true,
+                                QualityFailureCode: null,
+                                QualityMessage: null,
+                                FeatureVectorJson: featureVectorJson,
+                                AnalysisConfidence: 0.94,
+                                RecommendationsJson: recommendationsJson)
+                };
+
+                var queue = new StubWorkerQueuePublisher();
+                var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK), queue);
+
+                await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
+
+                Assert.Single(queue.Messages);
+                var allPublicItems = await db.StyleItems.AsNoTracking().Where(x => x.IsResultPublic).ToListAsync();
+                Assert.Single(allPublicItems);
+                Assert.Equal(placeholder.Id, allPublicItems[0].Id);
+                Assert.StartsWith("Recommended:", allPublicItems[0].Name, StringComparison.Ordinal);
+        }
+
     private static FaceAnalysisJobHandler CreateHandler(
         AppDbContext db,
         IFaceAnalysisPipeline pipeline,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        IWorkerQueuePublisher? queuePublisher = null)
     {
         return new FaceAnalysisJobHandler(
             db,
             httpClientFactory,
             pipeline,
+            queuePublisher ?? new StubWorkerQueuePublisher(),
             NullLogger<FaceAnalysisJobHandler>.Instance,
             new StubMetricsLogger());
     }
@@ -375,6 +540,7 @@ public class FaceAnalysisJobHandlerTests
             string imageUrl,
             string? gender,
             string? preferencesJson,
+            string? userId,
             CancellationToken ct)
         {
             Calls++;
@@ -409,5 +575,16 @@ public class FaceAnalysisJobHandlerTests
         public void LogAnalysisJobCompleted(Guid jobId, string userId, bool qualityPassed, string? qualityFailureCode, double? analysisConfidence, string? faceShape, int recommendationCount, TimeSpan duration) { }
         public void LogAnalysisJobFailed(Guid jobId, string userId, string errorCode, string errorMessage, TimeSpan duration) { }
         public void LogRecommendationFeedbackSubmitted(Guid jobId, string userId, string? selectedStyleId, int? rating, string? tags, int? recommendationRank) { }
+    }
+
+    private sealed class StubWorkerQueuePublisher : IWorkerQueuePublisher
+    {
+        public List<StyleJob> Messages { get; } = [];
+
+        public Task PublishAsync(StyleJob job, CancellationToken ct = default)
+        {
+            Messages.Add(job);
+            return Task.CompletedTask;
+        }
     }
 }

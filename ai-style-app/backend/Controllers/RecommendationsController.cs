@@ -32,12 +32,14 @@ public class RecommendationsController : ControllerBase
             return BadRequest("ImageUrl is required.");
         }
 
-        var analysisJobId = await _recommendations.CreateAndEnqueueAsync(request, UserId, ct);
+        var (analysisJobId, recommendationPostId) = await _recommendations.CreateAndEnqueueAsync(request, UserId, ct);
 
         var response = new CreateRecommendationsResponse(
             AnalysisJobId: analysisJobId,
+            RecommendationPostId: recommendationPostId,
             Status: "Queued",
-            StatusEndpoint: Url.Action(nameof(GetById), new { id = analysisJobId }) ?? $"/api/recommendations/jobs/{analysisJobId}");
+            StatusEndpoint: Url.Action(nameof(GetById), new { id = analysisJobId }) ?? $"/api/recommendations/jobs/{analysisJobId}",
+            PublicEndpoint: $"/api/style/{recommendationPostId}");
 
         return AcceptedAtAction(nameof(GetById), new { id = analysisJobId }, response);
     }
@@ -54,24 +56,34 @@ public class RecommendationsController : ControllerBase
         return Ok(status);
     }
 
-    [HttpPost("feedback")]
-    public async Task<IActionResult> SubmitFeedback(
-        [FromBody] SubmitRecommendationFeedbackRequest request,
+    [HttpPost("jobs/{id:guid}/ratings")]
+    public async Task<IActionResult> SubmitRatings(
+        Guid id,
+        [FromBody] SubmitRecommendationRatingsRequest request,
         CancellationToken ct)
     {
-        if (request.AnalysisJobId == Guid.Empty)
+        if (request.AnalysisJobId.HasValue && request.AnalysisJobId.Value != id)
         {
-            return BadRequest("AnalysisJobId is required.");
+            return BadRequest("AnalysisJobId in body must match route id when provided.");
+        }
+
+        if (request.Rankings is null || request.Rankings.Count == 0)
+        {
+            return BadRequest("At least one ranking is required.");
         }
 
         try
         {
-            await _recommendations.SubmitFeedbackAsync(request, UserId, ct);
+            await _recommendations.SubmitRatingsAsync(id, request, UserId, ct);
             return Accepted();
         }
         catch (InvalidOperationException)
         {
             return NotFound();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
         }
     }
 }

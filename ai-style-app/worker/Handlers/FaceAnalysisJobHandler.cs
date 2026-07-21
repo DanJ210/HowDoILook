@@ -17,19 +17,31 @@ public class FaceAnalysisJobHandler : IMessageHandler
     private readonly AppDbContext _db;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IFaceAnalysisPipeline _pipeline;
+    private readonly IWorkerQueuePublisher _queuePublisher;
     private readonly ILogger<FaceAnalysisJobHandler> _logger;
     private readonly IMetricsLogger _metricsLogger;
+
+    private static readonly IReadOnlyDictionary<string, RecommendationStyleTemplate> RecommendationStyleTemplates =
+        new Dictionary<string, RecommendationStyleTemplate>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["textured-crop"] = new("Crew Cut", "No change", null, null),
+            ["classic-side-part"] = new("Side-Parted", "No change", null, null),
+            ["short-quiff"] = new("Slicked Back", "No change", null, null),
+            ["short-boxed-beard"] = new("No change", "No change", "Short boxed beard", null)
+        };
 
     public FaceAnalysisJobHandler(
         AppDbContext db,
         IHttpClientFactory httpClientFactory,
         IFaceAnalysisPipeline pipeline,
+        IWorkerQueuePublisher queuePublisher,
         ILogger<FaceAnalysisJobHandler> logger,
         IMetricsLogger metricsLogger)
     {
         _db = db;
         _httpClientFactory = httpClientFactory;
         _pipeline = pipeline;
+        _queuePublisher = queuePublisher;
         _logger = logger;
         _metricsLogger = metricsLogger;
     }
@@ -103,6 +115,7 @@ if (!Uri.TryCreate(analysisJob.ImageUrl, UriKind.Absolute, out var uri) ||
                 analysisJob.ImageUrl,
                 analysisJob.Gender,
                 analysisJob.PreferencesJson,
+                analysisJob.UserId,
                 cancellationToken);
 
             analysisJob.QualityPassed = pipelineResult.QualityPassed;
@@ -114,6 +127,8 @@ if (!Uri.TryCreate(analysisJob.ImageUrl, UriKind.Absolute, out var uri) ||
             analysisJob.Status = JobStatusSucceeded;
             analysisJob.CompletedAtUtc = DateTimeOffset.UtcNow;
             await _db.SaveChangesAsync(cancellationToken);
+
+            await EnqueueRecommendationStyleJobsAsync(analysisJob, pipelineResult, cancellationToken);
 
             // Log metrics for monitoring and analysis
             var duration = (analysisJob.CompletedAtUtc - analysisJob.StartedAtUtc) ?? TimeSpan.Zero;
@@ -243,4 +258,225 @@ catch (FaceAnalysisException ex)
 
         return 0;
     }
+
+    private async Task EnqueueRecommendationStyleJobsAsync(
+        FaceAnalysisJobEntity analysisJob,
+        FaceAnalysisPipelineResult pipelineResult,
+        CancellationToken cancellationToken)
+    {
+        var recommendations = ParseRecommendations(pipelineResult.RecommendationsJson);
+        if (recommendations.Count == 0)
+        {
+            _logger.LogInformation(
+                "Face-analysis job {JobId} produced no recommendations; skipping style generation fan-out.",
+                analysisJob.Id);
+            return;
+        }
+
+        var experimentApplied = IsExperimentApplied(pipelineResult.FeatureVectorJson);
+        var selected = recommendations
+            .Take(experimentApplied ? 4 : 1)
+            .ToList();
+
+        var existingPrimaryPost = await _db.StyleItems
+            .Include(x => x.Jobs)
+            .FirstOrDefaultAsync(
+                x => x.UserId == analysisJob.UserId
+                     && x.IsResultPublic
+                     && x.Description.Contains(analysisJob.Id.ToString()),
+                cancellationToken);
+
+        var styleItems = new List<StyleItemEntity>(selected.Count);
+        var styleJobs = new List<StyleJobEntity>(selected.Count);
+
+        for (var index = 0; index < selected.Count; index++)
+        {
+            var candidate = selected[index];
+            var styleName = string.IsNullOrWhiteSpace(candidate.StyleName)
+                ? candidate.StyleId ?? "Recommended Style"
+                : candidate.StyleName;
+            var template = ResolveTemplate(candidate.StyleId, analysisJob.Gender);
+            var isPrimary = index == 0;
+
+            StyleItemEntity item;
+            if (isPrimary && existingPrimaryPost is not null)
+            {
+                item = existingPrimaryPost;
+                item.Name = $"Recommended: {styleName}";
+                item.Description = BuildDescription(analysisJob.Id, styleName, candidate.Score, isPrimary, experimentApplied);
+                item.Prompt = BuildPrompt(styleName, candidate.Reasons);
+                item.ImageUrl = analysisJob.ImageUrl;
+                item.IsResultPublic = true;
+                item.UpdatedAtUtc = DateTimeOffset.UtcNow;
+            }
+            else
+            {
+                item = new StyleItemEntity
+                {
+                    UserId = analysisJob.UserId,
+                    Name = isPrimary
+                        ? $"Recommended: {styleName}"
+                        : $"Experimental {index}: {styleName}",
+                    Description = BuildDescription(analysisJob.Id, styleName, candidate.Score, isPrimary, experimentApplied),
+                    Prompt = BuildPrompt(styleName, candidate.Reasons),
+                    ImageUrl = analysisJob.ImageUrl,
+                    IsResultPublic = isPrimary
+                };
+            }
+
+            var job = new StyleJobEntity
+            {
+                UserId = analysisJob.UserId,
+                StyleItemId = item.Id,
+                JobType = "generate-style",
+                Prompt = item.Prompt,
+                ImageUrl = analysisJob.ImageUrl,
+                CorrelationId = Guid.NewGuid().ToString(),
+                Haircut = template.Haircut,
+                HairColor = template.HairColor,
+                BeardStyle = template.BeardStyle,
+                BeardColor = template.BeardColor,
+                Gender = analysisJob.Gender,
+                PipelineMode = StyleJobRouting.DeterminePipelineMode(
+                    template.Haircut,
+                    template.HairColor,
+                    template.BeardStyle,
+                    template.BeardColor,
+                    analysisJob.Gender),
+                CurrentStage = StyleJobStage.Queued,
+                IsBeardStagePending = false
+            };
+
+            job.IsBeardStagePending = job.PipelineMode == StyleJobPipelineMode.HairThenBeard;
+
+            item.Jobs.Add(job);
+            if (!(isPrimary && existingPrimaryPost is not null))
+            {
+                styleItems.Add(item);
+            }
+            styleJobs.Add(job);
+        }
+
+        if (styleItems.Count > 0)
+        {
+            _db.StyleItems.AddRange(styleItems);
+        }
+        await _db.SaveChangesAsync(cancellationToken);
+
+        foreach (var job in styleJobs)
+        {
+            var queueMessage = new StyleJob(
+                JobId: job.Id,
+                StyleItemId: job.StyleItemId,
+                UserId: job.UserId,
+                JobType: job.JobType,
+                Prompt: job.Prompt,
+                EnqueuedAtUtc: DateTimeOffset.UtcNow,
+                CorrelationId: job.CorrelationId ?? Guid.NewGuid().ToString(),
+                Attempt: 0,
+                SchemaVersion: 2,
+                ImageUrl: job.ImageUrl,
+                Haircut: job.Haircut,
+                HairColor: job.HairColor,
+                BeardStyle: job.BeardStyle,
+                BeardColor: job.BeardColor,
+                Gender: job.Gender,
+                Stage: null,
+                PreferencesJson: analysisJob.PreferencesJson);
+
+            await _queuePublisher.PublishAsync(queueMessage, cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "Face-analysis job {JobId} enqueued {Count} recommendation style jobs (experimentApplied={ExperimentApplied}).",
+            analysisJob.Id,
+            styleJobs.Count,
+            experimentApplied);
+    }
+
+    private static List<RecommendationCandidate> ParseRecommendations(string? recommendationsJson)
+    {
+        if (string.IsNullOrWhiteSpace(recommendationsJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<List<RecommendationCandidate>>(recommendationsJson);
+            return parsed ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static bool IsExperimentApplied(string? featureVectorJson)
+    {
+        if (string.IsNullOrWhiteSpace(featureVectorJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (!doc.RootElement.TryGetProperty("experiment", out var experiment)
+                || experiment.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            return experiment.TryGetProperty("applied", out var applied)
+                && applied.ValueKind is JsonValueKind.True or JsonValueKind.False
+                && applied.GetBoolean();
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static RecommendationStyleTemplate ResolveTemplate(string? styleId, string? gender)
+    {
+        if (!string.IsNullOrWhiteSpace(styleId)
+            && RecommendationStyleTemplates.TryGetValue(styleId, out var template))
+        {
+            if (!StyleJobRouting.AllowsBeard(gender))
+            {
+                return template with { BeardStyle = null, BeardColor = null };
+            }
+
+            return template;
+        }
+
+        return new RecommendationStyleTemplate("No change", "No change", null, null);
+    }
+
+    private static string BuildPrompt(string styleName, IReadOnlyList<string>? reasons)
+    {
+        var reasonText = reasons is { Count: > 0 }
+            ? string.Join("; ", reasons)
+            : "Personalized fit from face analysis.";
+
+        return $"Apply recommended style '{styleName}'. Rationale: {reasonText}";
+    }
+
+    private static string BuildDescription(Guid analysisJobId, string styleName, double score, bool isPrimary, bool experimentApplied)
+    {
+        var role = isPrimary ? "Primary" : "Experimental";
+        return $"{role} recommendation from analysis job {analysisJobId}. Style: {styleName}. Score: {score:F3}. ExperimentApplied={experimentApplied}.";
+    }
+
+    private sealed record RecommendationStyleTemplate(
+        string Haircut,
+        string HairColor,
+        string? BeardStyle,
+        string? BeardColor);
 }

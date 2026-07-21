@@ -23,11 +23,12 @@ const form = ref({
 const isSubmitting = ref(false)
 const submitError = ref<string | null>(null)
 const activeJobId = ref<string | null>(null)
+const recommendationPostId = ref<string | null>(null)
+const publicEndpoint = ref<string | null>(null)
 
-const feedbackRating = ref<number | null>(null)
 const feedbackComment = ref('')
-const feedbackStyleId = ref<string | null>(null)
 const feedbackTags = ref<string[]>([])
+const variantRanks = ref<Record<string, 1 | 2 | 3 | null>>({})
 const feedbackMessage = ref<string | null>(null)
 const feedbackError = ref<string | null>(null)
 const isSubmittingFeedback = ref(false)
@@ -43,7 +44,10 @@ const activeJob = computed(() => (activeJobId.value ? recommendationsStore.getJo
 const pollingState = computed(() => (activeJobId.value ? recommendationsStore.getPollingState(activeJobId.value) : 'stopped'))
 const pollingError = computed(() => (activeJobId.value ? recommendationsStore.getPollingError(activeJobId.value) : null))
 
-const recommendations = computed(() => activeJob.value?.recommendations ?? [])
+const bestRecommendation = computed(() => activeJob.value?.bestRecommendation ?? null)
+const bestVariant = computed(() => activeJob.value?.bestVariant ?? null)
+const experimentalVariants = computed(() => activeJob.value?.experimentalVariants ?? [])
+const rankedRecommendations = computed(() => activeJob.value?.recommendations ?? [])
 const debugTelemetry = computed(() => activeJob.value?.debugTelemetry ?? null)
 const hasSucceeded = computed(() => activeJob.value?.status === 'Succeeded')
 const hasFailed = computed(() => activeJob.value?.status === 'Failed')
@@ -65,10 +69,9 @@ function onDrop(event: DragEvent) {
 }
 
 function resetFeedbackState() {
-  feedbackRating.value = null
   feedbackComment.value = ''
-  feedbackStyleId.value = null
   feedbackTags.value = []
+  variantRanks.value = {}
   feedbackMessage.value = null
   feedbackError.value = null
   isSubmittingFeedback.value = false
@@ -101,6 +104,8 @@ async function startRecommendation() {
     )
 
     activeJobId.value = created.analysisJobId
+    recommendationPostId.value = created.recommendationPostId
+    publicEndpoint.value = created.publicEndpoint
     resetFeedbackState()
 
     recommendationsStore.startPolling(created.analysisJobId)
@@ -111,28 +116,63 @@ async function startRecommendation() {
   }
 }
 
-async function submitFeedback() {
+async function submitRatings() {
   if (!activeJobId.value) return
+
+  const rankings = Object.entries(variantRanks.value)
+    .filter(([, rank]) => rank !== null)
+    .map(([generationJobId, rank]) => ({
+      generationJobId,
+      rank: rank as 1 | 2 | 3
+    }))
+
+  if (rankings.length === 0) {
+    feedbackError.value = 'Choose at least one experimental variant rank before submitting.'
+    return
+  }
 
   isSubmittingFeedback.value = true
   feedbackMessage.value = null
   feedbackError.value = null
 
   try {
-    await recommendationsStore.submitFeedback({
+    await recommendationsStore.submitRatings(activeJobId.value, {
       analysisJobId: activeJobId.value,
-      selectedStyleId: feedbackStyleId.value,
-      rating: feedbackRating.value,
+      rankings,
       feedbackTags: feedbackTags.value.length ? feedbackTags.value : null,
       comment: feedbackComment.value.trim() ? feedbackComment.value.trim() : null
     })
 
-    feedbackMessage.value = 'Thanks, your feedback was submitted.'
+    feedbackMessage.value = 'Thanks, your rankings were submitted.'
   } catch (err: unknown) {
-    feedbackError.value = (err as { message?: string })?.message ?? 'Failed to submit feedback.'
+    feedbackError.value = (err as { message?: string })?.message ?? 'Failed to submit rankings.'
   } finally {
     isSubmittingFeedback.value = false
   }
+}
+
+function setVariantRank(generationJobId: string, rank: 1 | 2 | 3 | null) {
+  variantRanks.value = {
+    ...variantRanks.value,
+    [generationJobId]: rank
+  }
+}
+
+function onVariantRankChange(generationJobId: string, event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  const rank = value === '' ? null : Number(value)
+  if (rank === null || rank === 1 || rank === 2 || rank === 3) {
+    setVariantRank(generationJobId, rank)
+  }
+}
+
+function getVariantRankValue(generationJobId: string, selectedRank: string | null) {
+  const explicit = variantRanks.value[generationJobId]
+  if (explicit !== undefined && explicit !== null) {
+    return String(explicit)
+  }
+
+  return selectedRank ?? ''
 }
 
 function toggleTag(tag: string) {
@@ -298,8 +338,14 @@ onUnmounted(() => {
           <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             <dt class="text-slate-400">Job ID</dt>
             <dd class="break-all font-mono text-slate-200 sm:text-right">{{ activeJob.analysisJobId }}</dd>
+            <dt class="text-slate-400">Recommendation post</dt>
+            <dd class="break-all font-mono text-slate-200 sm:text-right">{{ activeJob.recommendationPostId ?? recommendationPostId ?? 'Pending' }}</dd>
+            <dt class="text-slate-400">Publish status</dt>
+            <dd class="sm:text-right">{{ activeJob.publishStatus ?? 'Pending' }}</dd>
             <dt class="text-slate-400">Quality gate</dt>
             <dd class="sm:text-right">{{ activeJob.qualityGate.passed === null ? 'Pending' : activeJob.qualityGate.passed ? 'Passed' : 'Failed' }}</dd>
+            <dt class="text-slate-400">Face shape</dt>
+            <dd class="sm:text-right">{{ activeJob.analysisSummary.faceShape ?? 'Pending' }}</dd>
             <dt class="text-slate-400">Confidence</dt>
             <dd class="sm:text-right">{{ activeJob.analysisSummary.confidence === null ? 'Pending' : activeJob.analysisSummary.confidence.toFixed(3) }}</dd>
             <template v-if="debugTelemetry">
@@ -340,17 +386,112 @@ onUnmounted(() => {
           </div>
 
           <div v-if="hasSucceeded" class="space-y-3">
-            <h3 class="text-base font-semibold">Recommendations</h3>
+            <h3 class="text-base font-semibold">Best Recommendation</h3>
 
             <StateCard
-              v-if="recommendations.length === 0"
+              v-if="!bestRecommendation"
+              title="No best recommendation produced"
+              description="Try another photo or adjust preferences."
+              padding-class="p-4"
+            />
+
+            <article
+              v-else
+              class="rounded-2xl border border-white/10 bg-slate-900/50 p-4"
+            >
+              <div class="mb-2 flex items-center justify-between gap-4">
+                <h4 class="text-sm font-semibold text-white">{{ bestRecommendation.styleName }}</h4>
+                <span class="rounded-full bg-sky-500/20 px-2 py-1 text-xs font-medium text-sky-200">
+                  {{ bestRecommendation.score.toFixed(3) }}
+                </span>
+              </div>
+
+              <p class="mb-1 text-xs uppercase tracking-wide text-slate-400">Reasons</p>
+              <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
+                <li v-for="reason in bestRecommendation.reasons" :key="reason">{{ reason }}</li>
+              </ul>
+
+              <p class="mb-1 mt-3 text-xs uppercase tracking-wide text-slate-400">Constraints</p>
+              <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
+                <li v-for="constraint in bestRecommendation.constraints" :key="constraint">{{ constraint }}</li>
+              </ul>
+            </article>
+
+            <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
+              <h3 class="text-sm font-semibold">Best variant</h3>
+              <div v-if="bestVariant" class="mt-2 text-sm text-slate-200">
+                <p class="font-mono text-xs">{{ bestVariant.generationJobId }}</p>
+                <p class="mt-1">Status: {{ bestVariant.status }}</p>
+                <img
+                  v-if="bestVariant.resultImageUrl"
+                  :src="bestVariant.resultImageUrl"
+                  alt="Best generated recommendation"
+                  class="mt-3 max-h-72 w-full rounded-xl object-cover"
+                />
+              </div>
+              <p v-else class="mt-2 text-sm text-slate-400">Best variant generation is still pending.</p>
+            </div>
+
+            <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
+              <h3 class="text-sm font-semibold">Experimental variants</h3>
+              <p class="mt-1 text-xs text-slate-400">Pre-MVP: rank available variants as 1, 2, and 3.</p>
+
+              <StateCard
+                v-if="experimentalVariants.length === 0"
+                title="No experimental variants"
+                description="Experimentation may be disabled or still processing."
+                padding-class="p-4"
+              />
+
+              <div v-else class="mt-3 space-y-3">
+                <article
+                  v-for="variant in experimentalVariants"
+                  :key="variant.generationJobId"
+                  class="rounded-xl border border-white/10 bg-slate-950/40 p-3"
+                >
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <p class="text-sm font-medium text-white">Variant {{ variant.slot }}</p>
+                    <span class="text-xs text-slate-300">{{ variant.status }}</span>
+                  </div>
+                  <p class="mt-1 font-mono text-xs text-slate-400">{{ variant.generationJobId }}</p>
+                  <img
+                    v-if="variant.resultImageUrl"
+                    :src="variant.resultImageUrl"
+                    :alt="`Experimental variant ${variant.slot}`"
+                    class="mt-2 max-h-56 w-full rounded-xl object-cover"
+                  />
+                  <div class="mt-3">
+                    <label class="mb-1 block text-xs uppercase tracking-wide text-slate-400">Rank</label>
+                    <select
+                      :value="getVariantRankValue(variant.generationJobId, variant.selectedRank)"
+                      @change="onVariantRankChange(variant.generationJobId, $event)"
+                      class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+                    >
+                      <option :value="''">Unranked</option>
+                      <option :value="1">1</option>
+                      <option :value="2">2</option>
+                      <option :value="3">3</option>
+                    </select>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div v-if="publicEndpoint" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">
+              Public post endpoint: <span class="font-mono">{{ publicEndpoint }}</span>
+            </div>
+
+            <h3 class="text-base font-semibold">Ranked candidates</h3>
+
+            <StateCard
+              v-if="rankedRecommendations.length === 0"
               title="No recommendations produced"
               description="Try another photo or adjust preferences."
               padding-class="p-4"
             />
 
             <article
-              v-for="item in recommendations"
+              v-for="item in rankedRecommendations"
               :key="item.styleId"
               class="rounded-2xl border border-white/10 bg-slate-900/50 p-4"
             >
@@ -373,35 +514,7 @@ onUnmounted(() => {
             </article>
 
             <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
-              <h3 class="text-sm font-semibold">Feedback</h3>
-
-              <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                <div>
-                  <label class="mb-1 block text-xs uppercase tracking-wide text-slate-400">Selected style</label>
-                  <select
-                    v-model="feedbackStyleId"
-                    class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
-                  >
-                    <option :value="null">None</option>
-                    <option v-for="item in recommendations" :key="item.styleId" :value="item.styleId">{{ item.styleName }}</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label class="mb-1 block text-xs uppercase tracking-wide text-slate-400">Rating</label>
-                  <select
-                    v-model="feedbackRating"
-                    class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
-                  >
-                    <option :value="null">None</option>
-                    <option :value="1">1</option>
-                    <option :value="2">2</option>
-                    <option :value="3">3</option>
-                    <option :value="4">4</option>
-                    <option :value="5">5</option>
-                  </select>
-                </div>
-              </div>
+              <h3 class="text-sm font-semibold">Ranking feedback</h3>
 
               <div class="mt-3">
                 <p class="mb-1 text-xs uppercase tracking-wide text-slate-400">Tags</p>
@@ -444,10 +557,10 @@ onUnmounted(() => {
               <button
                 type="button"
                 :disabled="isSubmittingFeedback"
-                @click="submitFeedback"
+                @click="submitRatings"
                 class="mt-3 w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {{ isSubmittingFeedback ? 'Submitting…' : 'Submit feedback' }}
+                {{ isSubmittingFeedback ? 'Submitting…' : 'Submit rankings' }}
               </button>
             </div>
           </div>

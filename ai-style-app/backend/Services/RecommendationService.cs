@@ -1,9 +1,12 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using AiStyleApp.Api.Models;
 using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
 using AiStyleApp.Data.Queue;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace AiStyleApp.Api.Services;
 
@@ -12,15 +15,17 @@ public class RecommendationService : IRecommendationService
     private readonly AppDbContext _db;
     private readonly IQueuePublisher _queue;
     private readonly IMetricsLogger _metricsLogger;
+    private readonly IConfiguration _configuration;
 
-    public RecommendationService(AppDbContext db, IQueuePublisher queue, IMetricsLogger metricsLogger)
+    public RecommendationService(AppDbContext db, IQueuePublisher queue, IMetricsLogger metricsLogger, IConfiguration configuration)
     {
         _db = db;
         _queue = queue;
         _metricsLogger = metricsLogger;
+        _configuration = configuration;
     }
 
-    public async Task<Guid> CreateAndEnqueueAsync(
+    public async Task<(Guid AnalysisJobId, Guid RecommendationPostId)> CreateAndEnqueueAsync(
         CreateRecommendationsRequest request,
         string userId,
         CancellationToken ct = default)
@@ -41,7 +46,18 @@ public class RecommendationService : IRecommendationService
             Status = "Queued"
         };
 
+        var recommendationPost = new StyleItemEntity
+        {
+            UserId = userId,
+            Name = "Recommendation Post (Processing)",
+            Description = $"Primary recommendation from analysis job {analysisJob.Id}. Pending analysis.",
+            Prompt = "Pending recommendation generation",
+            ImageUrl = request.ImageUrl,
+            IsResultPublic = true
+        };
+
         _db.FaceAnalysisJobs.Add(analysisJob);
+        _db.StyleItems.Add(recommendationPost);
         await _db.SaveChangesAsync(ct);
 
         var queueMessage = new StyleJob(
@@ -61,7 +77,7 @@ public class RecommendationService : IRecommendationService
 
         await _queue.PublishAsync(queueMessage, ct);
 
-        return analysisJob.Id;
+        return (analysisJob.Id, recommendationPost.Id);
     }
 
     public async Task<RecommendationJobStatusResponse?> GetStatusAsync(
@@ -78,60 +94,169 @@ public class RecommendationService : IRecommendationService
             return null;
         }
 
+        var experiment = ParseExperimentFromFeatureVector(analysisJob.FeatureVectorJson)
+            ?? BuildExperimentMetadata(userId);
+
+        var recommendations = ParseRecommendations(analysisJob.RecommendationsJson);
+        var bestRecommendation = recommendations.FirstOrDefault();
+        var faceShape = ParseFaceShape(analysisJob.FeatureVectorJson);
+
+        var linkedStyleItems = await _db.StyleItems
+            .AsNoTracking()
+            .Include(x => x.Jobs)
+            .Where(x => x.UserId == userId && x.Description.Contains(analysisJob.Id.ToString()))
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToListAsync(ct);
+
+        var primaryStyleItem = linkedStyleItems.FirstOrDefault(x => x.IsResultPublic)
+            ?? linkedStyleItems.FirstOrDefault();
+        var bestJob = primaryStyleItem?.Jobs
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .FirstOrDefault();
+
+        RecommendationVariantResponse? bestVariant = null;
+        if (bestJob is not null)
+        {
+            bestVariant = new RecommendationVariantResponse(
+                GenerationJobId: bestJob.Id,
+                Status: bestJob.Status,
+                ResultImageUrl: bestJob.ResultImageUrl);
+        }
+
+        var experimentalItems = linkedStyleItems
+            .Where(x => primaryStyleItem is null || x.Id != primaryStyleItem.Id)
+            .Take(3)
+            .ToList();
+
+        var feedbackRows = await _db.RecommendationFeedback
+            .AsNoTracking()
+            .Where(x => x.AnalysisJobId == analysisJobId)
+            .Where(x => !string.IsNullOrWhiteSpace(x.SelectedStyleId))
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(ct);
+
+        var feedbackBySelectionId = feedbackRows
+            .GroupBy(x => x.SelectedStyleId!)
+            .ToDictionary(
+                x => x.Key,
+                x => x.First().Rating,
+                StringComparer.Ordinal);
+
+        var experimentalVariants = new List<RecommendationExperimentalVariantResponse>();
+        for (var i = 0; i < experimentalItems.Count; i++)
+        {
+            var item = experimentalItems[i];
+            var job = item.Jobs.OrderByDescending(x => x.CreatedAtUtc).FirstOrDefault();
+            if (job is null)
+            {
+                continue;
+            }
+
+            var key = job.Id.ToString();
+            var selectedRank = feedbackBySelectionId.TryGetValue(key, out var rank) && rank.HasValue
+                ? rank.Value.ToString()
+                : null;
+
+            experimentalVariants.Add(new RecommendationExperimentalVariantResponse(
+                Slot: i + 1,
+                GenerationJobId: job.Id,
+                Status: job.Status,
+                ResultImageUrl: job.ResultImageUrl,
+                SelectedRank: selectedRank));
+        }
+
+        var recommendationPostId = primaryStyleItem?.Id;
+        var publishStatus = primaryStyleItem is null ? null : "Published";
+
         return new RecommendationJobStatusResponse(
             AnalysisJobId: analysisJob.Id,
+            RecommendationPostId: recommendationPostId,
+            PublishStatus: publishStatus,
             Status: analysisJob.Status,
             QualityGate: new RecommendationQualityGateResponse(
                 Passed: analysisJob.QualityPassed,
                 FailureCode: analysisJob.QualityFailureCode,
                 Message: analysisJob.QualityMessage),
             AnalysisSummary: new RecommendationAnalysisSummaryResponse(
-                FaceShapeDistribution: null,
+                FaceShape: faceShape,
                 Confidence: analysisJob.AnalysisConfidence),
-            Recommendations: ParseRecommendations(analysisJob.RecommendationsJson),
+            BestRecommendation: bestRecommendation,
+            BestVariant: bestVariant,
+            ExperimentalVariants: experimentalVariants,
+            Recommendations: recommendations,
+            Experiment: experiment,
             DebugTelemetry: ParseDebugTelemetry(analysisJob.FeatureVectorJson),
             ErrorCode: analysisJob.ErrorCode,
             ErrorMessage: analysisJob.ErrorMessage);
     }
 
-    public async Task SubmitFeedbackAsync(
-        SubmitRecommendationFeedbackRequest request,
+    public async Task SubmitRatingsAsync(
+        Guid analysisJobId,
+        SubmitRecommendationRatingsRequest request,
         string userId,
         CancellationToken ct = default)
     {
         var analysisJob = await _db.FaceAnalysisJobs
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == request.AnalysisJobId && x.UserId == userId, ct);
+            .FirstOrDefaultAsync(x => x.Id == analysisJobId && x.UserId == userId, ct);
 
         if (analysisJob is null)
         {
             throw new InvalidOperationException("Analysis job not found.");
         }
 
-        var feedback = new RecommendationFeedbackEntity
+        if (request.Rankings is null || request.Rankings.Count == 0)
         {
-            AnalysisJobId = request.AnalysisJobId,
-            UserId = userId,
-            SelectedStyleId = request.SelectedStyleId,
-            Rating = request.Rating,
-            FeedbackTagsJson = request.FeedbackTags is null
-                ? null
-                : JsonSerializer.Serialize(request.FeedbackTags),
-            Comment = request.Comment
-        };
+            throw new ArgumentException("At least one ranking is required.", nameof(request));
+        }
 
-        _db.RecommendationFeedback.Add(feedback);
+        foreach (var ranking in request.Rankings)
+        {
+            if (ranking.Rank is < 1 or > 3)
+            {
+                throw new ArgumentException("Rank must be between 1 and 3.", nameof(request));
+            }
+        }
+
+        if (request.Rankings.GroupBy(x => x.GenerationJobId).Any(g => g.Count() > 1))
+        {
+            throw new ArgumentException("Duplicate GenerationJobId values are not allowed.", nameof(request));
+        }
+
+        if (request.Rankings.GroupBy(x => x.Rank).Any(g => g.Count() > 1))
+        {
+            throw new ArgumentException("Duplicate rank values are not allowed.", nameof(request));
+        }
+
+        var serializedTags = request.FeedbackTags is null
+            ? null
+            : JsonSerializer.Serialize(request.FeedbackTags);
+
+        var entries = request.Rankings.Select(ranking => new RecommendationFeedbackEntity
+        {
+            AnalysisJobId = analysisJobId,
+            UserId = userId,
+            // Store generationJobId string in selected_style_id for pre-MVP experimentation ranking labels.
+            SelectedStyleId = ranking.GenerationJobId.ToString(),
+            Rating = ranking.Rank,
+            FeedbackTagsJson = serializedTags,
+            Comment = request.Comment
+        }).ToList();
+
+        _db.RecommendationFeedback.AddRange(entries);
         await _db.SaveChangesAsync(ct);
 
-        // Log feedback metrics for monitoring and analysis
-        var recommendationRank = GetRecommendationRank(analysisJob.RecommendationsJson, request.SelectedStyleId);
-        _metricsLogger.LogRecommendationFeedbackSubmitted(
-            request.AnalysisJobId,
-            userId,
-            request.SelectedStyleId,
-            request.Rating,
-            feedback.FeedbackTagsJson,
-            recommendationRank);
+        foreach (var ranking in request.Rankings)
+        {
+            _metricsLogger.LogRecommendationFeedbackSubmitted(
+                analysisJobId,
+                userId,
+                ranking.GenerationJobId.ToString(),
+                ranking.Rank,
+                serializedTags,
+                ranking.Rank);
+        }
     }
 
     private static IReadOnlyList<RecommendationItemResponse> ParseRecommendations(string? recommendationsJson)
@@ -267,28 +392,123 @@ public class RecommendationService : IRecommendationService
         return false;
     }
 
-    private static int? GetRecommendationRank(string? recommendationsJson, string? selectedStyleId)
+    private static string? ParseFaceShape(string? featureVectorJson)
     {
-        if (string.IsNullOrEmpty(recommendationsJson) || string.IsNullOrEmpty(selectedStyleId))
+        if (string.IsNullOrWhiteSpace(featureVectorJson))
+        {
             return null;
+        }
 
         try
         {
-            var parsed = JsonSerializer.Deserialize<List<RecommendationItemResponse>>(recommendationsJson);
-            if (parsed == null)
-                return null;
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            var root = doc.RootElement;
 
-            for (int i = 0; i < parsed.Count; i++)
+            if (TryGetPropertyIgnoreCase(root, "faceShape", out var shapeNode)
+                && shapeNode.ValueKind == JsonValueKind.String)
             {
-                if (parsed[i].StyleId == selectedStyleId)
-                    return i + 1; // Rank is 1-based
+                return shapeNode.GetString();
+            }
+
+            if (TryGetPropertyIgnoreCase(root, "stageTelemetry", out var telemetryNode)
+                && telemetryNode.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var stage in telemetryNode.EnumerateArray())
+                {
+                    if (!TryGetPropertyIgnoreCase(stage, "stage", out var stageName)
+                        || !string.Equals(stageName.GetString(), "landmarks", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (TryGetPropertyIgnoreCase(stage, "notes", out var notes)
+                        && notes.ValueKind == JsonValueKind.String)
+                    {
+                        return notes.GetString();
+                    }
+                }
             }
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
         {
-            // Fall through to return null
+            return null;
         }
 
         return null;
+    }
+
+    private RecommendationExperimentResponse BuildExperimentMetadata(string userId)
+    {
+        var enabled = _configuration.GetValue("Features:ExperimentationModeEnabled", false);
+        var trafficPercentRaw = _configuration.GetValue("Features:ExperimentationTrafficPercent", 0);
+        var trafficPercent = Math.Clamp(trafficPercentRaw, 0, 100);
+
+        var bucket = ComputeStableBucket(userId);
+        var applied = enabled && bucket < trafficPercent;
+        var bucketKey = $"user-hash-{bucket:00}";
+
+        return new RecommendationExperimentResponse(
+            Enabled: enabled,
+            TrafficPercent: trafficPercent,
+            Applied: applied,
+            BucketKey: bucketKey);
+    }
+
+    private static RecommendationExperimentResponse? ParseExperimentFromFeatureVector(string? featureVectorJson)
+    {
+        if (string.IsNullOrWhiteSpace(featureVectorJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            var root = doc.RootElement;
+
+            if (!TryGetPropertyIgnoreCase(root, "experiment", out var experimentNode)
+                || experimentNode.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var enabled = TryGetPropertyIgnoreCase(experimentNode, "enabled", out var enabledNode)
+                && enabledNode.ValueKind is JsonValueKind.True or JsonValueKind.False
+                && enabledNode.GetBoolean();
+
+            var trafficPercent = 0;
+            if (TryGetPropertyIgnoreCase(experimentNode, "trafficPercent", out var trafficNode)
+                && trafficNode.TryGetInt32(out var parsedTraffic))
+            {
+                trafficPercent = Math.Clamp(parsedTraffic, 0, 100);
+            }
+
+            var applied = TryGetPropertyIgnoreCase(experimentNode, "applied", out var appliedNode)
+                && appliedNode.ValueKind is JsonValueKind.True or JsonValueKind.False
+                && appliedNode.GetBoolean();
+
+            var bucketKey = TryGetPropertyIgnoreCase(experimentNode, "bucketKey", out var bucketNode)
+                ? bucketNode.GetString() ?? "unknown"
+                : "unknown";
+
+            return new RecommendationExperimentResponse(
+                Enabled: enabled,
+                TrafficPercent: trafficPercent,
+                Applied: applied,
+                BucketKey: bucketKey);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+    }
+
+    private static int ComputeStableBucket(string userId)
+    {
+        var value = string.IsNullOrWhiteSpace(userId) ? "anonymous" : userId.Trim();
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var hash = SHA256.HashData(bytes);
+        var sample = BitConverter.ToUInt32(hash, 0);
+        return (int)(sample % 100);
     }
 }

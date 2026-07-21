@@ -6,6 +6,8 @@ import type { RecommendationJobStatusResponse } from '@/types/api'
 function createRecommendationStatus(overrides: Partial<RecommendationJobStatusResponse> = {}): RecommendationJobStatusResponse {
   return {
     analysisJobId: 'job-1',
+    recommendationPostId: null,
+    publishStatus: null,
     status: 'Queued',
     qualityGate: {
       passed: null,
@@ -13,10 +15,19 @@ function createRecommendationStatus(overrides: Partial<RecommendationJobStatusRe
       message: null
     },
     analysisSummary: {
-      faceShapeDistribution: null,
+      faceShape: null,
       confidence: null
     },
+    bestRecommendation: null,
+    bestVariant: null,
+    experimentalVariants: [],
     recommendations: [],
+    experiment: {
+      enabled: true,
+      trafficPercent: 100,
+      applied: true,
+      bucketKey: 'user-hash-00'
+    },
     debugTelemetry: null,
     errorCode: null,
     errorMessage: null,
@@ -93,37 +104,39 @@ describe('recommendations store', () => {
     expect(store.getJob('job-1')?.errorCode).toBe('ANALYSIS_QUALITY_TOO_BLURRY')
   })
 
-  it('submits recommendation feedback successfully', async () => {
+  it('submits recommendation ratings successfully', async () => {
     const store = useRecommendationsStore()
 
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(
-      store.submitFeedback({
+      store.submitRatings('job-1', {
         analysisJobId: 'job-1',
-        selectedStyleId: 'textured-crop',
-        rating: 4,
+        rankings: [
+          { generationJobId: 'gen-1', rank: 1 },
+          { generationJobId: 'gen-2', rank: 2 },
+          { generationJobId: 'gen-3', rank: 3 }
+        ],
         feedbackTags: ['greatFit'],
-        comment: 'Solid suggestion.'
+        comment: 'Good spread'
       })
     ).resolves.toBeUndefined()
   })
 
-  it('surfaces feedback submission errors', async () => {
+  it('surfaces ratings submission errors', async () => {
     const store = useRecommendationsStore()
 
-    const fetchMock = vi.fn().mockResolvedValue(new Response('feedback failed', { status: 500 }))
+    const fetchMock = vi.fn().mockResolvedValue(new Response('ratings failed', { status: 500 }))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(
-      store.submitFeedback({
+      store.submitRatings('job-1', {
         analysisJobId: 'job-1',
-        selectedStyleId: null,
-        rating: null,
+        rankings: [{ generationJobId: 'gen-1', rank: 1 }],
         feedbackTags: null,
         comment: null
       })
-    ).rejects.toMatchObject({ message: 'feedback failed', statusCode: 500 })
+    ).rejects.toMatchObject({ message: 'ratings failed', statusCode: 500 })
   })
 })

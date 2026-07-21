@@ -5,6 +5,8 @@ public class WorkerFeatureFlags
     public bool OnnxFaceDetection { get; set; }
     public bool OnnxLandmarks { get; set; }
     public bool OnnxRegionEstimation { get; set; }
+    public bool ExperimentationModeEnabled { get; set; }
+    public int ExperimentationTrafficPercent { get; set; }
 }
 
 public class FaceAnalysisThresholds

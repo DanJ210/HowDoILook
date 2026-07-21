@@ -2,6 +2,8 @@
 
 All endpoints are prefixed with `/api`. Protected endpoints require `Authorization: Bearer <token>`.
 
+Direction (2026-07): recommendation-first contracts are canonical. The default flow is publish-first recommendation posts with one best recommendation and one generated best variant. Pre-MVP, experimentation mode is enabled for 100% of sessions and generates three additional variants for feedback collection. Backward compatibility with style-generation-first contracts is not required.
+
 ## Authentication
 
 Use this endpoint to get a JWT for local development and Swagger testing.
@@ -32,6 +34,8 @@ Use this endpoint to get a JWT for local development and Swagger testing.
 In Swagger, click **Authorize** and paste only the JWT value from `accessToken`.
 
 ## Style Items
+
+Legacy note: these endpoints are from the style-generation-first model and are being phased out in favor of recommendation-first contracts.
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
@@ -82,12 +86,6 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "isResultPublic": false,
   "createdAt": "ISO 8601 datetime",
   "latestJobId": "uuid | null",
-  "latestJobStatus": "Queued | Processing | Succeeded | Failed | TimedOut | Canceled | null"
-}
-```
-
-### GenerateStyleRequest
-
 ```json
 {
   "name": "string",
@@ -136,6 +134,8 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
 The response is `202 Accepted`. Poll `statusEndpoint` to track progress.
 
 ## Jobs
+
+Legacy note: job endpoints in this section represent style-generation job tracking from the earlier flow.
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
@@ -200,13 +200,27 @@ Queued → Processing → Succeeded
 
 `externalPredictionId` always represents the active Replicate prediction for the current stage and may change between the hair and beard stages. Once a job reaches a terminal status (`Succeeded`, `Failed`, `TimedOut`, `Canceled`) it will not transition further.
 
-## Recommendations (Current Implementation)
+## Recommendations (Canonical)
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
 | `POST` | `/api/recommendations` | Required | `CreateRecommendationsRequest` | `CreateRecommendationsResponse` (202) |
 | `GET` | `/api/recommendations/jobs/{id}` | Required | — | `RecommendationJobStatusResponse` |
-| `POST` | `/api/recommendations/feedback` | Required | `SubmitRecommendationFeedbackRequest` | 202 |
+| `POST` | `/api/recommendations/jobs/{id}/ratings` | Required | `SubmitRecommendationRatingsRequest` | 202 |
+
+### Feature Flags Contract
+
+Runtime behavior is controlled by the following configuration keys.
+
+| Key | Type | Pre-MVP Value | Post-MVP Target | Description |
+|---|---|---|---|---|
+| `Features:ExperimentationModeEnabled` | bool | `true` | `false` after model confidence is validated | Enables generation and collection of experimental variants and feedback. |
+| `Features:ExperimentationTrafficPercent` | int (0-100) | `100` | `20` during ramp-down, then `0` | Percentage of recommendation sessions that receive experimental variants. |
+
+Selection rule:
+
+- Experimentation is applied when `ExperimentationModeEnabled = true` and user bucket hash is less than `ExperimentationTrafficPercent`.
+- Pre-MVP this evaluates true for all sessions because percent is 100.
 
 ### CreateRecommendationsRequest
 
@@ -230,12 +244,14 @@ Beard suggestions are only considered when `gender` is `male`, and the worker en
 ```json
 {
   "analysisJobId": "uuid",
+  "recommendationPostId": "uuid",
   "status": "Queued",
-  "statusEndpoint": "/api/recommendations/jobs/{analysisJobId}"
+  "statusEndpoint": "/api/recommendations/jobs/{analysisJobId}",
+  "publicEndpoint": "/api/style/{recommendationPostId}"
 }
 ```
 
-The response is `202 Accepted`. Poll `statusEndpoint` to track analysis completion.
+The response is `202 Accepted`. Poll `statusEndpoint` to track analysis and best-variant generation completion.
 
 Current implementation note:
 - The worker runs staged quality gating, face detection, ONNX landmark extraction when enabled, and segmentation proxies.
@@ -247,6 +263,8 @@ Current implementation note:
 ```json
 {
   "analysisJobId": "uuid",
+  "recommendationPostId": "uuid",
+  "publishStatus": "Published",
   "status": "Queued | Processing | Succeeded | Failed",
   "qualityGate": {
     "passed": true,
@@ -254,9 +272,49 @@ Current implementation note:
     "message": "string | null"
   },
   "analysisSummary": {
-    "faceShapeDistribution": null,
+    "faceShape": "Square",
     "confidence": 0.87
   },
+  "bestRecommendation": {
+    "styleId": "string",
+    "styleName": "string",
+    "score": 0.92,
+    "reasons": [
+      "Balances jaw width",
+      "Fits medium maintenance preference"
+    ],
+    "constraints": [
+      "Requires moderate top volume"
+    ]
+  },
+  "bestVariant": {
+    "generationJobId": "uuid",
+    "status": "Queued | Processing | Succeeded | Failed",
+    "resultImageUrl": "string | null"
+  },
+  "experimentalVariants": [
+    {
+      "slot": 1,
+      "generationJobId": "uuid",
+      "status": "Queued | Processing | Succeeded | Failed",
+      "resultImageUrl": "string | null",
+      "selectedRank": "1 | 2 | 3 | null"
+    },
+    {
+      "slot": 2,
+      "generationJobId": "uuid",
+      "status": "Queued | Processing | Succeeded | Failed",
+      "resultImageUrl": "string | null",
+      "selectedRank": "1 | 2 | 3 | null"
+    },
+    {
+      "slot": 3,
+      "generationJobId": "uuid",
+      "status": "Queued | Processing | Succeeded | Failed",
+      "resultImageUrl": "string | null",
+      "selectedRank": "1 | 2 | 3 | null"
+    }
+  ],
   "recommendations": [
     {
       "styleId": "string",
@@ -271,6 +329,12 @@ Current implementation note:
       ]
     }
   ],
+  "experiment": {
+    "enabled": true,
+    "trafficPercent": 100,
+    "applied": true,
+    "bucketKey": "userId-hash"
+  },
   "debugTelemetry": {
     "source": "worker-v1-staged-analysis",
     "schemaVersion": 2,
@@ -298,26 +362,43 @@ Current implementation note:
 ```
 
 Current implementation note:
-- The worker emits `schemaVersion: 2` queue messages for both style generation and recommendations.
-- Recommendations jobs use the same `style-jobs` transport and are handled by the worker's face-analysis path.
+- The worker emits `schemaVersion: 2` queue messages for recommendation analysis and recommendation generation.
 - Face shape is persisted at `face_analysis_jobs.feature_vector_json.faceShape` (for example, `"Square"`).
-- API consumers should read face shape from `debugTelemetry.stages[]` where `stage = "landmarks"`; `notes` carries the lowercase shape label (for example, `"square"`).
-- `analysisSummary.faceShapeDistribution` is currently a placeholder and is returned as `null`.
+- API consumers should treat `bestRecommendation` as the primary public posting recommendation.
+- API consumers should treat `bestVariant` as the canonical generated outcome for the post.
+- Pre-MVP, `experimentalVariants` are populated for 100% of recommendation sessions.
+- The `experiment` object reports whether experimentation was configured and actually applied for the job.
 
-### SubmitRecommendationFeedbackRequest
+### SubmitRecommendationRatingsRequest
 
 ```json
 {
-  "analysisJobId": "uuid",
-  "selectedStyleId": "string | null",
-  "rating": 1,
-  "feedbackTags": [
-    "tooBold",
-    "notMyStyle"
+  "analysisJobId": "uuid | null",
+  "rankings": [
+    {
+      "generationJobId": "uuid",
+      "rank": 1
+    },
+    {
+      "generationJobId": "uuid",
+      "rank": 2
+    }
   ],
+  "feedbackTags": ["greatMatch", "tooBold"],
   "comment": "string | null"
 }
 ```
+
+Rules:
+
+- The route `id` is the canonical analysis job ID.
+- If `analysisJobId` is provided in the body, it must match route `id`.
+- At least one ranking is required.
+- Each ranking `rank` must be between 1 and 3.
+- Duplicate `generationJobId` values are rejected.
+- Duplicate `rank` values are rejected.
+- `feedbackTags` are optional labels describing the feedback.
+- `comment` is optional freeform feedback text.
 
 ## Webhooks
 
@@ -450,9 +531,9 @@ GET /api/analytics/export-recommendations?format=csv&from=2026-01-01T00:00:00Z&t
 }
 ```
 
-## Internal Decision Contract
+## Recommendation-to-Generation Contract
 
-This internal payload defines the handoff from recommendations analysis to style generation request composition. It is not a public HTTP contract.
+This payload defines the handoff from recommendations analysis to generation request composition.
 
 ### RecommendationToGenerationDecision (Internal)
 
@@ -497,11 +578,13 @@ Rules:
 - `analysisJobId` must correspond to a succeeded recommendations job owned by `userId`.
 - `decision.haircut` is required.
 - Beard fields must remain `No change` unless `gender = male` and `allowBeardSuggestions = true`.
-- If quality/confidence guardrails fail, style-generation enqueue should be blocked with an actionable error response.
+- If quality/confidence guardrails fail, recommendation generation enqueue is blocked with an actionable error response.
+- Default behavior enqueues one best-variant generation job from the top recommendation.
+- Pre-MVP mode enqueues three additional variant jobs for ranking data collection on all sessions.
 
 ## Queue Message Contract
 
-Messages enqueued to `style-jobs` are currently emitted in schema v2 for style generation and recommendations.
+Messages enqueued to `style-jobs` are emitted in schema v2 for recommendation analysis and style generation.
 
 ### Schema v1 (Legacy)
 
@@ -525,14 +608,14 @@ Messages enqueued to `style-jobs` are currently emitted in schema v2 for style g
 
 ### Schema v2 (Current)
 
-V2 supports recommendation analysis jobs while keeping style-generation fields for backward compatibility.
+V2 supports recommendation analysis and style generation jobs.
 
 ```json
 {
   "JobId": "uuid",
   "StyleItemId": "uuid",
   "UserId": "string",
-  "JobType": "generate-style | face-analysis",
+  "JobType": "face-analysis | generate-style",
   "Prompt": "string",
   "EnqueuedAtUtc": "ISO 8601 datetime",
   "CorrelationId": "string",
