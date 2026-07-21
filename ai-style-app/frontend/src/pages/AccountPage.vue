@@ -22,8 +22,8 @@ function handleLogout() {
   authStore.logout()
 }
 
-function goGenerate() {
-  router.push({ name: 'style-generate' })
+function goRecommendations() {
+  router.push({ name: 'recommendations' })
 }
 
 function goJobs() {
@@ -39,7 +39,7 @@ function goJobs() {
 
       <div v-if="!authStore.isAuthenticated" class="mt-6 space-y-4">
         <p class="text-sm leading-6 text-slate-300">
-          You are currently signed out. Use Dev Login to access generation and job history routes.
+          You are currently signed out. Use Dev Login to access recommendations and job history routes.
         </p>
         <button
           type="button"
@@ -61,9 +61,9 @@ function goJobs() {
           <button
             type="button"
             class="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
-            @click="goGenerate"
+            @click="goRecommendations"
           >
-            Generate a look
+            Get recommendations
           </button>
           <button
             type="button"

@@ -78,10 +78,10 @@ const hasJobs = computed(() => jobs.value.length > 0)
       </div>
       <button
         type="button"
-        @click="router.push({ name: 'style-generate' })"
+        @click="router.push({ name: 'recommendations' })"
         class="hidden sm:inline-flex rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-white/10"
       >
-        New generation
+        New recommendation
       </button>
     </div>
 
@@ -112,7 +112,7 @@ const hasJobs = computed(() => jobs.value.length > 0)
     <StateCard
       v-else-if="!hasJobs"
       title="No jobs yet."
-      description="Create your first look from the Generate tab."
+      description="Submit your first recommendation request to generate variants."
     />
 
     <section v-else class="grid gap-4">

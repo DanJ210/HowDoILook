@@ -12,12 +12,10 @@ namespace AiStyleApp.Api.Controllers;
 public class StyleController : ControllerBase
 {
     private readonly IStyleService _styleService;
-    private readonly ILogger<StyleController> _logger;
 
-    public StyleController(IStyleService styleService, ILogger<StyleController> logger)
+    public StyleController(IStyleService styleService)
     {
         _styleService = styleService;
-        _logger = logger;
     }
 
     private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)
@@ -48,28 +46,6 @@ public class StyleController : ControllerBase
         var item = await _styleService.GetByIdAsync(id, UserId, ct);
         if (item is null) return NotFound();
         return Ok(item);
-    }
-
-    [HttpPost("generate")]
-    public async Task<ActionResult<GenerateStyleResponse>> Generate(
-        [FromBody] GenerateStyleRequest request,
-        CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(request.ImageUrl))
-        {
-            return BadRequest("A user image is required for hairstyle generation.");
-        }
-
-        var (item, jobId) = await _styleService.CreateAndEnqueueAsync(request, UserId, ct);
-
-        var response = new GenerateStyleResponse(
-            jobId,
-            item.Id,
-            JobStatus.Queued,
-            Url.Action(nameof(GetById), "Jobs", new { id = jobId }, Request.Scheme)!
-        );
-
-        return AcceptedAtAction("GetById", "Jobs", new { id = jobId }, response);
     }
 
     [HttpDelete("{id:guid}")]

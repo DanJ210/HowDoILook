@@ -9,9 +9,9 @@ const authStore = useAuthStore()
 
 const navItems = [
   { name: 'home', label: 'Home', requiresAuth: false },
-  { name: 'style-generate', label: 'Generate', requiresAuth: true },
   { name: 'recommendations', label: 'Recommend', requiresAuth: true },
-  { name: 'jobs', label: 'Jobs', requiresAuth: true }
+  { name: 'jobs', label: 'Jobs', requiresAuth: true },
+  { name: 'account', label: 'Account', requiresAuth: false }
 ] as const
 
 const currentRouteName = computed(() => route.name)

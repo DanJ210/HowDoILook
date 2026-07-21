@@ -108,10 +108,6 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function openGenerate() {
-  router.push({ name: 'style-generate' })
-}
-
 function openJobs() {
   router.push({ name: 'jobs' })
 }
@@ -132,31 +128,31 @@ function openRecommendations() {
             Discover public hair transformations.
           </h1>
           <p class="max-w-2xl text-sm leading-6 text-slate-300 sm:text-base">
-            Browse results shared by other users, then jump into Generate to create your own look.
+            Browse results shared by other users, then submit your photo to get recommendation-driven variants.
           </p>
         </div>
 
         <div class="flex flex-col gap-3 sm:flex-row lg:flex-col lg:justify-end">
           <button
             type="button"
-            @click="openGenerate"
-            class="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
-          >
-            Generate a look
-          </button>
-          <button
-            type="button"
             @click="openRecommendations"
-            class="rounded-2xl border border-white/10 bg-sky-500/20 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/30"
+            class="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
           >
             Get recommendations
           </button>
           <button
             type="button"
             @click="openJobs"
-            class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+            class="rounded-2xl border border-white/10 bg-sky-500/20 px-4 py-3 text-sm font-semibold text-sky-100 transition hover:bg-sky-500/30"
           >
             Your jobs
+          </button>
+          <button
+            type="button"
+            @click="router.push({ name: 'account' })"
+            class="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+          >
+            Account
           </button>
         </div>
       </div>
