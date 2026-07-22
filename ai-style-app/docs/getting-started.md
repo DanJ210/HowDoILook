@@ -293,8 +293,10 @@ Upload an image first with `POST /api/upload/image`, then use the returned URL:
   "imageUrl": "https://your-host/api/upload/public/user-123/abc123.jpg",
   "gender": "female",
   "preferences": {
-    "preferredLength": "medium",
-    "maintenanceLevel": "low"
+    "maintenanceLevel": "low",
+    "styleVibe": "casual",
+    "allowHairColorChange": true,
+    "allowBeardSuggestions": false
   }
 }
 ```
