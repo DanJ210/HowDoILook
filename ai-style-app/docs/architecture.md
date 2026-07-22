@@ -8,7 +8,8 @@ Product direction (2026-07): the app is recommendations-first. Canonical flow is
 graph TD
     User["Browser (Vue 3 + Vite + Tailwind)"]
     API["Backend — ASP.NET Core Web API"]
-    Queue["Azure Storage Queue (style-jobs)"]
+    AnalysisQueue["Azure Storage Queue (analysis-jobs)"]
+    StyleQueue["Azure Storage Queue (style-jobs)"]
     Worker["Worker — .NET 10 BackgroundService"]
   DB["PostgreSQL (face_analysis_jobs, recommendation_feedback)"]
     Replicate["Replicate AI API"]
@@ -16,10 +17,11 @@ graph TD
 
     User -->|"HTTP /api/*  (JWT)"| API
   API -->|"Persist analysis job + feedback records"| DB
-  API -->|"Enqueue analysis job"| Queue
-    Queue -->|"Dequeue message"| Worker
+  API -->|"Enqueue analysis job"| AnalysisQueue
+    AnalysisQueue -->|"Dequeue message"| Worker
   Worker -->|"Write analysis results + recommendation payload"| DB
-  Worker -->|"Enqueue best-variant generation job"| Queue
+  Worker -->|"Enqueue best-variant generation job"| StyleQueue
+    StyleQueue -->|"Dequeue message"| Worker
   Worker -->|"Submit prediction(s)"| Replicate
     Replicate -->|"Webhook callback (HMAC)"| Webhook
   Webhook -->|"Update variant generation results"| DB
@@ -54,7 +56,7 @@ graph TD
 - Auto-applies EF Core migrations on startup in Development.
 
 ### Worker (`/worker`)
-- **BackgroundService** that polls the Azure Storage Queue every 5 seconds.
+- **BackgroundService** that polls analysis and style queues every 5 seconds.
 - Deserializes each message from the shared queue contract and routes by `jobType`: `face-analysis` goes to the face-analysis handler; all other values are handled by the style job handler (typically `generate-style`).
 - For face-analysis jobs, computes telemetry, ranks candidates, persists one best recommendation, and schedules one best-variant generation job.
 - Pre-MVP, experimentation mode is enabled at 100% traffic and schedules three additional variant jobs for feedback capture.
@@ -70,7 +72,7 @@ graph TD
 - EF Core migrations live here.
 
 ### Infrastructure (`/infrastructure`)
-- Azure Storage Queue: `style-jobs`
+- Azure Storage Queues: `analysis-jobs` (analysis ingress) and `style-jobs` (style generation)
 - PostgreSQL: `ai_style_app` database with recommendation analysis and recommendation generation tables
 - Local emulation: Azurite (queue), PostgreSQL running on port 5432
 
@@ -237,18 +239,21 @@ Migration notes:
 
 ### Queue Contract Evolution
 
-- Queue `style-jobs` remains the transport.
 - Schema version `2` with `jobType` and `preferencesJson` is implemented.
+- Queue transport is split by workload:
+  - `analysis-jobs` for `jobType = face-analysis`
+  - `style-jobs` for `jobType = generate-style`
+- Worker keeps a fallback path through `Queue:QueueName` for legacy single-queue setups.
 
 ### Recommendation Data Flow (Current Baseline)
 
 1. User submits recommendation request with image URL and preferences.
 2. Backend writes `face_analysis_jobs` row with `Queued` status.
-3. Backend enqueues queue message (`jobType = face-analysis`, `schemaVersion = 2`).
+3. Backend enqueues queue message (`jobType = face-analysis`, `schemaVersion = 2`) to `analysis-jobs`.
 4. Worker dequeues message and marks analysis job `Processing`.
 5. Worker validates image URL format/reachability.
 7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector (including `faceShape`) + stage telemetry (landmarks `notes` contains the shape label).
-8. Worker persists recommendation payload and marks analysis job terminal status.
+8. Worker persists recommendation payload and enqueues generation jobs to `style-jobs`.
 9. Frontend polls status endpoint and renders either recommendations or retry guidance.
 10. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
 

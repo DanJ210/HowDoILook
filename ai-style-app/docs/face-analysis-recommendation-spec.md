@@ -63,13 +63,13 @@ Implementation status:
 flowchart LR
     A[Frontend: request recommendations] --> B[Backend API]
     B --> C[(PostgreSQL)]
-    B --> D[Queue: style-jobs]
+    B --> D[Queue: analysis-jobs]
     D --> E[Worker: Face Analysis Handler]
     E --> C
     E --> F[Recommendation Engine]
   F --> G[Create Public Recommendation Post]
-  G --> D
-  D --> H[Worker: Style Job Handler (generate-style)]
+  G --> Hq[Queue: style-jobs]
+  Hq --> H[Worker: Style Job Handler (generate-style)]
   H --> I[Replicate]
   I --> J[Webhook]
   J --> C
@@ -80,7 +80,7 @@ flowchart LR
 
 ### Architecture Notes
 
-- Reuse existing queue and worker with a new jobType for analysis.
+- Split transport into analysis ingress (`analysis-jobs`) and style generation (`style-jobs`).
 - Keep request/queue contracts in data and shared by backend and worker.
 - Do not block API request on heavy analysis.
 
@@ -262,7 +262,7 @@ Rules:
 
 ## 6.2 Queue Contract Extension (data/Queue)
 
-Extend existing style-jobs message schema to support analysis jobs.
+Use the shared schema v2 message across both queues.
 
 ```json
 {
@@ -278,7 +278,10 @@ Extend existing style-jobs message schema to support analysis jobs.
 Notes:
 - Existing style-generation-first behavior is deprecated for this direction.
 - Queue jobType values are lowercase in runtime messages.
-- Worker router special-cases `face-analysis`; all other job types are handled by the style job handler (currently `generate-style`).
+- Queue routing:
+  - `analysis-jobs` carries `face-analysis` ingress jobs from the backend.
+  - `style-jobs` carries downstream `generate-style` jobs from the worker.
+- Worker router still special-cases `face-analysis`; all other job types are handled by the style job handler.
 
 ## 7. Database Changes (EF Core)
 
@@ -609,8 +612,8 @@ Current note:
 flowchart LR
     A[Frontend: recommendations] --> B[Backend: /api/recommendations]
     B --> C[(face_analysis_jobs)]
-    B --> D[Queue: style-jobs]
-    D --> E[Worker: FaceAnalysisJobHandler]
+  B --> D[Queue: analysis-jobs]
+  D --> E[Worker: FaceAnalysisJobHandler]
 
     E --> F[ONNX Stage 1: Face Detection]
     F --> G[ONNX Stage 2: Landmarks]
@@ -621,8 +624,9 @@ flowchart LR
     C --> B
     B --> A
 
-    A -. select recommendation .-> J[Existing style generation flow]
-    J --> K[Replicate Hair/Beard Models]
+    A -. select recommendation .-> J[Queue: style-jobs]
+    J --> K0[Worker: StyleJobHandler]
+    K0 --> K[Replicate Hair/Beard Models]
 ```
 
 ### 17.1 Key Principle

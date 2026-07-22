@@ -17,7 +17,8 @@ public class QueuePublisher : IQueuePublisher
     public QueuePublisher(IOptions<QueueOptions> options)
     {
         var opts = options.Value;
-        _client = new QueueClient(opts.ConnectionString, opts.QueueName);
+        var queueName = ResolveQueueName(opts.FaceAnalysisQueueName, opts.QueueName, "analysis-jobs");
+        _client = new QueueClient(opts.ConnectionString, queueName);
     }
 
     public async Task PublishAsync<T>(T message, CancellationToken ct = default)
@@ -25,5 +26,20 @@ public class QueuePublisher : IQueuePublisher
         await _client.CreateIfNotExistsAsync(cancellationToken: ct);
         var json = JsonSerializer.Serialize(message);
         await _client.SendMessageAsync(json, cancellationToken: ct);
+    }
+
+    private static string ResolveQueueName(string? preferred, string? fallback, string defaultName)
+    {
+        if (!string.IsNullOrWhiteSpace(preferred))
+        {
+            return preferred;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fallback))
+        {
+            return fallback;
+        }
+
+        return defaultName;
     }
 }

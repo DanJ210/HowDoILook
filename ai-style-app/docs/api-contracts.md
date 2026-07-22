@@ -543,7 +543,10 @@ Rules:
 
 ## Queue Message Contract
 
-Messages enqueued to `style-jobs` are emitted in schema v2 for recommendation analysis and style generation.
+Messages are emitted in schema v2 across split queues:
+
+- `analysis-jobs` for recommendation analysis ingress (`jobType = face-analysis`)
+- `style-jobs` for style generation (`jobType = generate-style`)
 
 ### Schema v1 (Legacy)
 

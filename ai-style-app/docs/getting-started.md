@@ -59,7 +59,9 @@ Backend local override example (`ai-style-app/backend/appsettings.Development.js
   },
   "Queue": {
     "ConnectionString": "UseDevelopmentStorage=true",
-    "QueueName": "style-jobs"
+    "QueueName": "style-jobs",
+    "FaceAnalysisQueueName": "analysis-jobs",
+    "StyleQueueName": "style-jobs"
   },
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
@@ -81,7 +83,9 @@ Worker local override example (`ai-style-app/worker/appsettings.Development.json
 {
   "Queue": {
     "ConnectionString": "UseDevelopmentStorage=true",
-    "QueueName": "style-jobs"
+    "QueueName": "style-jobs",
+    "FaceAnalysisQueueName": "analysis-jobs",
+    "StyleQueueName": "style-jobs"
   },
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
@@ -187,7 +191,7 @@ cd ai-style-app/worker
 DOTNET_ENVIRONMENT=Development dotnet run
 ```
 
-The worker connects to the local queue and polls `style-jobs` every 5 seconds.
+The worker connects to local queues and polls `analysis-jobs` and `style-jobs` every 5 seconds.
 
 On Windows PowerShell, use:
 
@@ -208,7 +212,7 @@ When local dev is fully started, these components should be running:
 | Azurite | `docker compose` container `azurite` | `localhost:10000`, `10001`, `10002` |
 | Frontend | `npm run dev` in `ai-style-app/frontend` | `http://localhost:5173` |
 | Backend API | `dotnet run` in `ai-style-app/backend` | `http://localhost:5000` / `https://localhost:5001` |
-| Worker | `dotnet run` in `ai-style-app/worker` | Log contains `Worker started. Polling queue 'style-jobs'.` |
+| Worker | `dotnet run` in `ai-style-app/worker` | Log contains `Worker started. Polling queue(s): analysis-jobs, style-jobs.` |
 
 ## 8. Unit Testing
 
@@ -236,7 +240,9 @@ If you deploy with environment variables, use the .NET configuration keys below:
 | Variable | Used By | Description |
 |---|---|---|
 | `Queue__ConnectionString` | Backend, Worker | Azure Storage Queue connection string |
-| `Queue__QueueName` | Backend, Worker | Queue name (default: `style-jobs`) |
+| `Queue__FaceAnalysisQueueName` | Backend, Worker | Queue for analysis ingress (default: `analysis-jobs`) |
+| `Queue__StyleQueueName` | Backend, Worker | Queue for style generation (default: `style-jobs`) |
+| `Queue__QueueName` | Backend, Worker | Legacy fallback queue name for single-queue setups |
 | `ConnectionStrings__DefaultConnection` | Backend, Worker | PostgreSQL connection string |
 | `Jwt__Key` | Backend | Signing key, minimum 32 characters |
 | `Jwt__Issuer` | Backend | Token issuer (default: `ai-style-app`) |
@@ -262,7 +268,7 @@ After starting all services:
 - Backend API (HTTPS): `https://localhost:5001`
 - Swagger UI (HTTP): `http://localhost:5000/swagger`
 - Swagger UI (HTTPS): `https://localhost:5001/swagger`
-- Worker logs include: `Worker started. Polling queue 'style-jobs'.`
+- Worker logs include: `Worker started. Polling queue(s): analysis-jobs, style-jobs.`
 
 ## 11. Test Protected Endpoints in Swagger
 

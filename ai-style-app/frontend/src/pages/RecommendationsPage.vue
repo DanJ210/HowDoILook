@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useBackendRequestState } from '@/composables/useBackendRequestState'
@@ -8,9 +9,13 @@ import StateCard from '@/components/StateCard.vue'
 import { getLightJobStatusPillClass } from '@/constants/jobStatusStyles'
 
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 const recommendationsStore = useRecommendationsStore()
 const requestState = useBackendRequestState()
 const { selectedFile, previewUrl, onFileChange: onFileChangeFromInput, onDrop: onDropFromInput, removeFile } = useImageFileInput()
+
+const LAST_ANALYSIS_JOB_KEY = 'recommendations:lastAnalysisJobId'
 
 const form = ref({
   gender: 'none' as 'none' | 'male' | 'female',
@@ -51,6 +56,81 @@ const rankedRecommendations = computed(() => activeJob.value?.recommendations ??
 const debugTelemetry = computed(() => activeJob.value?.debugTelemetry ?? null)
 const hasSucceeded = computed(() => activeJob.value?.status === 'Succeeded')
 const hasFailed = computed(() => activeJob.value?.status === 'Failed')
+const resolvedPublicEndpoint = computed(() => {
+  if (publicEndpoint.value) {
+    return publicEndpoint.value
+  }
+
+  const postId = activeJob.value?.recommendationPostId ?? recommendationPostId.value
+  return postId ? `/api/style/${postId}` : null
+})
+
+function getRouteJobId(): string | null {
+  const value = route.query.jobId
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function persistJobId(jobId: string | null) {
+  if (!jobId) {
+    localStorage.removeItem(LAST_ANALYSIS_JOB_KEY)
+    return
+  }
+
+  localStorage.setItem(LAST_ANALYSIS_JOB_KEY, jobId)
+}
+
+async function syncRouteJobId(jobId: string) {
+  if (route.query.jobId === jobId) {
+    return
+  }
+
+  try {
+    await router.replace({
+      query: {
+        ...route.query,
+        jobId
+      }
+    })
+  } catch {
+    // Ignore navigation duplication and non-critical route update errors.
+  }
+}
+
+async function restoreActiveJob() {
+  if (!authStore.isAuthenticated) {
+    return
+  }
+
+  const routeJobId = getRouteJobId()
+  const storedJobId = localStorage.getItem(LAST_ANALYSIS_JOB_KEY)
+  const jobIdToRestore = routeJobId ?? storedJobId
+
+  if (!jobIdToRestore) {
+    return
+  }
+
+  activeJobId.value = jobIdToRestore
+  persistJobId(jobIdToRestore)
+  await syncRouteJobId(jobIdToRestore)
+
+  try {
+    const status = await recommendationsStore.fetchStatus(jobIdToRestore)
+    recommendationPostId.value = status.recommendationPostId ?? null
+    publicEndpoint.value = status.recommendationPostId ? `/api/style/${status.recommendationPostId}` : null
+    recommendationsStore.startPolling(jobIdToRestore)
+  } catch {
+    persistJobId(null)
+    activeJobId.value = null
+
+    try {
+      const nextQuery = { ...route.query }
+      delete nextQuery.jobId
+      await router.replace({ query: nextQuery })
+    } catch {
+      // Ignore navigation cleanup errors.
+    }
+  }
+}
 
 function onFileChange(event: Event) {
   submitError.value = null
@@ -106,6 +186,8 @@ async function startRecommendation() {
     activeJobId.value = created.analysisJobId
     recommendationPostId.value = created.recommendationPostId
     publicEndpoint.value = created.publicEndpoint
+    persistJobId(created.analysisJobId)
+    await syncRouteJobId(created.analysisJobId)
     resetFeedbackState()
 
     recommendationsStore.startPolling(created.analysisJobId)
@@ -188,6 +270,10 @@ onUnmounted(() => {
   if (activeJobId.value) {
     recommendationsStore.stopPolling(activeJobId.value)
   }
+})
+
+onMounted(async () => {
+  await restoreActiveJob()
 })
 </script>
 
@@ -477,8 +563,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div v-if="publicEndpoint" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">
-              Public post endpoint: <span class="font-mono">{{ publicEndpoint }}</span>
+            <div v-if="resolvedPublicEndpoint" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">
+              Public post endpoint: <span class="font-mono">{{ resolvedPublicEndpoint }}</span>
             </div>
 
             <h3 class="text-base font-semibold">Ranked candidates</h3>
