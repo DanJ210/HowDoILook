@@ -49,9 +49,17 @@ public class UploadController : ControllerBase
                 $"Unsupported file type '{file.ContentType}'. Allowed: JPEG, PNG, WebP, GIF.");
 
         await using var stream = file.OpenReadStream();
-        var url = await _blobs.UploadAsync(stream, file.ContentType, UserId, extension, ct);
+        var blobUrl = await _blobs.UploadAsync(stream, file.ContentType, UserId, extension, ct);
 
-        return Ok(new UploadImageResponse(url));
+        var fileName = Path.GetFileName(new Uri(blobUrl).AbsolutePath);
+        var publicUrl = Url.ActionLink(
+            action: nameof(GetPublicImage),
+            controller: "Upload",
+            values: new { userId = UserId, fileName },
+            protocol: Request.Scheme)
+            ?? $"{Request.Scheme}://{Request.Host}/api/upload/public/{Uri.EscapeDataString(UserId)}/{Uri.EscapeDataString(fileName)}";
+
+        return Ok(new UploadImageResponse(publicUrl));
     }
 
     /// <summary>
