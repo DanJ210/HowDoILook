@@ -16,28 +16,8 @@ export interface StyleItemResponse {
   latestJobStatus: JobStatus | null
 }
 
-export interface GenerateStyleRequest {
-  name: string
-  description: string
-  prompt?: string
-  imageUrl?: string
-  isResultPublic?: boolean
-  haircut?: string
-  hairColor?: string
-  beardStyle?: string
-  beardColor?: string
-  gender?: string
-}
-
 export interface UploadImageResponse {
   url: string
-}
-
-export interface GenerateStyleResponse {
-  jobId: string
-  styleItemId: string
-  status: string
-  statusEndpoint: string
 }
 
 export interface PublicFeedItemResponse {

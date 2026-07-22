@@ -1,7 +1,6 @@
 using AiStyleApp.Api.Models;
 using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
-using AiStyleApp.Data.Queue;
 using Microsoft.EntityFrameworkCore;
 
 namespace AiStyleApp.Api.Services;
@@ -9,12 +8,10 @@ namespace AiStyleApp.Api.Services;
 public class StyleService : IStyleService
 {
     private readonly AppDbContext _db;
-    private readonly IQueuePublisher _queue;
 
-    public StyleService(AppDbContext db, IQueuePublisher queue)
+    public StyleService(AppDbContext db)
     {
         _db = db;
-        _queue = queue;
     }
 
     public async Task<IEnumerable<StyleItemResponse>> GetAllAsync(string userId, CancellationToken ct = default)
@@ -76,80 +73,6 @@ public class StyleService : IStyleService
         return new FeedPageResponse(feedItems, hasMore);
     }
 
-    public async Task<(StyleItemResponse item, Guid jobId)> CreateAndEnqueueAsync(
-        GenerateStyleRequest request,
-        string userId,
-        CancellationToken ct = default)
-    {
-        var normalizedRequest = NormalizeRequest(request);
-
-        if (string.IsNullOrWhiteSpace(normalizedRequest.ImageUrl))
-        {
-            throw new ArgumentException("ImageUrl is required for hairstyle generation.", nameof(request));
-        }
-
-        var item = new StyleItemEntity
-        {
-            UserId = userId,
-            Name = normalizedRequest.Name,
-            Description = normalizedRequest.Description,
-            Prompt = normalizedRequest.Prompt ?? BuildPromptSummary(normalizedRequest),
-            ImageUrl = normalizedRequest.ImageUrl,
-            IsResultPublic = normalizedRequest.IsResultPublic
-        };
-
-        var job = new StyleJobEntity
-        {
-            UserId = userId,
-            StyleItemId = item.Id,
-            Prompt = normalizedRequest.Prompt ?? BuildPromptSummary(normalizedRequest),
-            ImageUrl = normalizedRequest.ImageUrl,
-            CorrelationId = Guid.NewGuid().ToString(),
-            Haircut = normalizedRequest.Haircut,
-            HairColor = normalizedRequest.HairColor,
-            BeardStyle = normalizedRequest.BeardStyle,
-            BeardColor = normalizedRequest.BeardColor,
-            Gender = normalizedRequest.Gender,
-            PipelineMode = StyleJobRouting.DeterminePipelineMode(
-                normalizedRequest.Haircut,
-                normalizedRequest.HairColor,
-                normalizedRequest.BeardStyle,
-                normalizedRequest.BeardColor,
-                normalizedRequest.Gender),
-            CurrentStage = StyleJobStage.Queued,
-            IsBeardStagePending = false
-        };
-
-        job.IsBeardStagePending = job.PipelineMode == StyleJobPipelineMode.HairThenBeard;
-
-        item.Jobs.Add(job);
-        _db.StyleItems.Add(item);
-        await _db.SaveChangesAsync(ct);
-
-        var queueMessage = new StyleJob(
-            JobId: job.Id,
-            StyleItemId: item.Id,
-            UserId: userId,
-            JobType: job.JobType,
-            Prompt: normalizedRequest.Prompt ?? BuildPromptSummary(normalizedRequest),
-            EnqueuedAtUtc: DateTimeOffset.UtcNow,
-            CorrelationId: job.CorrelationId ?? Guid.NewGuid().ToString(),
-            Attempt: 0,
-            SchemaVersion: 2,
-            ImageUrl: normalizedRequest.ImageUrl,
-            Haircut: normalizedRequest.Haircut,
-            HairColor: normalizedRequest.HairColor,
-            BeardStyle: normalizedRequest.BeardStyle,
-            BeardColor: normalizedRequest.BeardColor,
-            Gender: normalizedRequest.Gender,
-            Stage: null
-        );
-
-        await _queue.PublishAsync(queueMessage, ct);
-
-        return (Map(item), job.Id);
-    }
-
     public async Task<bool> DeleteAsync(Guid id, string userId, CancellationToken ct = default)
     {
         var item = await _db.StyleItems
@@ -176,25 +99,4 @@ public class StyleService : IStyleService
             latestJob?.Status);
     }
 
-    private static string BuildPromptSummary(GenerateStyleRequest r)
-    {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(r.Haircut)) parts.Add($"Haircut: {r.Haircut}");
-        if (!string.IsNullOrWhiteSpace(r.HairColor)) parts.Add($"Hair color: {r.HairColor}");
-        if (!string.IsNullOrWhiteSpace(r.BeardStyle)) parts.Add($"Beard style: {r.BeardStyle}");
-        if (!string.IsNullOrWhiteSpace(r.BeardColor)) parts.Add($"Beard color: {r.BeardColor}");
-        if (!string.IsNullOrWhiteSpace(r.Gender) && r.Gender != "none") parts.Add($"Gender: {r.Gender}");
-        return parts.Count > 0 ? string.Join(", ", parts) : r.Description;
-    }
-
-    private static GenerateStyleRequest NormalizeRequest(GenerateStyleRequest request)
-    {
-        var allowsBeardSelection = StyleJobRouting.AllowsBeard(request.Gender);
-
-        return request with
-        {
-            BeardStyle = allowsBeardSelection ? request.BeardStyle : null,
-            BeardColor = allowsBeardSelection ? request.BeardColor : null
-        };
-    }
 }

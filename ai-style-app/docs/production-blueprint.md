@@ -589,7 +589,7 @@ jobs:
 
 ### Application
 
-- [ ] Add rate limiting on `POST /api/upload/image` and `POST /api/style/generate` endpoints
+- [ ] Add rate limiting on `POST /api/upload/image` and `POST /api/recommendations` endpoints
 - [ ] Validate image content type server-side (magic bytes, not just `Content-Type` header)
 - [ ] Set `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` response headers
 - [ ] Ensure EF Core queries use parameterized values (default with EF Core — verify no raw SQL)

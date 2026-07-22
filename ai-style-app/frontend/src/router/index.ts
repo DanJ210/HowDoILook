@@ -8,11 +8,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/pages/HomePage.vue')
   },
   {
-    path: '/style/generate',
-    name: 'style-generate',
-    component: () => import('@/pages/StyleGeneratePage.vue')
-  },
-  {
     path: '/recommendations',
     name: 'recommendations',
     component: () => import('@/pages/RecommendationsPage.vue')

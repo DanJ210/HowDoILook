@@ -42,7 +42,6 @@ Legacy note: these endpoints are from the style-generation-first model and are b
 | `GET` | `/api/style` | Required | — | `StyleItemResponse[]` |
 | `GET` | `/api/style/{id}` | Required | — | `StyleItemResponse` |
 | `GET` | `/api/style/feed` | Not required | — | `FeedPageResponse` |
-| `POST` | `/api/style/generate` | Required | `GenerateStyleRequest` | `GenerateStyleResponse` (202) |
 | `DELETE` | `/api/style/{id}` | Required | — | 204 / 404 |
 
 ### StyleItemResponse
@@ -86,52 +85,12 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
   "isResultPublic": false,
   "createdAt": "ISO 8601 datetime",
   "latestJobId": "uuid | null",
-```json
-{
-  "name": "string",
-  "description": "string",
-  "prompt": "string | null",
-  "imageUrl": "https://...",
-  "isResultPublic": false,
-  "haircut": "No change | Bob | ...",
-  "hairColor": "No change | Blonde | ...",
-  "beardStyle": "No change | Stubble | Goatee | ...",
-  "beardColor": "No change | Black | Dark Brown | ...",
-  "gender": "none | male | female"
+  "latestJobStatus": "Queued | Processing | Succeeded | Failed | TimedOut | Canceled | null"
 }
 ```
 
-`imageUrl` is required by the current hairstyle-generation flow.
-`beardStyle` and `beardColor` are optional and only applied when `gender` is `male`.
-
-### Example GenerateStyleRequest
-
-```json
-{
-  "name": "Summer look",
-  "description": "Try a shorter haircut with subtle color changes.",
-  "imageUrl": "https://api.example.com/api/upload/public/user-123/abc123.jpg",
-  "isResultPublic": true,
-  "haircut": "Layered",
-  "hairColor": "Honey Blonde",
-  "beardStyle": "Short Beard",
-  "beardColor": "Dark Brown",
-  "gender": "male"
-}
-```
-
-### GenerateStyleResponse
-
-```json
-{
-  "jobId": "uuid",
-  "styleItemId": "uuid",
-  "status": "Queued",
-  "statusEndpoint": "/api/jobs/{jobId}"
-}
-```
-
-The response is `202 Accepted`. Poll `statusEndpoint` to track progress.
+Style generation jobs are system-created by the recommendation pipeline after `POST /api/recommendations`.
+Users no longer create style generation jobs directly.
 
 ## Jobs
 

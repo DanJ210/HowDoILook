@@ -88,7 +88,7 @@ Worker local override example (`ai-style-app/worker/appsettings.Development.json
   },
   "Replicate": {
     "ApiToken": "r8_YOUR_REPLICATE_TOKEN",
-    "WebhookBaseUrl": "https://abc123.ngrok.io"
+    "WebhookBaseUrl": " https://4c2f-2600-1700-5660-4abf-1c19-43b0-ba8a-33a8.ngrok-free.app"
   }
 }
 ```
@@ -280,22 +280,23 @@ After starting all services:
 
 3. Copy `accessToken` from the response.
 4. Click Authorize in Swagger and paste the token value.
-5. Call `POST /api/style/generate` with an uploaded `imageUrl`.
+5. Call `POST /api/recommendations` with an uploaded `imageUrl`.
 
 If no token is provided, the API returns `401 Unauthorized` with `www-authenticate: Bearer`.
 
-### Example request body for `POST /api/style/generate`
+### Example request body for `POST /api/recommendations`
 
 Upload an image first with `POST /api/upload/image`, then use the returned URL:
 
 ```json
 {
-  "name": "Summer look",
-  "description": "Try a softer layered style.",
   "imageUrl": "https://your-host/api/upload/public/user-123/abc123.jpg",
-  "isResultPublic": true,
-  "haircut": "Layered",
-  "hairColor": "Honey Blonde",
-  "gender": "female"
+  "gender": "female",
+  "preferences": {
+    "maintenanceLevel": "low",
+    "styleVibe": "casual",
+    "allowHairColorChange": true,
+    "allowBeardSuggestions": false
+  }
 }
 ```
