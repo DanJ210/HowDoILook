@@ -81,14 +81,15 @@ graph TD
 - Backend unit tests use xUnit in `tests/AiStyleApp.Tests` with EF Core InMemory for service-level validation.
 - Frontend unit tests use Vitest with `src/**/*.test.ts` discovery.
 - Current test files:
-  - `tests/AiStyleApp.Tests/JobServiceTests.cs` — job enqueue and queue message contracts
-  - `tests/AiStyleApp.Tests/AuthControllerTests.cs` — JWT token generation and expiration clamping
-  - `tests/AiStyleApp.Tests/StyleServiceTests.cs` — style generation service coverage (currently stale: still references removed beard fields)
+  - `tests/AiStyleApp.Tests/FaceAnalysisJobHandlerTests.cs` — analysis pipeline orchestration and recommendation fan-out
+  - `tests/AiStyleApp.Tests/RecommendationServiceTests.cs` — recommendation request/status behavior
+  - `tests/AiStyleApp.Tests/StyleJobHandlerTests.cs` — Replicate submission contract behavior
+  - `tests/AiStyleApp.Tests/ReplicateWebhookProcessorTests.cs` — webhook lifecycle and beard-stage chaining
   - `frontend/src/types/api.test.ts` — API type shape validation
 
-## Database Schema (Legacy Snapshot)
+## Database Schema (Current Runtime)
 
-Note: this snapshot reflects older style-generation-first tables and is being replaced by recommendation-first schema documentation in `docs/api-contracts.md` and `docs/face-analysis-recommendation-spec.md`.
+Recommendation analysis is the entrypoint. `style_items` and `style_jobs` are downstream artifacts created by the recommendation pipeline after analysis ranking.
 
 ### `style_items`
 
@@ -357,6 +358,7 @@ When feedback is submitted:
 - `ANALYSIS_QUALITY_BAD_EXPOSURE` (reserved)
 - `ANALYSIS_POOR_POSE` (reserved)
 - `ANALYSIS_SEGMENTATION_FAILED` (reserved)
+- `ANALYSIS_RECOMMENDATION_TEMPLATE_MISSING`
 - `ANALYSIS_LANDMARK_MODEL_LOAD_FAILED`
 - `ANALYSIS_LANDMARK_MODEL_OUTPUT_UNSUPPORTED`
 - `ANALYSIS_INTERNAL_ERROR`

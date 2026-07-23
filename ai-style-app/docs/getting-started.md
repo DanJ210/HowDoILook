@@ -272,7 +272,11 @@ After starting all services:
 
 ## 11. Test Protected Endpoints in Swagger
 
-`/api/style` endpoints require a Bearer token.
+The canonical product entrypoint is **Analyze and Recommend**. In API terms, that means:
+
+- Upload the source image via `POST /api/upload/image`
+- Start analysis and recommendation via `POST /api/recommendations`
+- Poll status via `GET /api/recommendations/jobs/{id}`
 
 1. Open Swagger (`http://localhost:5000/swagger` or `https://localhost:5001/swagger`).
 2. Run `POST /api/auth/token` with a request body like:
@@ -286,22 +290,27 @@ After starting all services:
 
 3. Copy `accessToken` from the response.
 4. Click Authorize in Swagger and paste the token value.
-5. Call `POST /api/style/generate` with an uploaded `imageUrl`.
+5. Call `POST /api/upload/image` with a file (multipart/form-data) and copy the returned `url`.
+6. Call `POST /api/recommendations` with that uploaded `imageUrl`.
+7. Poll `GET /api/recommendations/jobs/{analysisJobId}` until `status` is terminal.
 
 If no token is provided, the API returns `401 Unauthorized` with `www-authenticate: Bearer`.
 
-### Example request body for `POST /api/style/generate`
+### Example request body for `POST /api/recommendations`
 
 Upload an image first with `POST /api/upload/image`, then use the returned URL:
 
 ```json
 {
-  "name": "Summer look",
-  "description": "Try a softer layered style.",
   "imageUrl": "https://your-host/api/upload/public/user-123/abc123.jpg",
-  "isResultPublic": true,
-  "haircut": "Layered",
-  "hairColor": "Honey Blonde",
-  "gender": "female"
+  "gender": "female",
+  "preferences": {
+    "maintenanceLevel": "medium",
+    "styleVibe": "professional",
+    "allowHairColorChange": true,
+    "allowBeardSuggestions": false
+  }
 }
 ```
+
+Direct user-triggered style generation is no longer part of the product flow.

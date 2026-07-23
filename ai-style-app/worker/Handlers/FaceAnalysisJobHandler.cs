@@ -20,6 +20,10 @@ public class FaceAnalysisJobHandler : IMessageHandler
     private readonly IWorkerQueuePublisher _queuePublisher;
     private readonly ILogger<FaceAnalysisJobHandler> _logger;
     private readonly IMetricsLogger _metricsLogger;
+    private static readonly JsonSerializerOptions RecommendationJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     private static readonly IReadOnlyDictionary<string, RecommendationStyleTemplate> RecommendationStyleTemplates =
         new Dictionary<string, RecommendationStyleTemplate>(StringComparer.OrdinalIgnoreCase)
@@ -295,7 +299,7 @@ catch (FaceAnalysisException ex)
             var styleName = string.IsNullOrWhiteSpace(candidate.StyleName)
                 ? candidate.StyleId ?? "Recommended Style"
                 : candidate.StyleName;
-            var template = ResolveTemplate(candidate.StyleId, analysisJob.Gender);
+            var template = ResolveTemplateOrThrow(candidate.StyleId, analysisJob.Gender);
             var isPrimary = index == 0;
 
             StyleItemEntity item;
@@ -403,7 +407,7 @@ catch (FaceAnalysisException ex)
 
         try
         {
-            var parsed = JsonSerializer.Deserialize<List<RecommendationCandidate>>(recommendationsJson);
+            var parsed = JsonSerializer.Deserialize<List<RecommendationCandidate>>(recommendationsJson, RecommendationJsonOptions);
             return parsed ?? [];
         }
         catch (JsonException)
@@ -443,10 +447,16 @@ catch (FaceAnalysisException ex)
         }
     }
 
-    private static RecommendationStyleTemplate ResolveTemplate(string? styleId, string? gender)
+    private static RecommendationStyleTemplate ResolveTemplateOrThrow(string? styleId, string? gender)
     {
-        if (!string.IsNullOrWhiteSpace(styleId)
-            && RecommendationStyleTemplates.TryGetValue(styleId, out var template))
+        if (string.IsNullOrWhiteSpace(styleId))
+        {
+            throw new FaceAnalysisException(
+                "ANALYSIS_RECOMMENDATION_TEMPLATE_MISSING",
+                "Recommendation candidate is missing styleId required for generation template mapping.");
+        }
+
+        if (RecommendationStyleTemplates.TryGetValue(styleId, out var template))
         {
             if (!StyleJobRouting.AllowsBeard(gender))
             {
@@ -456,7 +466,9 @@ catch (FaceAnalysisException ex)
             return template;
         }
 
-        return new RecommendationStyleTemplate("No change", "No change", null, null);
+        throw new FaceAnalysisException(
+            "ANALYSIS_RECOMMENDATION_TEMPLATE_MISSING",
+            $"No generation template mapping exists for recommended styleId '{styleId}'.");
     }
 
     private static string BuildPrompt(string styleName, IReadOnlyList<string>? reasons)

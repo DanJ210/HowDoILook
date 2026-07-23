@@ -236,6 +236,41 @@ public class FaceAnalysisJobHandlerTests
                 Assert.True(styleItems[0].IsResultPublic);
         }
 
+    [Fact]
+    public async Task HandleAsync_UnknownRecommendedStyleId_FailsWithTemplateMappingError()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = await SeedAnalysisJobAsync(db);
+
+        const string recommendationsJson = """
+        [
+            {"styleId":"unmapped-style-id","styleName":"Unmapped Style","score":0.99,"reasons":["r1"],"constraints":[]}
+        ]
+        """;
+
+        var pipeline = new StubFaceAnalysisPipeline
+        {
+            AnalyzeResult = new FaceAnalysisPipelineResult(
+                QualityPassed: true,
+                QualityFailureCode: null,
+                QualityMessage: null,
+                FeatureVectorJson: "{}",
+                AnalysisConfidence: 0.99,
+                RecommendationsJson: recommendationsJson)
+        };
+
+        var queue = new StubWorkerQueuePublisher();
+        var handler = CreateHandler(db, pipeline, new StaticStatusHttpClientFactory(HttpStatusCode.OK, HttpStatusCode.OK), queue);
+
+        await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
+
+        var persisted = await db.FaceAnalysisJobs.FirstAsync(x => x.Id == analysisJob.Id);
+        Assert.Equal("Failed", persisted.Status);
+        Assert.Equal("ANALYSIS_RECOMMENDATION_TEMPLATE_MISSING", persisted.ErrorCode);
+        Assert.Contains("unmapped-style-id", persisted.ErrorMessage ?? string.Empty, StringComparison.Ordinal);
+        Assert.Empty(queue.Messages);
+    }
+
         [Fact]
         public async Task HandleAsync_ReusesExistingPrimaryRecommendationPostPlaceholder()
         {

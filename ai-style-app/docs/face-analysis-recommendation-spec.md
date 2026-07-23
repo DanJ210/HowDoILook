@@ -22,6 +22,12 @@ Implementation status:
 
 ## 2. Goals and Non-Goals
 
+Product entrypoint note:
+
+- Users start with **Analyze and Recommend** by submitting one photo.
+- Users do not directly trigger style generation jobs.
+- Generation happens downstream from ranked recommendations as a system fan-out step.
+
 ### Goals
 
 - Produce stable, explainable face-analysis features from user photos.
@@ -83,6 +89,7 @@ flowchart LR
 - Split transport into analysis ingress (`analysis-jobs`) and style generation (`style-jobs`).
 - Keep request/queue contracts in data and shared by backend and worker.
 - Do not block API request on heavy analysis.
+- Keep user flow recommendation-first: upload image -> analyze/recommend -> system fan-out generation.
 
 ## 5. Pipeline Design
 
@@ -361,6 +368,7 @@ Add new handler in worker/Handlers.
 - ANALYSIS_QUALITY_BAD_EXPOSURE
 - ANALYSIS_POOR_POSE
 - ANALYSIS_SEGMENTATION_FAILED
+- ANALYSIS_RECOMMENDATION_TEMPLATE_MISSING
 - ANALYSIS_INTERNAL_ERROR
 
 ## 9.3 Recommendation Engine (V1)

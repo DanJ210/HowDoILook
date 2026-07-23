@@ -2,7 +2,7 @@
 
 All endpoints are prefixed with `/api`. Protected endpoints require `Authorization: Bearer <token>`.
 
-Direction (2026-07): recommendation-first contracts are canonical. The default flow is publish-first recommendation posts with one best recommendation and one generated best variant. Pre-MVP, experimentation mode is enabled for 100% of sessions and generates three additional variants for feedback collection. Backward compatibility with style-generation-first contracts is not required.
+Direction (2026-07): recommendation-first contracts are canonical. Users start by uploading an image and calling `POST /api/recommendations` (Analyze and Recommend). The system computes telemetry, ranks best-fit looks, and then fan-outs generation requests to Replicate. Pre-MVP, experimentation mode is enabled for 100% of sessions and generates three additional variants for feedback collection. Backward compatibility with style-generation-first contracts is not required.
 
 ## Authentication
 
@@ -35,7 +35,7 @@ In Swagger, click **Authorize** and paste only the JWT value from `accessToken`.
 
 ## Style Items
 
-Legacy note: these endpoints are from the style-generation-first model and are being phased out in favor of recommendation-first contracts.
+These endpoints expose recommendation posts and generated variants after the recommendation pipeline runs. They are not user entrypoints for generation.
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
@@ -90,11 +90,11 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
 ```
 
 Style generation jobs are system-created by the recommendation pipeline after `POST /api/recommendations`.
-Users no longer create style generation jobs directly.
+Users do not create style generation jobs directly.
 
 ## Jobs
 
-Legacy note: job endpoints in this section represent style-generation job tracking from the earlier flow.
+These endpoints provide system job tracking for generated variants. User-facing orchestration starts at `POST /api/recommendations`.
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|

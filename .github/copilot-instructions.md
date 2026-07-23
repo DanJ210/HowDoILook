@@ -14,13 +14,14 @@
 
 ## Style generation flow
 
-- Treat style generation as one user-facing flow that moves through the backend, queue, worker, Replicate, and webhook callback.
+- Treat style generation as a downstream system flow that runs after recommendations are created and moves through backend, queue, worker, Replicate, and webhook callback.
 - Keep shared request and queue contract changes aligned across frontend types, backend models/services, worker handlers, and `ai-style-app/docs/api-contracts.md`.
 - Beard changes are optional and should only be applied when `gender` is `male`.
 
 ## Recommendations flow
 
-- Treat recommendations as one async flow moving through backend endpoints, queue, worker processing, and status polling.
+- Treat recommendations as the only user entrypoint flow ("How do I look?") moving through backend endpoints, queue, worker processing, and status polling.
+- Users upload one image and click Analyze and Recommend; they do not directly create generation jobs.
 - Keep shared request and queue contract changes aligned across backend models/services, worker handlers, and `ai-style-app/docs/api-contracts.md`.
 - When recommendations behavior changes, update both `ai-style-app/docs/architecture.md` and `ai-style-app/docs/face-analysis-recommendation-spec.md` in the same PR.
 - Development currently enables ONNX landmark extraction; invalid landmark artifacts should fail fast with explicit analysis error codes rather than falling back silently.
