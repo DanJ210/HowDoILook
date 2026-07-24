@@ -12,6 +12,9 @@ namespace AiStyleApp.Api.Services;
 
 public class RecommendationService : IRecommendationService
 {
+    private const string GenerationAllVariantsFailedCode = "GENERATION_ALL_VARIANTS_FAILED";
+    private const string GenerationAllVariantsFailedMessage = "Generation finished without any successful variants. Try another photo or run Analyze and Recommend again.";
+
     private readonly AppDbContext _db;
     private readonly IQueuePublisher _queue;
     private readonly IMetricsLogger _metricsLogger;
@@ -113,10 +116,12 @@ public class RecommendationService : IRecommendationService
         var bestJob = primaryStyleItem?.Jobs
             .OrderByDescending(x => x.CreatedAtUtc)
             .FirstOrDefault();
+        var variantStatuses = new List<string>();
 
         RecommendationVariantResponse? bestVariant = null;
         if (bestJob is not null)
         {
+            variantStatuses.Add(bestJob.Status);
             bestVariant = new RecommendationVariantResponse(
                 GenerationJobId: bestJob.Id,
                 Status: bestJob.Status,
@@ -153,6 +158,8 @@ public class RecommendationService : IRecommendationService
                 continue;
             }
 
+            variantStatuses.Add(job.Status);
+
             var key = job.Id.ToString();
             var selectedRank = feedbackBySelectionId.TryGetValue(key, out var rank) && rank.HasValue
                 ? rank.Value.ToString()
@@ -168,6 +175,19 @@ public class RecommendationService : IRecommendationService
 
         var recommendationPostId = primaryStyleItem?.Id;
         var publishStatus = primaryStyleItem is null ? null : "Published";
+        var generationAllVariantsFailed = IsGenerationAllVariantsFailed(
+            analysisJob.Status,
+            analysisJob.SelectedGenerationJobId,
+            variantStatuses);
+
+        var errorCode = analysisJob.ErrorCode;
+        var errorMessage = analysisJob.ErrorMessage;
+
+        if (generationAllVariantsFailed && string.IsNullOrWhiteSpace(errorCode))
+        {
+            errorCode = GenerationAllVariantsFailedCode;
+            errorMessage = GenerationAllVariantsFailedMessage;
+        }
 
         return new RecommendationJobStatusResponse(
             AnalysisJobId: analysisJob.Id,
@@ -187,8 +207,8 @@ public class RecommendationService : IRecommendationService
             Recommendations: recommendations,
             Experiment: experiment,
             DebugTelemetry: ParseDebugTelemetry(analysisJob.FeatureVectorJson),
-            ErrorCode: analysisJob.ErrorCode,
-            ErrorMessage: analysisJob.ErrorMessage,
+                ErrorCode: errorCode,
+                ErrorMessage: errorMessage,
             SelectedGenerationJobId: analysisJob.SelectedGenerationJobId,
             SelectedAtUtc: analysisJob.SelectedAtUtc);
     }
@@ -345,6 +365,26 @@ public class RecommendationService : IRecommendationService
         {
             return [];
         }
+    }
+
+    private static bool IsGenerationAllVariantsFailed(
+        string analysisStatus,
+        Guid? selectedGenerationJobId,
+        IReadOnlyCollection<string> variantStatuses)
+    {
+        if (!string.Equals(analysisStatus, JobStatus.Succeeded, StringComparison.Ordinal)
+            || selectedGenerationJobId.HasValue
+            || variantStatuses.Count == 0)
+        {
+            return false;
+        }
+
+        if (!variantStatuses.All(JobStatus.IsTerminal))
+        {
+            return false;
+        }
+
+        return !variantStatuses.Any(status => string.Equals(status, JobStatus.Succeeded, StringComparison.Ordinal));
     }
 
     private static RecommendationDebugTelemetryResponse? ParseDebugTelemetry(string? featureVectorJson)

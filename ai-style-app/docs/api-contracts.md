@@ -357,6 +357,7 @@ Current implementation note:
 - API consumers should treat `bestVariant` as the canonical generated outcome for the post.
 - Pre-MVP, `experimentalVariants` are populated for 100% of recommendation sessions.
 - The `experiment` object reports whether experimentation was configured and actually applied for the job.
+- `errorCode` / `errorMessage` may include `GENERATION_ALL_VARIANTS_FAILED` even when analysis `status` is `Succeeded`; this indicates that all generated variants reached terminal non-success statuses and user action should be retry.
 
 ### SubmitRecommendationRatingsRequest
 

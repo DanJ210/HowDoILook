@@ -472,6 +472,174 @@ public class RecommendationServiceTests
     }
 
     [Fact]
+    public async Task GetStatusAsync_AllVariantsTerminalWithoutSuccess_ReturnsGenerationFailureSignal()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded",
+            QualityPassed = true,
+            RecommendationsJson = "[]"
+        };
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+
+        var primaryItem = new StyleItemEntity
+        {
+            UserId = "user-1",
+            Name = "Recommended",
+            Description = $"Primary recommendation from analysis job {analysisJob.Id}",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            IsResultPublic = true
+        };
+        primaryItem.Jobs.Add(new StyleJobEntity
+        {
+            StyleItemId = primaryItem.Id,
+            UserId = "user-1",
+            JobType = "generate-style",
+            Status = "Failed",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl
+        });
+
+        var experimentalItem = new StyleItemEntity
+        {
+            UserId = "user-1",
+            Name = "Experimental",
+            Description = $"Experimental recommendation from analysis job {analysisJob.Id}",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            IsResultPublic = false
+        };
+        experimentalItem.Jobs.Add(new StyleJobEntity
+        {
+            StyleItemId = experimentalItem.Id,
+            UserId = "user-1",
+            JobType = "generate-style",
+            Status = "TimedOut",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl
+        });
+
+        db.StyleItems.AddRange(primaryItem, experimentalItem);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var result = await service.GetStatusAsync(analysisJob.Id, "user-1");
+
+        Assert.NotNull(result);
+        Assert.Equal("GENERATION_ALL_VARIANTS_FAILED", result!.ErrorCode);
+        Assert.Contains("without any successful variants", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_WithAnySucceededVariant_DoesNotReturnGenerationFailureSignal()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded",
+            QualityPassed = true,
+            RecommendationsJson = "[]"
+        };
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+
+        var primaryItem = new StyleItemEntity
+        {
+            UserId = "user-1",
+            Name = "Recommended",
+            Description = $"Primary recommendation from analysis job {analysisJob.Id}",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            IsResultPublic = true
+        };
+        primaryItem.Jobs.Add(new StyleJobEntity
+        {
+            StyleItemId = primaryItem.Id,
+            UserId = "user-1",
+            JobType = "generate-style",
+            Status = "Succeeded",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            ResultImageUrl = "https://example.com/final.jpg"
+        });
+
+        db.StyleItems.Add(primaryItem);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var result = await service.GetStatusAsync(analysisJob.Id, "user-1");
+
+        Assert.NotNull(result);
+        Assert.Null(result!.ErrorCode);
+        Assert.Null(result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_FinalizedSelection_DoesNotReturnGenerationFailureSignal()
+    {
+        await using var db = CreateDbContext();
+        var selectedJobId = Guid.NewGuid();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded",
+            QualityPassed = true,
+            RecommendationsJson = "[]",
+            SelectedGenerationJobId = selectedJobId,
+            SelectedAtUtc = DateTimeOffset.UtcNow
+        };
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+
+        var primaryItem = new StyleItemEntity
+        {
+            UserId = "user-1",
+            Name = "Recommended",
+            Description = $"Primary recommendation from analysis job {analysisJob.Id}",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            IsResultPublic = true
+        };
+        primaryItem.Jobs.Add(new StyleJobEntity
+        {
+            Id = selectedJobId,
+            StyleItemId = primaryItem.Id,
+            UserId = "user-1",
+            JobType = "generate-style",
+            Status = "Failed",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl
+        });
+
+        db.StyleItems.Add(primaryItem);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var result = await service.GetStatusAsync(analysisJob.Id, "user-1");
+
+        Assert.NotNull(result);
+        Assert.Null(result!.ErrorCode);
+        Assert.Null(result.ErrorMessage);
+    }
+
+    [Fact]
     public async Task FinalizeSelectionAsync_PersistsSelectedGenerationJobId()
     {
         await using var db = CreateDbContext();
