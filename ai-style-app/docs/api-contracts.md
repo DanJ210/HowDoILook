@@ -166,6 +166,7 @@ Queued → Processing → Succeeded
 | `POST` | `/api/recommendations` | Required | `CreateRecommendationsRequest` | `CreateRecommendationsResponse` (202) |
 | `GET` | `/api/recommendations/jobs/{id}` | Required | — | `RecommendationJobStatusResponse` |
 | `POST` | `/api/recommendations/jobs/{id}/ratings` | Required | `SubmitRecommendationRatingsRequest` | 202 |
+| `POST` | `/api/recommendations/jobs/{id}/finalize` | Required | `FinalizeRecommendationRequest` | `FinalizeRecommendationResponse` |
 
 ### Feature Flags Contract
 
@@ -316,7 +317,36 @@ Current implementation note:
     ]
   },
   "errorCode": "string | null",
-  "errorMessage": "string | null"
+  "errorMessage": "string | null",
+  "selectedGenerationJobId": "uuid | null",
+  "selectedAtUtc": "ISO 8601 datetime | null"
+}
+```
+
+### FinalizeRecommendationRequest
+
+```json
+{
+  "generationJobId": "uuid"
+}
+```
+
+Rules:
+
+- `generationJobId` must refer to a generation job owned by the authenticated user.
+- The generation job must be linked to the provided analysis job id.
+- The generation job must be in `Succeeded` status.
+- Finalization is idempotent for the same `generationJobId`.
+- Attempting to finalize with a different generation job after finalization returns a validation error.
+
+### FinalizeRecommendationResponse
+
+```json
+{
+  "analysisJobId": "uuid",
+  "selectedGenerationJobId": "uuid",
+  "selectedAtUtc": "ISO 8601 datetime",
+  "alreadyFinalized": false
 }
 ```
 

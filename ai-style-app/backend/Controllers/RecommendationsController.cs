@@ -86,4 +86,30 @@ public class RecommendationsController : ControllerBase
             return BadRequest(ex.Message);
         }
     }
+
+    [HttpPost("jobs/{id:guid}/finalize")]
+    public async Task<ActionResult<FinalizeRecommendationResponse>> FinalizeSelection(
+        Guid id,
+        [FromBody] FinalizeRecommendationRequest request,
+        CancellationToken ct)
+    {
+        if (request.GenerationJobId == Guid.Empty)
+        {
+            return BadRequest("GenerationJobId is required.");
+        }
+
+        try
+        {
+            var result = await _recommendations.FinalizeSelectionAsync(id, request, UserId, ct);
+            return Ok(result);
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
 }

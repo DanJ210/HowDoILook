@@ -147,7 +147,8 @@ Recommendation analysis is the entrypoint. `style_items` and `style_jobs` are do
 6. Worker enqueues one best-variant style generation job (`jobType = generate-style`) for Replicate.
 7. Replicate sends webhook callback to `POST /api/webhooks/replicate` for best-variant completion.
 8. Backend verifies HMAC signatures, updates generated variant states/results, and archives final images.
-9. Frontend renders the public recommendation post with the main best recommendation and generated best variant.
+9. User selects a final winner variant via `POST /api/recommendations/jobs/{id}/finalize`.
+10. Frontend renders the recommendation post using the selected winner as canonical output.
 
 Experimental note: for pre-MVP data collection, the system runs three-variant mode for 100% of sessions and captures feedback about the generated variants.
 

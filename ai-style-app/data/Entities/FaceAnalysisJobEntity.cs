@@ -66,5 +66,11 @@ public class FaceAnalysisJobEntity
     [Column("completed_at_utc")]
     public DateTimeOffset? CompletedAtUtc { get; set; }
 
+    [Column("selected_generation_job_id")]
+    public Guid? SelectedGenerationJobId { get; set; }
+
+    [Column("selected_at_utc")]
+    public DateTimeOffset? SelectedAtUtc { get; set; }
+
     public ICollection<RecommendationFeedbackEntity> Feedback { get; set; } = new List<RecommendationFeedbackEntity>();
 }

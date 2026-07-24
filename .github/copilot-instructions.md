@@ -45,4 +45,7 @@
 - Use these docs as the primary source of repository context:
   - `ai-style-app/docs/architecture.md`
   - `ai-style-app/docs/api-contracts.md`
+  - `ai-style-app/docs/face-analysis-recommendation-spec.md`
   - `ai-style-app/docs/getting-started.md`
+  - `ai-style-app/docs/recommendation-finalization-plan.md`
+  - `ai-style-app/docs/mvp-best-look-2week-plan.md`

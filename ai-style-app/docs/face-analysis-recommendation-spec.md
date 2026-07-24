@@ -228,7 +228,9 @@ All contracts below are additive and versioned.
     ]
   },
   "errorCode": "string | null",
-  "errorMessage": "string | null"
+  "errorMessage": "string | null",
+  "selectedGenerationJobId": "uuid | null",
+  "selectedAtUtc": "ISO 8601 datetime | null"
 }
 ```
 
@@ -346,6 +348,11 @@ Add endpoints under /api/recommendations.
 3. POST /api/recommendations/jobs/{id}/ratings
 - Auth required.
 - Stores ranking feedback for experimental generation jobs in the learning loop.
+
+4. POST /api/recommendations/jobs/{id}/finalize
+- Auth required.
+- Persists user-selected final generation variant as canonical winner for the recommendation session.
+- Idempotent when the same winner is submitted multiple times.
 
 ## 9. Worker Design
 

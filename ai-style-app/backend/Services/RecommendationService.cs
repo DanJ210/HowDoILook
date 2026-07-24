@@ -188,7 +188,77 @@ public class RecommendationService : IRecommendationService
             Experiment: experiment,
             DebugTelemetry: ParseDebugTelemetry(analysisJob.FeatureVectorJson),
             ErrorCode: analysisJob.ErrorCode,
-            ErrorMessage: analysisJob.ErrorMessage);
+            ErrorMessage: analysisJob.ErrorMessage,
+            SelectedGenerationJobId: analysisJob.SelectedGenerationJobId,
+            SelectedAtUtc: analysisJob.SelectedAtUtc);
+    }
+
+    public async Task<FinalizeRecommendationResponse> FinalizeSelectionAsync(
+        Guid analysisJobId,
+        FinalizeRecommendationRequest request,
+        string userId,
+        CancellationToken ct = default)
+    {
+        var analysisJob = await _db.FaceAnalysisJobs
+            .FirstOrDefaultAsync(x => x.Id == analysisJobId && x.UserId == userId, ct);
+
+        if (analysisJob is null)
+        {
+            throw new InvalidOperationException("Analysis job not found.");
+        }
+
+        if (request.GenerationJobId == Guid.Empty)
+        {
+            throw new ArgumentException("GenerationJobId is required.", nameof(request));
+        }
+
+        var styleJob = await _db.StyleJobs
+            .AsNoTracking()
+            .Include(x => x.StyleItem)
+            .FirstOrDefaultAsync(
+                x => x.Id == request.GenerationJobId && x.UserId == userId,
+                ct);
+
+        if (styleJob is null)
+        {
+            throw new ArgumentException("Generation job was not found for this user.", nameof(request));
+        }
+
+        var analysisMarker = analysisJobId.ToString();
+        var linkedToAnalysisJob = styleJob.StyleItem.Description.Contains(analysisMarker, StringComparison.Ordinal);
+        if (!linkedToAnalysisJob)
+        {
+            throw new ArgumentException("Generation job is not linked to the specified analysis job.", nameof(request));
+        }
+
+        if (!string.Equals(styleJob.Status, "Succeeded", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Only succeeded generation jobs can be selected as final.", nameof(request));
+        }
+
+        if (analysisJob.SelectedGenerationJobId.HasValue)
+        {
+            if (analysisJob.SelectedGenerationJobId.Value != request.GenerationJobId)
+            {
+                throw new ArgumentException("A different final selection already exists for this analysis job.", nameof(request));
+            }
+
+            return new FinalizeRecommendationResponse(
+                AnalysisJobId: analysisJob.Id,
+                SelectedGenerationJobId: analysisJob.SelectedGenerationJobId.Value,
+                SelectedAtUtc: analysisJob.SelectedAtUtc ?? analysisJob.UpdatedOrCreatedAtUtc(),
+                AlreadyFinalized: true);
+        }
+
+        analysisJob.SelectedGenerationJobId = request.GenerationJobId;
+        analysisJob.SelectedAtUtc = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+
+        return new FinalizeRecommendationResponse(
+            AnalysisJobId: analysisJob.Id,
+            SelectedGenerationJobId: analysisJob.SelectedGenerationJobId.Value,
+            SelectedAtUtc: analysisJob.SelectedAtUtc.Value,
+            AlreadyFinalized: false);
     }
 
     public async Task SubmitRatingsAsync(
@@ -511,4 +581,11 @@ public class RecommendationService : IRecommendationService
         var sample = BitConverter.ToUInt32(hash, 0);
         return (int)(sample % 100);
     }
+
+}
+
+internal static class FaceAnalysisJobEntityExtensions
+{
+    internal static DateTimeOffset UpdatedOrCreatedAtUtc(this FaceAnalysisJobEntity entity)
+        => entity.CompletedAtUtc ?? entity.StartedAtUtc ?? entity.CreatedAtUtc;
 }
