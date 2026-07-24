@@ -7,6 +7,7 @@ import { useBackendRequestState } from '@/composables/useBackendRequestState'
 import { useImageFileInput } from '@/composables/useImageFileInput'
 import StateCard from '@/components/StateCard.vue'
 import { getLightJobStatusPillClass } from '@/constants/jobStatusStyles'
+import { computeWorkflowStateLabel, hasGenerationFailed } from '@/utils/recommendationWorkflow'
 
 const authStore = useAuthStore()
 const route = useRoute()
@@ -63,28 +64,28 @@ const selectedAtUtc = computed(() => activeJob.value?.selectedAtUtc ?? null)
 const hasSucceeded = computed(() => activeJob.value?.status === 'Succeeded')
 const hasFailed = computed(() => activeJob.value?.status === 'Failed')
 const hasFinalSelection = computed(() => Boolean(selectedGenerationJobId.value))
+const hasGenerationFailure = computed(() => hasGenerationFailed({
+  hasActiveJob: Boolean(activeJob.value),
+  analysisStatus: activeJob.value?.status ?? null,
+  selectedGenerationJobId: selectedGenerationJobId.value,
+  bestVariant: bestVariant.value,
+  experimentalVariants: experimentalVariants.value
+}))
 const workflowStateLabel = computed(() => {
-  if (!activeJob.value) {
-    return 'analyzing'
+  return computeWorkflowStateLabel({
+    hasActiveJob: Boolean(activeJob.value),
+    analysisStatus: activeJob.value?.status ?? null,
+    selectedGenerationJobId: selectedGenerationJobId.value,
+    bestVariant: bestVariant.value,
+    experimentalVariants: experimentalVariants.value
+  })
+})
+const generationFailureMessage = computed(() => {
+  if (!hasGenerationFailure.value) {
+    return null
   }
 
-  if (hasFinalSelection.value) {
-    return 'completed'
-  }
-
-  if (hasFailed.value) {
-    return 'failed'
-  }
-
-  if (activeJob.value.status === 'Queued' || activeJob.value.status === 'Processing') {
-    return 'generating'
-  }
-
-  if (hasSucceeded.value) {
-    return 'ready_for_selection'
-  }
-
-  return 'analyzing'
+  return 'Generation finished without any successful variants. Try another photo or run Analyze and Recommend again.'
 })
 const selectedVariantImageUrl = computed(() => {
   if (!selectedGenerationJobId.value) {
@@ -576,6 +577,11 @@ onMounted(async () => {
           <div v-if="hasFailed" class="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
             <p class="font-medium">{{ activeJob.errorCode ?? activeJob.qualityGate.failureCode ?? 'Analysis failed' }}</p>
             <p v-if="activeJob.errorMessage || activeJob.qualityGate.message" class="mt-1">{{ activeJob.errorMessage ?? activeJob.qualityGate.message }}</p>
+          </div>
+
+          <div v-else-if="generationFailureMessage" class="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+            <p class="font-medium">GENERATION_ALL_VARIANTS_FAILED</p>
+            <p class="mt-1">{{ generationFailureMessage }}</p>
           </div>
 
           <div v-if="hasSucceeded" class="space-y-3">
