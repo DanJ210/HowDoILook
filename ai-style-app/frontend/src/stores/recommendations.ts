@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 import type {
   CreateRecommendationsRequest,
   CreateRecommendationsResponse,
+  FinalizeRecommendationResponse,
   RecommendationJobStatusResponse,
   SubmitRecommendationRatingsRequest,
   UploadImageResponse
@@ -115,6 +116,23 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     await api.post<void>(`/recommendations/jobs/${analysisJobId}/ratings`, request)
   }
 
+  async function finalizeSelection(analysisJobId: string, generationJobId: string): Promise<FinalizeRecommendationResponse> {
+    const result = await api.post<FinalizeRecommendationResponse>(`/recommendations/jobs/${analysisJobId}/finalize`, {
+      generationJobId
+    })
+
+    const existing = jobs.value[analysisJobId]
+    if (existing) {
+      jobs.value[analysisJobId] = {
+        ...existing,
+        selectedGenerationJobId: result.selectedGenerationJobId,
+        selectedAtUtc: result.selectedAtUtc
+      }
+    }
+
+    return result
+  }
+
   return {
     jobs,
     activePollingIds,
@@ -125,6 +143,7 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
     stopPolling,
     getPollingState,
     getPollingError,
-    submitRatings
+    submitRatings,
+    finalizeSelection
   }
 })

@@ -37,6 +37,10 @@ const variantRanks = ref<Record<string, 1 | 2 | 3 | null>>({})
 const feedbackMessage = ref<string | null>(null)
 const feedbackError = ref<string | null>(null)
 const isSubmittingFeedback = ref(false)
+const finalizeCandidateGenerationJobId = ref('')
+const finalizeMessage = ref<string | null>(null)
+const finalizeError = ref<string | null>(null)
+const isFinalizing = ref(false)
 
 const feedbackTagOptions = [
   { value: 'tooBold', label: 'Too bold' },
@@ -54,8 +58,35 @@ const bestVariant = computed(() => activeJob.value?.bestVariant ?? null)
 const experimentalVariants = computed(() => activeJob.value?.experimentalVariants ?? [])
 const rankedRecommendations = computed(() => activeJob.value?.recommendations ?? [])
 const debugTelemetry = computed(() => activeJob.value?.debugTelemetry ?? null)
+const selectedGenerationJobId = computed(() => activeJob.value?.selectedGenerationJobId ?? null)
 const hasSucceeded = computed(() => activeJob.value?.status === 'Succeeded')
 const hasFailed = computed(() => activeJob.value?.status === 'Failed')
+const succeededVariantOptions = computed(() => {
+  const options: Array<{ generationJobId: string; label: string }> = []
+  const seen = new Set<string>()
+
+  if (bestVariant.value?.status === 'Succeeded' && !seen.has(bestVariant.value.generationJobId)) {
+    seen.add(bestVariant.value.generationJobId)
+    options.push({
+      generationJobId: bestVariant.value.generationJobId,
+      label: `Best variant (${bestRecommendation.value?.styleName ?? 'recommended'})`
+    })
+  }
+
+  for (const variant of experimentalVariants.value) {
+    if (variant.status !== 'Succeeded' || seen.has(variant.generationJobId)) {
+      continue
+    }
+
+    seen.add(variant.generationJobId)
+    options.push({
+      generationJobId: variant.generationJobId,
+      label: `Experimental variant ${variant.slot}`
+    })
+  }
+
+  return options
+})
 const resolvedPublicEndpoint = computed(() => {
   if (publicEndpoint.value) {
     return publicEndpoint.value
@@ -68,6 +99,22 @@ const resolvedPublicEndpoint = computed(() => {
 function getRouteJobId(): string | null {
   const value = route.query.jobId
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function getFinalizeCandidateValue() {
+  if (finalizeCandidateGenerationJobId.value) {
+    return finalizeCandidateGenerationJobId.value
+  }
+
+  if (selectedGenerationJobId.value) {
+    return selectedGenerationJobId.value
+  }
+
+  return succeededVariantOptions.value[0]?.generationJobId ?? ''
+}
+
+function onFinalizeCandidateChange(event: Event) {
+  finalizeCandidateGenerationJobId.value = (event.target as HTMLSelectElement).value
 }
 
 function persistJobId(jobId: string | null) {
@@ -155,6 +202,10 @@ function resetFeedbackState() {
   feedbackMessage.value = null
   feedbackError.value = null
   isSubmittingFeedback.value = false
+  finalizeCandidateGenerationJobId.value = ''
+  finalizeMessage.value = null
+  finalizeError.value = null
+  isFinalizing.value = false
 }
 
 async function startRecommendation() {
@@ -195,6 +246,35 @@ async function startRecommendation() {
     submitError.value = (err as { message?: string })?.message ?? 'Failed to create recommendation job.'
   } finally {
     isSubmitting.value = false
+  }
+}
+
+async function finalizeSelection() {
+  if (!activeJobId.value) {
+    return
+  }
+
+  const candidate = getFinalizeCandidateValue()
+  if (!candidate) {
+    finalizeError.value = 'No succeeded variant is available to finalize yet.'
+    return
+  }
+
+  isFinalizing.value = true
+  finalizeMessage.value = null
+  finalizeError.value = null
+
+  try {
+    const result = await recommendationsStore.finalizeSelection(activeJobId.value, candidate)
+    await recommendationsStore.fetchStatus(activeJobId.value)
+    finalizeCandidateGenerationJobId.value = result.selectedGenerationJobId
+    finalizeMessage.value = result.alreadyFinalized
+      ? 'Final look was already selected for this session.'
+      : 'Final look selected and saved.'
+  } catch (err: unknown) {
+    finalizeError.value = (err as { message?: string })?.message ?? 'Failed to finalize selected look.'
+  } finally {
+    isFinalizing.value = false
   }
 }
 
@@ -561,6 +641,55 @@ onMounted(async () => {
                   </div>
                 </article>
               </div>
+            </div>
+
+            <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
+              <h3 class="text-sm font-semibold">Select final look</h3>
+              <p class="mt-1 text-xs text-slate-400">
+                Choose one succeeded variant as your canonical best look for this recommendation session.
+              </p>
+
+              <p v-if="selectedGenerationJobId" class="mt-2 text-xs text-emerald-200">
+                Selected winner: <span class="font-mono">{{ selectedGenerationJobId }}</span>
+              </p>
+
+              <div class="mt-3">
+                <label class="mb-1 block text-xs uppercase tracking-wide text-slate-400">Variant</label>
+                <select
+                  :value="getFinalizeCandidateValue()"
+                  @change="onFinalizeCandidateChange"
+                  :disabled="isFinalizing || succeededVariantOptions.length === 0"
+                  class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <option :value="''" disabled>
+                    {{ succeededVariantOptions.length === 0 ? 'No succeeded variants yet' : 'Select a variant' }}
+                  </option>
+                  <option
+                    v-for="variant in succeededVariantOptions"
+                    :key="variant.generationJobId"
+                    :value="variant.generationJobId"
+                  >
+                    {{ variant.label }}
+                  </option>
+                </select>
+              </div>
+
+              <div v-if="finalizeMessage" class="mt-3 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+                {{ finalizeMessage }}
+              </div>
+
+              <div v-if="finalizeError" class="mt-3 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+                {{ finalizeError }}
+              </div>
+
+              <button
+                type="button"
+                :disabled="isFinalizing || succeededVariantOptions.length === 0"
+                @click="finalizeSelection"
+                class="mt-3 w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {{ isFinalizing ? 'Saving selection…' : 'Select Final Look' }}
+              </button>
             </div>
 
             <div v-if="resolvedPublicEndpoint" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">

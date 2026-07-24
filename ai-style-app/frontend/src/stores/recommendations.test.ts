@@ -31,6 +31,8 @@ function createRecommendationStatus(overrides: Partial<RecommendationJobStatusRe
     debugTelemetry: null,
     errorCode: null,
     errorMessage: null,
+    selectedGenerationJobId: null,
+    selectedAtUtc: null,
     ...overrides
   }
 }
