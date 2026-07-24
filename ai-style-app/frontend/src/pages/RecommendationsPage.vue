@@ -59,8 +59,45 @@ const experimentalVariants = computed(() => activeJob.value?.experimentalVariant
 const rankedRecommendations = computed(() => activeJob.value?.recommendations ?? [])
 const debugTelemetry = computed(() => activeJob.value?.debugTelemetry ?? null)
 const selectedGenerationJobId = computed(() => activeJob.value?.selectedGenerationJobId ?? null)
+const selectedAtUtc = computed(() => activeJob.value?.selectedAtUtc ?? null)
 const hasSucceeded = computed(() => activeJob.value?.status === 'Succeeded')
 const hasFailed = computed(() => activeJob.value?.status === 'Failed')
+const hasFinalSelection = computed(() => Boolean(selectedGenerationJobId.value))
+const workflowStateLabel = computed(() => {
+  if (!activeJob.value) {
+    return 'analyzing'
+  }
+
+  if (hasFinalSelection.value) {
+    return 'completed'
+  }
+
+  if (hasFailed.value) {
+    return 'failed'
+  }
+
+  if (activeJob.value.status === 'Queued' || activeJob.value.status === 'Processing') {
+    return 'generating'
+  }
+
+  if (hasSucceeded.value) {
+    return 'ready_for_selection'
+  }
+
+  return 'analyzing'
+})
+const selectedVariantImageUrl = computed(() => {
+  if (!selectedGenerationJobId.value) {
+    return null
+  }
+
+  if (bestVariant.value?.generationJobId === selectedGenerationJobId.value) {
+    return bestVariant.value.resultImageUrl
+  }
+
+  const match = experimentalVariants.value.find(v => v.generationJobId === selectedGenerationJobId.value)
+  return match?.resultImageUrl ?? null
+})
 const succeededVariantOptions = computed(() => {
   const options: Array<{ generationJobId: string; label: string }> = []
   const seen = new Set<string>()
@@ -488,6 +525,26 @@ onMounted(async () => {
         />
 
         <div v-else-if="activeJob" class="mt-4 space-y-4">
+          <div class="rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2 text-sm text-slate-200">
+            Workflow state: <span class="font-semibold text-white">{{ workflowStateLabel }}</span>
+          </div>
+
+          <div v-if="hasFinalSelection" class="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+            <h3 class="text-sm font-semibold text-emerald-100">Final look selected</h3>
+            <p class="mt-1 text-xs text-emerald-200">
+              Winner: <span class="font-mono">{{ selectedGenerationJobId }}</span>
+            </p>
+            <p v-if="selectedAtUtc" class="mt-1 text-xs text-emerald-200">
+              Selected at: {{ new Date(selectedAtUtc).toLocaleString() }}
+            </p>
+            <img
+              v-if="selectedVariantImageUrl"
+              :src="selectedVariantImageUrl"
+              alt="Selected final look"
+              class="mt-3 max-h-72 w-full rounded-xl object-cover"
+            />
+          </div>
+
           <div class="flex flex-wrap items-center gap-2">
             <span :class="['rounded-full px-3 py-1 text-sm font-medium', getLightJobStatusPillClass(activeJob.status)]">
               {{ activeJob.status }}
@@ -514,37 +571,7 @@ onMounted(async () => {
             <dd class="sm:text-right">{{ activeJob.analysisSummary.faceShape ?? 'Pending' }}</dd>
             <dt class="text-slate-400">Confidence</dt>
             <dd class="sm:text-right">{{ activeJob.analysisSummary.confidence === null ? 'Pending' : activeJob.analysisSummary.confidence.toFixed(3) }}</dd>
-            <template v-if="debugTelemetry">
-              <dt class="text-slate-400">Telemetry source</dt>
-              <dd class="break-all font-mono text-slate-200 sm:text-right">{{ debugTelemetry.source ?? 'unknown' }}</dd>
-              <dt class="text-slate-400">Image dimensions</dt>
-              <dd class="sm:text-right">
-                {{ debugTelemetry.imageWidth && debugTelemetry.imageHeight
-                  ? `${debugTelemetry.imageWidth} x ${debugTelemetry.imageHeight}`
-                  : 'unknown' }}
-              </dd>
-            </template>
           </dl>
-
-          <div v-if="debugTelemetry && debugTelemetry.stages.length" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3">
-            <h3 class="text-sm font-semibold text-white">Stage telemetry</h3>
-            <div class="mt-2 space-y-2">
-              <article v-for="stage in debugTelemetry.stages" :key="stage.stage" class="rounded-xl border border-white/10 bg-slate-950/40 p-3">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <p class="text-sm font-medium text-white">{{ stage.stage }}</p>
-                  <p class="text-xs text-slate-300">{{ stage.durationMs.toFixed(2) }} ms</p>
-                </div>
-                <p class="mt-1 text-xs text-slate-400">{{ stage.model }} ({{ stage.modelVersion }})</p>
-                <p v-if="stage.notes" class="mt-1 break-all text-xs text-amber-200">{{ stage.notes }}</p>
-                <div v-if="stage.metrics" class="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-300 sm:grid-cols-2">
-                  <div v-for="(metricValue, metricName) in stage.metrics" :key="metricName" class="flex items-center justify-between gap-2 rounded bg-white/5 px-2 py-1">
-                    <span>{{ metricName }}</span>
-                    <span class="font-mono">{{ metricValue.toFixed(4) }}</span>
-                  </div>
-                </div>
-              </article>
-            </div>
-          </div>
 
           <div v-if="hasFailed" class="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
             <p class="font-medium">{{ activeJob.errorCode ?? activeJob.qualityGate.failureCode ?? 'Analysis failed' }}</p>
@@ -696,37 +723,72 @@ onMounted(async () => {
               Public post endpoint: <span class="font-mono">{{ resolvedPublicEndpoint }}</span>
             </div>
 
-            <h3 class="text-base font-semibold">Ranked candidates</h3>
+            <details class="rounded-2xl border border-white/10 bg-slate-900/40 p-4">
+              <summary class="cursor-pointer text-sm font-semibold text-white">Technical details</summary>
 
-            <StateCard
-              v-if="rankedRecommendations.length === 0"
-              title="No recommendations produced"
-              description="Try another photo or adjust preferences."
-              padding-class="p-4"
-            />
+              <div class="mt-3 space-y-3">
+                <div v-if="debugTelemetry" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3">
+                  <h3 class="text-sm font-semibold text-white">Stage telemetry</h3>
+                  <p class="mt-1 text-xs text-slate-300">
+                    Source: <span class="font-mono">{{ debugTelemetry.source ?? 'unknown' }}</span>
+                  </p>
+                  <p class="mt-1 text-xs text-slate-300">
+                    Dimensions:
+                    {{ debugTelemetry.imageWidth && debugTelemetry.imageHeight
+                      ? `${debugTelemetry.imageWidth} x ${debugTelemetry.imageHeight}`
+                      : 'unknown' }}
+                  </p>
+                  <div class="mt-2 space-y-2" v-if="debugTelemetry.stages.length">
+                    <article v-for="stage in debugTelemetry.stages" :key="stage.stage" class="rounded-xl border border-white/10 bg-slate-950/40 p-3">
+                      <div class="flex flex-wrap items-center justify-between gap-2">
+                        <p class="text-sm font-medium text-white">{{ stage.stage }}</p>
+                        <p class="text-xs text-slate-300">{{ stage.durationMs.toFixed(2) }} ms</p>
+                      </div>
+                      <p class="mt-1 text-xs text-slate-400">{{ stage.model }} ({{ stage.modelVersion }})</p>
+                      <p v-if="stage.notes" class="mt-1 break-all text-xs text-amber-200">{{ stage.notes }}</p>
+                      <div v-if="stage.metrics" class="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-300 sm:grid-cols-2">
+                        <div v-for="(metricValue, metricName) in stage.metrics" :key="metricName" class="flex items-center justify-between gap-2 rounded bg-white/5 px-2 py-1">
+                          <span>{{ metricName }}</span>
+                          <span class="font-mono">{{ metricValue.toFixed(4) }}</span>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
+                </div>
 
-            <article
-              v-for="item in rankedRecommendations"
-              :key="item.styleId"
-              class="rounded-2xl border border-white/10 bg-slate-900/50 p-4"
-            >
-              <div class="mb-2 flex items-center justify-between gap-4">
-                <h4 class="text-sm font-semibold text-white">{{ item.styleName }}</h4>
-                <span class="rounded-full bg-sky-500/20 px-2 py-1 text-xs font-medium text-sky-200">
-                  {{ item.score.toFixed(3) }}
-                </span>
+                <h3 class="text-base font-semibold">Ranked candidates</h3>
+
+                <StateCard
+                  v-if="rankedRecommendations.length === 0"
+                  title="No recommendations produced"
+                  description="Try another photo or adjust preferences."
+                  padding-class="p-4"
+                />
+
+                <article
+                  v-for="item in rankedRecommendations"
+                  :key="item.styleId"
+                  class="rounded-2xl border border-white/10 bg-slate-900/50 p-4"
+                >
+                  <div class="mb-2 flex items-center justify-between gap-4">
+                    <h4 class="text-sm font-semibold text-white">{{ item.styleName }}</h4>
+                    <span class="rounded-full bg-sky-500/20 px-2 py-1 text-xs font-medium text-sky-200">
+                      {{ item.score.toFixed(3) }}
+                    </span>
+                  </div>
+
+                  <p class="mb-1 text-xs uppercase tracking-wide text-slate-400">Reasons</p>
+                  <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
+                    <li v-for="reason in item.reasons" :key="reason">{{ reason }}</li>
+                  </ul>
+
+                  <p class="mb-1 mt-3 text-xs uppercase tracking-wide text-slate-400">Constraints</p>
+                  <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
+                    <li v-for="constraint in item.constraints" :key="constraint">{{ constraint }}</li>
+                  </ul>
+                </article>
               </div>
-
-              <p class="mb-1 text-xs uppercase tracking-wide text-slate-400">Reasons</p>
-              <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
-                <li v-for="reason in item.reasons" :key="reason">{{ reason }}</li>
-              </ul>
-
-              <p class="mb-1 mt-3 text-xs uppercase tracking-wide text-slate-400">Constraints</p>
-              <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
-                <li v-for="constraint in item.constraints" :key="constraint">{{ constraint }}</li>
-              </ul>
-            </article>
+            </details>
 
             <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
               <h3 class="text-sm font-semibold">Ranking feedback</h3>
