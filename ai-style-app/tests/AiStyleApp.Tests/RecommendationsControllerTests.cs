@@ -10,6 +10,42 @@ namespace AiStyleApp.Tests;
 public class RecommendationsControllerTests
 {
     [Fact]
+    public async Task GetById_WhenGenerationAllVariantsFailedSignalPresent_ReturnsStatusPayload()
+    {
+        var analysisJobId = Guid.NewGuid();
+        var service = new StubRecommendationService
+        {
+            GetStatusAction = (_, _, _) => new RecommendationJobStatusResponse(
+                AnalysisJobId: analysisJobId,
+                RecommendationPostId: Guid.NewGuid(),
+                PublishStatus: "Published",
+                Status: "Succeeded",
+                QualityGate: new RecommendationQualityGateResponse(true, null, null),
+                AnalysisSummary: new RecommendationAnalysisSummaryResponse("Square", 0.91),
+                BestRecommendation: null,
+                BestVariant: null,
+                ExperimentalVariants: [],
+                Recommendations: [],
+                Experiment: new RecommendationExperimentResponse(true, 100, true, "bucket"),
+                DebugTelemetry: null,
+                ErrorCode: "GENERATION_ALL_VARIANTS_FAILED",
+                ErrorMessage: "Generation finished without any successful variants. Try another photo or run Analyze and Recommend again.",
+                SelectedGenerationJobId: null,
+                SelectedAtUtc: null)
+        };
+
+        var controller = CreateController(service, "user-1");
+
+        var result = await controller.GetById(analysisJobId, CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var payload = Assert.IsType<RecommendationJobStatusResponse>(ok.Value);
+        Assert.Equal("Succeeded", payload.Status);
+        Assert.Equal("GENERATION_ALL_VARIANTS_FAILED", payload.ErrorCode);
+        Assert.Contains("without any successful variants", payload.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task FinalizeSelection_WhenGenerationJobIdEmpty_ReturnsBadRequest()
     {
         var service = new StubRecommendationService();
@@ -107,12 +143,20 @@ public class RecommendationsControllerTests
     private sealed class StubRecommendationService : IRecommendationService
     {
         public Func<Guid, FinalizeRecommendationRequest, string, CancellationToken, FinalizeRecommendationResponse>? FinalizeAction { get; init; }
+        public Func<Guid, string, CancellationToken, RecommendationJobStatusResponse?>? GetStatusAction { get; init; }
 
         public Task<(Guid AnalysisJobId, Guid RecommendationPostId)> CreateAndEnqueueAsync(CreateRecommendationsRequest request, string userId, CancellationToken ct = default)
             => throw new NotImplementedException();
 
         public Task<RecommendationJobStatusResponse?> GetStatusAsync(Guid analysisJobId, string userId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        {
+            if (GetStatusAction is null)
+            {
+                throw new NotImplementedException();
+            }
+
+            return Task.FromResult(GetStatusAction(analysisJobId, userId, ct));
+        }
 
         public Task SubmitRatingsAsync(Guid analysisJobId, SubmitRecommendationRatingsRequest request, string userId, CancellationToken ct = default)
             => throw new NotImplementedException();
