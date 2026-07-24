@@ -435,10 +435,15 @@ GET /api/analytics/export-recommendations?format=csv&from=2026-01-01T00:00:00Z&t
       "gender": "none | male | female | null",
       "qualityPassed": true,
       "analysisConfidence": 0.87,
+      "telemetrySchemaVersion": 2,
+      "telemetrySource": "worker-v1-staged-analysis",
       "topRecommendationStyleId": "short-quiff",
       "topRecommendationScore": 0.92,
       "recommendationCount": 5,
-      "selectedStyleId": "short-quiff | null",
+      "shownGenerationJobIdsJson": "[\"uuid-1\",\"uuid-2\",\"uuid-3\",\"uuid-4\"]",
+      "selectedGenerationJobId": "uuid-1",
+      "selectedAtUtc": "2026-01-15T14:24:20Z",
+      "selectedStyleId": "uuid-1 | null",
       "feedbackRating": 5,
       "feedbackTags": "[\"great-match\"] | null",
       "analysisCompletedAt": "2026-01-15T14:23:45Z",
@@ -449,7 +454,13 @@ GET /api/analytics/export-recommendations?format=csv&from=2026-01-01T00:00:00Z&t
 }
 ```
 
-**Response (CSV):** Comma-separated with headers. Each row represents one analysis job joined with optional feedback data.
+**Response (CSV):** Comma-separated with headers. Each row represents one finalized recommendation session with complete feature-label linkage.
+
+Training row integrity rules:
+
+- Only `Succeeded` sessions with a persisted final selection (`selectedGenerationJobId` and `selectedAtUtc`) are exported.
+- Exported rows must include at least one shown generation job id.
+- Exported rows require that `selectedGenerationJobId` is present in `shownGenerationJobIdsJson`.
 
 **Purpose:** Collect recommendation tuples (face shape, recommendations, selected style, rating) for model training, audit trails, and performance analysis.
 

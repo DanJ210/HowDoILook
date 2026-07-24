@@ -43,10 +43,55 @@ public class AnalyticsServiceTests
     }
 
     [Fact]
-    public async Task ExportRecommendationsDataAsync_ArrayRecommendations_ParsesTopStyleAndSelectedRank()
+    public async Task ExportRecommendationsDataAsync_FinalizedSession_IncludesLabelLinkageFields()
     {
         await using var db = CreateDbContext();
         var analysisJobId = Guid.NewGuid();
+        var primaryStyleItemId = Guid.NewGuid();
+        var experimentalStyleItemId = Guid.NewGuid();
+        var selectedGenerationJobId = Guid.NewGuid();
+        var alternateGenerationJobId = Guid.NewGuid();
+        var selectedAtUtc = DateTimeOffset.UtcNow;
+
+        db.StyleItems.AddRange(
+            new StyleItemEntity
+            {
+                Id = primaryStyleItemId,
+                UserId = "user-1",
+                Name = "Recommended: Short Quiff",
+                Description = $"Primary recommendation from analysis job {analysisJobId}.",
+                Prompt = "prompt",
+                ImageUrl = "https://example.com/1.jpg",
+                IsResultPublic = true
+            },
+            new StyleItemEntity
+            {
+                Id = experimentalStyleItemId,
+                UserId = "user-1",
+                Name = "Experimental 1: Classic Side Part",
+                Description = $"Experimental recommendation from analysis job {analysisJobId}.",
+                Prompt = "prompt",
+                ImageUrl = "https://example.com/1.jpg",
+                IsResultPublic = false
+            });
+
+        db.StyleJobs.AddRange(
+            new StyleJobEntity
+            {
+                Id = selectedGenerationJobId,
+                StyleItemId = primaryStyleItemId,
+                UserId = "user-1",
+                Prompt = "prompt",
+                Status = "Succeeded"
+            },
+            new StyleJobEntity
+            {
+                Id = alternateGenerationJobId,
+                StyleItemId = experimentalStyleItemId,
+                UserId = "user-1",
+                Prompt = "prompt",
+                Status = "Succeeded"
+            });
 
         db.FaceAnalysisJobs.Add(new FaceAnalysisJobEntity
         {
@@ -55,15 +100,18 @@ public class AnalyticsServiceTests
             ImageUrl = "https://example.com/1.jpg",
             Status = "Succeeded",
             AnalysisConfidence = 0.82,
+            FeatureVectorJson = "{\"faceShape\":\"Square\",\"schemaVersion\":2,\"source\":\"worker-v1-staged-analysis\"}",
             RecommendationsJson = "[{\"styleId\":\"short-quiff\",\"styleName\":\"Short Quiff\",\"score\":0.92,\"reasons\":[],\"constraints\":[]},{\"styleId\":\"classic-side-part\",\"styleName\":\"Classic Side Part\",\"score\":0.81,\"reasons\":[],\"constraints\":[]}]",
             CompletedAtUtc = DateTimeOffset.UtcNow,
+            SelectedGenerationJobId = selectedGenerationJobId,
+            SelectedAtUtc = selectedAtUtc,
             Feedback =
             [
                 new RecommendationFeedbackEntity
                 {
                     UserId = "user-1",
-                    SelectedStyleId = "classic-side-part",
-                    Rating = 4,
+                    SelectedStyleId = selectedGenerationJobId.ToString(),
+                    Rating = 1,
                     CreatedAtUtc = DateTimeOffset.UtcNow
                 }
             ]
@@ -78,8 +126,39 @@ public class AnalyticsServiceTests
         Assert.Equal("short-quiff", row.TopRecommendationStyleId);
         Assert.Equal(0.92, row.TopRecommendationScore, 3);
         Assert.Equal(2, row.RecommendationCount);
-        Assert.Equal("classic-side-part", row.SelectedStyleId);
-        Assert.Equal(2, row.RecommendationRank);
+        Assert.Equal(2, row.TelemetrySchemaVersion);
+        Assert.Equal("worker-v1-staged-analysis", row.TelemetrySource);
+        Assert.Equal(selectedGenerationJobId, row.SelectedGenerationJobId);
+        Assert.Equal(selectedAtUtc, row.SelectedAtUtc);
+        Assert.Equal(selectedGenerationJobId.ToString(), row.SelectedStyleId);
+        Assert.Equal(1, row.RecommendationRank);
+        Assert.Contains(selectedGenerationJobId.ToString(), row.ShownGenerationJobIdsJson, StringComparison.Ordinal);
+        Assert.Contains(alternateGenerationJobId.ToString(), row.ShownGenerationJobIdsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExportRecommendationsDataAsync_IncompleteSession_IsExcludedFromTrainingRows()
+    {
+        await using var db = CreateDbContext();
+        var analysisJobId = Guid.NewGuid();
+
+        db.FaceAnalysisJobs.Add(new FaceAnalysisJobEntity
+        {
+            Id = analysisJobId,
+            UserId = "user-1",
+            ImageUrl = "https://example.com/1.jpg",
+            Status = "Succeeded",
+            AnalysisConfidence = 0.82,
+            RecommendationsJson = "[{\"styleId\":\"short-quiff\",\"styleName\":\"Short Quiff\",\"score\":0.92,\"reasons\":[],\"constraints\":[]}]",
+            CompletedAtUtc = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var service = new AnalyticsService(db, NullLogger<AnalyticsService>.Instance);
+
+        var exportRows = (await service.ExportRecommendationsDataAsync()).ToList();
+
+        Assert.Empty(exportRows);
     }
 
     [Fact]
