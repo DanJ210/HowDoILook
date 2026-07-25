@@ -198,7 +198,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
     private const int MinWidth = 768;
     private const int MinHeight = 768;
     // Blur is computed from normalized luminance deltas (0..1), so practical values are small.
-    private const double MinBlurScore = 0.08;
+    private const double MinBlurScore = 0.04;
     private const double MinBrightness = 0.18;
     private const double MaxBrightness = 0.90;
     private const double MaxCenterOffset = 0.22;
