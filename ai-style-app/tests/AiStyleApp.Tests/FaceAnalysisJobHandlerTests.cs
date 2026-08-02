@@ -187,6 +187,11 @@ public class FaceAnalysisJobHandlerTests
                 Assert.False(styleItems[1].IsResultPublic);
                 Assert.False(styleItems[2].IsResultPublic);
                 Assert.False(styleItems[3].IsResultPublic);
+
+                var persisted = await db.FaceAnalysisJobs.AsNoTracking().SingleAsync(x => x.Id == analysisJob.Id);
+                Assert.Equal("textured-crop", persisted.PrimaryStyleId);
+                Assert.Equal(styleItems[0].Id, persisted.PrimaryStyleItemId);
+                Assert.Equal(queue.Messages[0].JobId, persisted.PrimaryGenerationJobId);
         }
 
         [Fact]

@@ -359,6 +359,13 @@ catch (FaceAnalysisException ex)
                 styleItems.Add(item);
             }
             styleJobs.Add(job);
+
+            if (isPrimary)
+            {
+                analysisJob.PrimaryStyleId = candidate.StyleId;
+                analysisJob.PrimaryStyleItemId = item.Id;
+                analysisJob.PrimaryGenerationJobId = job.Id;
+            }
         }
 
         if (styleItems.Count > 0)

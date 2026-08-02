@@ -128,6 +128,8 @@ export interface RecommendationJobStatusResponse {
   debugTelemetry: RecommendationDebugTelemetry | null
   errorCode: string | null
   errorMessage: string | null
+  primaryStyleId: string | null
+  primaryGenerationJobId: string | null
   selectedGenerationJobId: string | null
   selectedAtUtc: string | null
 }

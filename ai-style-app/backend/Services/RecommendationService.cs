@@ -14,6 +14,10 @@ public class RecommendationService : IRecommendationService
 {
     private const string GenerationAllVariantsFailedCode = "GENERATION_ALL_VARIANTS_FAILED";
     private const string GenerationAllVariantsFailedMessage = "Generation finished without any successful variants. Try another photo or run Analyze and Recommend again.";
+    private static readonly JsonSerializerOptions RecommendationJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     private readonly AppDbContext _db;
     private readonly IQueuePublisher _queue;
@@ -59,6 +63,8 @@ public class RecommendationService : IRecommendationService
             IsResultPublic = true
         };
 
+        analysisJob.PrimaryStyleItemId = recommendationPost.Id;
+
         _db.FaceAnalysisJobs.Add(analysisJob);
         _db.StyleItems.Add(recommendationPost);
         await _db.SaveChangesAsync(ct);
@@ -101,19 +107,35 @@ public class RecommendationService : IRecommendationService
             ?? BuildExperimentMetadata(userId);
 
         var recommendations = ParseRecommendations(analysisJob.RecommendationsJson);
-        var bestRecommendation = recommendations.FirstOrDefault();
+        var bestRecommendation = string.IsNullOrWhiteSpace(analysisJob.PrimaryStyleId)
+            ? recommendations.FirstOrDefault()
+            : recommendations.FirstOrDefault(x => string.Equals(
+                x.StyleId,
+                analysisJob.PrimaryStyleId,
+                StringComparison.OrdinalIgnoreCase)) ?? recommendations.FirstOrDefault();
         var faceShape = ParseFaceShape(analysisJob.FeatureVectorJson);
 
         var linkedStyleItems = await _db.StyleItems
             .AsNoTracking()
             .Include(x => x.Jobs)
-            .Where(x => x.UserId == userId && x.Description.Contains(analysisJob.Id.ToString()))
+            .Where(x => x.UserId == userId &&
+                ((analysisJob.PrimaryStyleItemId.HasValue && x.Id == analysisJob.PrimaryStyleItemId.Value) ||
+                 x.Description.Contains(analysisJob.Id.ToString())))
             .OrderBy(x => x.CreatedAtUtc)
             .ToListAsync(ct);
 
-        var primaryStyleItem = linkedStyleItems.FirstOrDefault(x => x.IsResultPublic)
+        var primaryStyleItem = analysisJob.PrimaryStyleItemId.HasValue
+            ? linkedStyleItems.FirstOrDefault(x => x.Id == analysisJob.PrimaryStyleItemId.Value)
+            : null;
+        primaryStyleItem ??= linkedStyleItems.FirstOrDefault(x => x.IsResultPublic)
             ?? linkedStyleItems.FirstOrDefault();
-        var bestJob = primaryStyleItem?.Jobs
+
+        var bestJob = analysisJob.PrimaryGenerationJobId.HasValue
+            ? linkedStyleItems
+                .SelectMany(x => x.Jobs)
+                .FirstOrDefault(x => x.Id == analysisJob.PrimaryGenerationJobId.Value)
+            : null;
+        bestJob ??= primaryStyleItem?.Jobs
             .OrderByDescending(x => x.CreatedAtUtc)
             .FirstOrDefault();
         var variantStatuses = new List<string>();
@@ -173,11 +195,10 @@ public class RecommendationService : IRecommendationService
                 SelectedRank: selectedRank));
         }
 
-        var recommendationPostId = primaryStyleItem?.Id;
+        var recommendationPostId = analysisJob.PrimaryStyleItemId ?? primaryStyleItem?.Id;
         var publishStatus = primaryStyleItem is null ? null : "Published";
         var generationAllVariantsFailed = IsGenerationAllVariantsFailed(
             analysisJob.Status,
-            analysisJob.SelectedGenerationJobId,
             variantStatuses);
 
         var errorCode = analysisJob.ErrorCode;
@@ -209,6 +230,8 @@ public class RecommendationService : IRecommendationService
             DebugTelemetry: ParseDebugTelemetry(analysisJob.FeatureVectorJson),
                 ErrorCode: errorCode,
                 ErrorMessage: errorMessage,
+            PrimaryStyleId: analysisJob.PrimaryStyleId,
+            PrimaryGenerationJobId: analysisJob.PrimaryGenerationJobId,
             SelectedGenerationJobId: analysisJob.SelectedGenerationJobId,
             SelectedAtUtc: analysisJob.SelectedAtUtc);
     }
@@ -358,7 +381,9 @@ public class RecommendationService : IRecommendationService
 
         try
         {
-            var parsed = JsonSerializer.Deserialize<List<RecommendationItemResponse>>(recommendationsJson);
+            var parsed = JsonSerializer.Deserialize<List<RecommendationItemResponse>>(
+                recommendationsJson,
+                RecommendationJsonOptions);
             return parsed ?? [];
         }
         catch (JsonException)
@@ -369,11 +394,9 @@ public class RecommendationService : IRecommendationService
 
     private static bool IsGenerationAllVariantsFailed(
         string analysisStatus,
-        Guid? selectedGenerationJobId,
         IReadOnlyCollection<string> variantStatuses)
     {
         if (!string.Equals(analysisStatus, JobStatus.Succeeded, StringComparison.Ordinal)
-            || selectedGenerationJobId.HasValue
             || variantStatuses.Count == 0)
         {
             return false;

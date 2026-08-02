@@ -1,8 +1,8 @@
-# Recommendation Finalization Implementation Plan
+# Recommendation Decision and Feedback Implementation Plan
 
 ## Purpose
 
-Capture the full execution plan so work is not lost between chat sessions and can be tracked in PRs. This plan assumes the current recommendation-first pipeline already exists and focuses on hardening plus the new user-selected final recommendation flow.
+Capture the execution plan for hardening the recommendation-first pipeline. The automatic system-selected primary is the product result; user selection/finalization is retained only as temporary experimentation feedback and must not control primary delivery.
 
 ## Confirmed Baseline (Already Implemented)
 
@@ -21,28 +21,30 @@ What this means right now:
 
 - Recommendation quality is still in a cold-start phase.
 - The system must prioritize learning-signal collection over "final AI intelligence" claims.
-- The 3 to 4 generated variants plus user ranking are the primary source of supervised labels.
+- Optional comparisons among generated variants are one source of explicit preference labels, subject to exposure and selection bias controls.
 
 Working assumption for pre-MVP:
 
-- Keep experimentation traffic at 100%.
-- Treat user rank selections as ground-truth preference labels linked to telemetry snapshots.
+- Keep experimentation traffic configurable and record the applied policy for every exposure.
+- Treat explicit user comparisons as subjective preference labels linked to telemetry and exposure metadata, not universal ground truth.
 - Use these labels to build the training/evaluation dataset for future recommendation model tuning.
 
 ## Target Product Direction
 
-Move from a single dense page to a staged user flow where users choose one final recommendation image for public display.
+Deliver one automatic primary result after a photo-only submission. Additional variants and feedback remain optional and secondary.
 
 ### Target User Journey
 
 1. Upload and Analyze.
-2. Review generated recommendation variants.
-3. Select one final result.
-4. Publish selected result publicly.
+2. Receive the system-selected generated primary result.
+3. Optionally compare experimental variants and submit preference feedback.
+4. Continue using the automatic primary as the canonical result.
 
 ## Phase Plan
 
 ## Phase 1: Recommendation Decision Contract Hardening
+
+Status (2026-08-01): partially implemented. Analysis jobs now persist the primary style ID, post ID, and generation job ID. Owner-scoped status exposes these fields and falls back to legacy discovery only for older rows. Per-variant decision snapshots and enqueue-time guardrail snapshots remain open.
 
 Goal: make analysis-to-generation handoff explicit and auditable.
 
@@ -62,26 +64,23 @@ Exit criteria:
 - Every style generation job can be traced to a concrete recommendation decision.
 - Invalid decisions fail fast and are visible in status payloads.
 
-## Phase 2: Final Selection and Publish Workflow
+## Phase 2: Automatic Primary Completion and Publication
 
-Goal: support user-chosen final recommendation as the public result.
+Goal: make the system-selected primary the completed and publicly retrievable result without user finalization.
 
 - Add recommendation session state model:
   - analyzing
   - generating
-  - ready_for_selection
-  - published
+  - completed
   - failed
-- Add finalize endpoint:
-  - `POST /api/recommendations/jobs/{id}/finalize`
-  - payload includes selected generation job id (and optional metadata)
-- Persist selected/finalized variant linkage separate from generated candidates.
-- Update public feed/source logic to use finalized selection.
+- Keep the existing finalize endpoint as temporary experimentation compatibility only.
+- Persist optional preference/finalization linkage separately from the automatic primary.
+- Update public feed/source logic to use the persisted primary generation.
 
 Exit criteria:
 
-- Public item shown is always the user-selected final variant.
-- Finalize is idempotent and owner-scoped.
+- Public and status retrieval resolve the same automatic primary variant.
+- Primary delivery never requires finalization or feedback.
 
 ## Phase 3: Webhook and Multi-Stage Idempotency Hardening
 
@@ -189,7 +188,7 @@ Exit criteria:
 ## Recommended PR Sequence
 
 1. Phase 1 (decision contract hardening).
-2. Phase 2 (final selection + publish workflow).
+2. Phase 2 (automatic primary completion + publication).
 3. Phase 3 (webhook idempotency hardening).
 4. Phase 4 (UI/UX staged rebuild).
 5. Phase 5 (telemetry v3 + stage interface migration).
@@ -200,5 +199,5 @@ Exit criteria:
 
 - Keep recommendation-first as canonical entrypoint.
 - Keep beard suggestions optional and male-only guardrail enforced.
-- Do not gate frontend redesign on telemetry v3; final selection workflow should ship earlier.
+- Do not gate frontend simplification on telemetry v3; automatic primary completion should ship earlier.
 - Do not present current recommendations as model-trained personalization; present them as iterative guidance while learning data is collected.

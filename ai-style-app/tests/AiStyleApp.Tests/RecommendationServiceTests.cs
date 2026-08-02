@@ -31,6 +31,11 @@ public class RecommendationServiceTests
         Assert.NotNull(post);
         Assert.True(post!.IsResultPublic);
         Assert.Contains(analysisJobId.ToString(), post.Description, StringComparison.Ordinal);
+
+        var analysisJob = await db.FaceAnalysisJobs.SingleAsync(x => x.Id == analysisJobId);
+        Assert.Equal(recommendationPostId, analysisJob.PrimaryStyleItemId);
+        Assert.Null(analysisJob.PrimaryStyleId);
+        Assert.Null(analysisJob.PrimaryGenerationJobId);
     }
 
     [Fact]
@@ -257,6 +262,78 @@ public class RecommendationServiceTests
         Assert.Single(result.ExperimentalVariants);
         Assert.Equal(experimentalJob.Id, result.ExperimentalVariants[0].GenerationJobId);
         Assert.Equal("2", result.ExperimentalVariants[0].SelectedRank);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_ExplicitPrimaryLinkage_WinsOverPublicItemOrder()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Status = "Succeeded",
+            QualityPassed = true,
+            RecommendationsJson = """
+                [
+                  {"styleId":"classic-side-part","styleName":"Classic Side Part","score":0.90,"reasons":[],"constraints":[]},
+                  {"styleId":"textured-crop","styleName":"Textured Crop","score":0.94,"reasons":[],"constraints":[]}
+                ]
+                """
+        };
+
+        var misleadingItem = CreateLinkedStyleItem(
+            analysisJob,
+            "Misleading Public Item",
+            "https://example.com/not-primary.jpg",
+            DateTimeOffset.UtcNow.AddMinutes(-1));
+        var explicitPrimaryItem = CreateLinkedStyleItem(
+            analysisJob,
+            "Explicit Primary Item",
+            "https://example.com/primary.jpg",
+            DateTimeOffset.UtcNow);
+        var explicitPrimaryJob = explicitPrimaryItem.Jobs.Single();
+
+        analysisJob.PrimaryStyleId = "textured-crop";
+        analysisJob.PrimaryStyleItemId = explicitPrimaryItem.Id;
+        analysisJob.PrimaryGenerationJobId = explicitPrimaryJob.Id;
+
+        db.FaceAnalysisJobs.Add(analysisJob);
+        db.StyleItems.AddRange(misleadingItem, explicitPrimaryItem);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var result = await service.GetStatusAsync(analysisJob.Id, analysisJob.UserId);
+
+        Assert.NotNull(result);
+        Assert.Equal(explicitPrimaryItem.Id, result!.RecommendationPostId);
+        Assert.Equal("textured-crop", result.BestRecommendation?.StyleId);
+        Assert.Equal(explicitPrimaryJob.Id, result.BestVariant?.GenerationJobId);
+        Assert.Equal("textured-crop", result.PrimaryStyleId);
+        Assert.Equal(explicitPrimaryJob.Id, result.PrimaryGenerationJobId);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_DifferentOwner_ReturnsNull()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Status = "Succeeded"
+        };
+        db.FaceAnalysisJobs.Add(analysisJob);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var result = await service.GetStatusAsync(analysisJob.Id, "user-2");
+
+        Assert.Null(result);
     }
 
     [Fact]
@@ -588,7 +665,7 @@ public class RecommendationServiceTests
     }
 
     [Fact]
-    public async Task GetStatusAsync_FinalizedSelection_DoesNotReturnGenerationFailureSignal()
+    public async Task GetStatusAsync_LegacySelection_DoesNotSuppressGenerationFailureSignal()
     {
         await using var db = CreateDbContext();
         var selectedJobId = Guid.NewGuid();
@@ -635,8 +712,8 @@ public class RecommendationServiceTests
         var result = await service.GetStatusAsync(analysisJob.Id, "user-1");
 
         Assert.NotNull(result);
-        Assert.Null(result!.ErrorCode);
-        Assert.Null(result.ErrorMessage);
+        Assert.Equal("GENERATION_ALL_VARIANTS_FAILED", result!.ErrorCode);
+        Assert.Contains("without any successful variants", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -807,6 +884,37 @@ public class RecommendationServiceTests
             .Options;
 
         return new AppDbContext(options);
+    }
+
+    private static StyleItemEntity CreateLinkedStyleItem(
+        FaceAnalysisJobEntity analysisJob,
+        string name,
+        string resultImageUrl,
+        DateTimeOffset createdAtUtc)
+    {
+        var item = new StyleItemEntity
+        {
+            UserId = analysisJob.UserId,
+            Name = name,
+            Description = $"Recommendation from analysis job {analysisJob.Id}",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            IsResultPublic = true,
+            CreatedAtUtc = createdAtUtc
+        };
+        item.Jobs.Add(new StyleJobEntity
+        {
+            StyleItemId = item.Id,
+            UserId = analysisJob.UserId,
+            JobType = "generate-style",
+            Status = "Succeeded",
+            Prompt = "p",
+            ImageUrl = analysisJob.ImageUrl,
+            ResultImageUrl = resultImageUrl,
+            CreatedAtUtc = createdAtUtc
+        });
+
+        return item;
     }
 
     private sealed class StubQueuePublisher : IQueuePublisher

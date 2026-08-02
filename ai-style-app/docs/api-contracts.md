@@ -72,7 +72,7 @@ Returned by `GET /api/style/feed`. Supports cursor-based pagination.
 }
 ```
 
-Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the feed, ordered by `completedAtUtc` descending. To fetch the next page, pass the `publishedAtUtc` of the last item as the `before` cursor.
+Only the automatic primary generation for each recommendation session can appear in the feed, and it must have `isResultPublic = true` and `status = Succeeded`. Pre-migration rows fall back to the latest job on the legacy-linked primary post. Results are ordered by `completedAtUtc` descending. To fetch the next page, pass the `publishedAtUtc` of the last item as the `before` cursor.
 
 ### StyleItemResponse
 
@@ -318,6 +318,8 @@ Current implementation note:
   },
   "errorCode": "string | null",
   "errorMessage": "string | null",
+  "primaryStyleId": "string | null",
+  "primaryGenerationJobId": "uuid | null",
   "selectedGenerationJobId": "uuid | null",
   "selectedAtUtc": "ISO 8601 datetime | null"
 }
@@ -355,6 +357,8 @@ Current implementation note:
 - Face shape is persisted at `face_analysis_jobs.feature_vector_json.faceShape` (for example, `"Square"`).
 - API consumers should treat `bestRecommendation` as the primary public posting recommendation.
 - API consumers should treat `bestVariant` as the canonical generated outcome for the post.
+- `primaryStyleId` and `primaryGenerationJobId` are the persisted automatic system decision. They are available without finalization and are distinct from optional user feedback.
+- `selectedGenerationJobId` and `selectedAtUtc` represent the legacy experimentation/finalization selection and must not replace the automatic primary result.
 - Pre-MVP, `experimentalVariants` are populated for 100% of recommendation sessions.
 - The `experiment` object reports whether experimentation was configured and actually applied for the job.
 - `errorCode` / `errorMessage` may include `GENERATION_ALL_VARIANTS_FAILED` even when analysis `status` is `Succeeded`; this indicates that all generated variants reached terminal non-success statuses and user action should be retry.

@@ -22,9 +22,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\backend\Backend.csproj" />
-    <ProjectReference Include="..\..\data\AiStyleApp.Data.csproj" />
-    <ProjectReference Include="..\..\worker\Worker.csproj" />
+    <ProjectReference Include="..\..\backend\Backend.csproj" AdditionalProperties="BaseOutputPath=bin\TestReference\" />
+    <ProjectReference Include="..\..\data\AiStyleApp.Data.csproj" AdditionalProperties="BaseOutputPath=bin\TestReference\" />
+    <ProjectReference Include="..\..\worker\Worker.csproj" AdditionalProperties="BaseOutputPath=bin\TestReference\" />
   </ItemGroup>
 
   <ItemGroup>

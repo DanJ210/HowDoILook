@@ -62,7 +62,7 @@ Use this file to track known differences instead of silently choosing whichever 
 Resolve these before updating permanent documents that depend on them.
 
 - [x] **Primary user journey:** one portrait -> automatic system recommendation -> generated primary result; no requested-style selection.
-- [ ] **Primary result and experimentation:** define whether optional user ranking can ever replace the system-selected primary result, or remains label data only. Preferred direction: label data only.
+- [x] **Primary result and experimentation:** optional user ranking remains label data only and cannot replace the system-selected primary result.
 - [ ] **Public visibility:** decide when the automatic primary result becomes public and keep experimental candidates private by default.
 - [ ] **Multiple ONNX detections:** decide how to distinguish false duplicate boxes from genuinely distinct faces. The selected rule must preserve the single-person upload guardrail.
 - [ ] **Public URL configuration:** decide whether to split webhook callback base and public source-image base into separate settings. Preferred direction: `Replicate:WebhookBaseUrl` for callbacks and a separately named public asset/API base for local URL rewriting.
@@ -91,14 +91,14 @@ Exit criteria:
 
 **Problem:** current plans and implementation treat a user-selected generation as the canonical final result, while the confirmed product requires the system-selected primary recommendation to be the product result. User ranking should remain optional learning data unless explicitly changed later.
 
-- [ ] Define and persist the system-selected primary recommendation and its generation job unambiguously.
-- [ ] Decide whether `SelectedGenerationJobId` remains an experimentation label, is renamed, or is retired from product-result semantics.
-- [ ] Make status and public/feed retrieval resolve the automatic primary generation consistently.
-- [ ] Keep experimental candidates private unless a separate research experience intentionally exposes them.
+- [x] Define and persist the system-selected primary recommendation, post, and generation job unambiguously.
+- [x] Keep `SelectedGenerationJobId` as legacy experimentation/finalization label metadata; it is not product-result state.
+- [x] Make status and public/feed retrieval resolve the automatic primary generation consistently.
+- [x] Keep experimental candidates private unless a separate research experience intentionally exposes them.
 - [ ] Ensure optional ranking/favorite feedback never blocks delivery of the primary result.
-- [ ] Add service/controller tests proving the automatic primary result is returned without finalization.
-- [ ] Correct `docs/api-contracts.md`, `docs/architecture.md`, and `docs/face-analysis-recommendation-spec.md` to distinguish primary output from optional feedback labels.
-- [ ] Update `docs/recommendation-finalization-plan.md` to mark user finalization as temporary learning-loop functionality rather than the target product flow.
+- [x] Add service tests proving owner-scoped automatic primary status is returned without finalization.
+- [x] Correct `docs/api-contracts.md`, `docs/architecture.md`, and `docs/face-analysis-recommendation-spec.md` to distinguish primary output from optional feedback labels.
+- [x] Update `docs/recommendation-finalization-plan.md` to mark user finalization as temporary learning-loop functionality rather than the target product flow.
 
 Exit criteria:
 
@@ -251,7 +251,7 @@ Run the checks relevant to each completed workstream. Before deleting this docum
 - [ ] `cd ai-style-app/backend && dotnet build`
 - [ ] `cd ai-style-app/worker && dotnet build`
 - [ ] Complete a local smoke test: upload one portrait -> automatic recommendation -> generated primary result, with no style selection required.
-- [ ] Confirm a public/feed lookup resolves the automatic primary generation.
+- [x] Confirm a public/feed lookup resolves the automatic primary generation.
 - [ ] Confirm analytics export distinguishes the system decision from any optional user preference label.
 - [ ] Confirm a genuine multi-person image fails with the documented error.
 - [ ] Confirm the tunneled source-image URL returns `200` before Replicate submission.
@@ -267,3 +267,4 @@ Record only meaningful decisions and completed work so this remains concise.
 | 2026-08-01 | Audit | Initial cross-document and runtime alignment review completed; remediation tracker created. |
 | 2026-08-01 | Copilot instructions | Added MVP scope, session-completion, selected-winner, face-guardrail, configuration, and document-hierarchy guidance. |
 | 2026-08-01 | Product direction | Confirmed photo-only automatic best recommendation as the target experience; reclassified multi-variant user ranking as optional learning data. |
+| 2026-08-01 | Automatic primary contract | Added persisted primary style/post/job linkage, owner-scoped status fields, public/feed alignment, legacy-row fallback, migration, and focused backend tests. Frontend polling alignment remains open. |

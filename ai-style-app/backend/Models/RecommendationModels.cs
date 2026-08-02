@@ -93,6 +93,8 @@ public record RecommendationJobStatusResponse(
     RecommendationDebugTelemetryResponse? DebugTelemetry,
     string? ErrorCode,
     string? ErrorMessage,
+    string? PrimaryStyleId = null,
+    Guid? PrimaryGenerationJobId = null,
     Guid? SelectedGenerationJobId = null,
     DateTimeOffset? SelectedAtUtc = null
 );

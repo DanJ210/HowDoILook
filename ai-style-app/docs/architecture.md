@@ -139,18 +139,19 @@ Recommendation analysis is the entrypoint. `style_items` and `style_jobs` are do
 
 ## Data Flow
 
-1. User uploads a photo (`POST /api/upload/image`) and submits recommendation preferences.
-2. Frontend calls `POST /api/recommendations` with JWT, image URL, gender, and preferences.
+1. User uploads a photo (`POST /api/upload/image`).
+2. Frontend calls `POST /api/recommendations` with JWT and the image URL; gender and preferences remain optional compatibility inputs.
 3. Backend creates analysis records and a public post placeholder in `Queued`/`Publishing` states, then enqueues a face-analysis job.
 4. Frontend polls `GET /api/recommendations/jobs/{analysisJobId}`.
-5. Worker processes analysis, extracts ONNX telemetry, ranks candidates, and persists one best recommendation.
-6. Worker enqueues one best-variant style generation job (`jobType = generate-style`) for Replicate.
+5. Worker processes analysis, extracts ONNX telemetry, ranks candidates, and persists the automatic primary style, post, and generation-job identifiers on the analysis job.
+6. Worker enqueues the primary generation job and, when experimentation applies, up to three additional private variants (`jobType = generate-style`) for Replicate.
 7. Replicate sends webhook callback to `POST /api/webhooks/replicate` for best-variant completion.
 8. Backend verifies HMAC signatures, updates generated variant states/results, and archives final images.
-9. User selects a final winner variant via `POST /api/recommendations/jobs/{id}/finalize`.
-10. Frontend renders the recommendation post using the selected winner as canonical output.
+9. Status and public-feed reads resolve the persisted primary generation; pre-migration rows use the legacy linked-post fallback.
+10. Frontend renders the system-selected primary result without requiring user finalization.
+11. Optional comparison/ranking feedback is stored separately and does not replace the automatic primary.
 
-Experimental note: for pre-MVP data collection, the system runs three-variant mode for 100% of sessions and captures feedback about the generated variants.
+Experimental note: experimentation may expose additional generated variants for optional feedback. Experiment traffic is configurable and must not block primary-result delivery.
 
 ## Recommendation-First Flow (Canonical)
 
@@ -180,6 +181,8 @@ This section describes the canonical app flow where recommendation analysis is t
 - `face_analysis_jobs`
   - Tracks async analysis lifecycle (`Queued`, `Processing`, `Succeeded`, `Failed`).
   - Stores quality-gate outcomes, feature vector JSON, recommendation JSON, and analysis confidence.
+  - Stores `primary_style_id`, `primary_style_item_id`, and `primary_generation_job_id` as the explicit automatic decision linkage.
+  - Keeps `selected_generation_job_id` separate as optional experimentation feedback from the earlier finalization flow.
 
 - `recommendation_feedback`
   - Stores selected style, rating, tags, and optional comment for learning loops.
@@ -205,6 +208,9 @@ Recommended `FaceAnalysisJobEntity` properties:
 - `FeatureVectorJson` (`string?` or JSON-mapped type) -> `feature_vector_json` (`jsonb`)
 - `AnalysisConfidence` (`double?`) -> `analysis_confidence`
 - `RecommendationsJson` (`string?` or JSON-mapped type) -> `recommendations_json` (`jsonb`)
+- `PrimaryStyleId` (`string?`, max 100) -> `primary_style_id`
+- `PrimaryStyleItemId` (`Guid?`) -> `primary_style_item_id`
+- `PrimaryGenerationJobId` (`Guid?`) -> `primary_generation_job_id`
 - `ErrorCode` (`string?`, max 100) -> `error_code`
 - `ErrorMessage` (`string?`, max 2000) -> `error_message`
 - `CreatedAtUtc` (`DateTimeOffset`) -> `created_at_utc`
@@ -226,18 +232,22 @@ Implemented relational configuration:
 
 - One `FaceAnalysisJobEntity` to many `RecommendationFeedbackEntity`.
 - FK: `recommendation_feedback.analysis_job_id` -> `face_analysis_jobs.id` with cascade delete.
+- FK: `face_analysis_jobs.primary_style_item_id` -> `style_items.id` with set-null delete behavior.
+- FK: `face_analysis_jobs.primary_generation_job_id` -> `style_jobs.id` with set-null delete behavior.
 
 Implemented indexes:
 
 - `face_analysis_jobs (user_id)`
 - `face_analysis_jobs (status)`
+- `face_analysis_jobs (primary_style_item_id)`
+- `face_analysis_jobs (primary_generation_job_id)`
 - `recommendation_feedback (user_id)`
 - `recommendation_feedback (analysis_job_id)`
 
 Migration notes:
 
 - Migration `AddFaceAnalysisRecommendations` is applied by EF tooling.
-- Existing `style_items` and `style_jobs` tables remain unchanged by this feature migration.
+- Migration `AddAutomaticPrimaryRecommendation` adds explicit primary linkage without changing `style_items` or `style_jobs`.
 
 ### Queue Contract Evolution
 
@@ -255,8 +265,8 @@ Migration notes:
 4. Worker dequeues message and marks analysis job `Processing`.
 5. Worker validates image URL format/reachability.
 7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector (including `faceShape`) + stage telemetry (landmarks `notes` contains the shape label). Segmentation records visible lower-face beard density independently of gender; gender and user permission remain separate beard-recommendation eligibility rules.
-8. Worker persists recommendation payload and enqueues generation jobs to `style-jobs`.
-9. Frontend polls status endpoint and renders either recommendations or retry guidance.
+8. Worker persists recommendation payload plus automatic primary linkage and enqueues generation jobs to `style-jobs`.
+9. Frontend polls status endpoint, which resolves the explicit primary linkage for new rows and retains a legacy fallback for older rows.
 10. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
 
 ### Analytics and Data Collection

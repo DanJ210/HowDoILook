@@ -20,6 +20,8 @@ During the learning phase, the system may generate 3 to 4 candidates and optiona
 
 ## 1) Automatic Best-Decision Contract
 
+Implementation status (2026-08-01): backend persistence, owner-scoped status retrieval, and public/feed lookup alignment are implemented. Frontend completion semantics remain open.
+
 - Persist the system-selected primary recommendation and its generation job explicitly.
 - Keep the automatic decision traceable to the telemetry snapshot and ranking inputs used at the time.
 - Keep optional user preference labels separate from the system-selected primary result.
@@ -141,6 +143,8 @@ MVP acceptance:
 ## 2-Week PR Plan
 
 ## PR 1 (Days 1-3): Automatic Primary Backend Contract
+
+Status: complete. The database now persists `primary_style_id`, `primary_style_item_id`, and `primary_generation_job_id`; status and public/feed retrieval resolve those IDs and use legacy discovery only for older rows.
 
 - Persist the system-selected primary recommendation and generation job explicitly.
 - Separate automatic primary semantics from optional user preference labels.
