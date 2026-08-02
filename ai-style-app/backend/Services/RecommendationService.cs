@@ -60,7 +60,8 @@ public class RecommendationService : IRecommendationService
             Description = $"Primary recommendation from analysis job {analysisJob.Id}. Pending analysis.",
             Prompt = "Pending recommendation generation",
             ImageUrl = request.ImageUrl,
-            IsResultPublic = true
+            IsResultPublic = true,
+            AnalysisJobId = analysisJob.Id
         };
 
         analysisJob.PrimaryStyleItemId = recommendationPost.Id;

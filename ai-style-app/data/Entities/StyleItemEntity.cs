@@ -39,5 +39,8 @@ public class StyleItemEntity
     [Column("updated_at_utc")]
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 
+    [Column("analysis_job_id")]
+    public Guid? AnalysisJobId { get; set; }
+
     public ICollection<StyleJobEntity> Jobs { get; set; } = new List<StyleJobEntity>();
 }

@@ -324,7 +324,8 @@ catch (FaceAnalysisException ex)
                     Description = BuildDescription(analysisJob.Id, styleName, candidate.Score, isPrimary, experimentApplied),
                     Prompt = BuildPrompt(styleName, candidate.Reasons),
                     ImageUrl = analysisJob.ImageUrl,
-                    IsResultPublic = isPrimary
+                    IsResultPublic = isPrimary,
+                    AnalysisJobId = analysisJob.Id
                 };
             }
 

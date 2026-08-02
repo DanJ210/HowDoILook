@@ -20,6 +20,12 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => x.UserId).HasDatabaseName("ix_style_items_user_id");
             e.HasIndex(x => x.CreatedAtUtc).HasDatabaseName("ix_style_items_created_at");
+            e.HasIndex(x => x.AnalysisJobId).HasDatabaseName("ix_style_items_analysis_job_id");
+
+            e.HasOne<FaceAnalysisJobEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.AnalysisJobId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<StyleJobEntity>(e =>

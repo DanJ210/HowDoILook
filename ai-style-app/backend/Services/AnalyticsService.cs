@@ -46,6 +46,19 @@ public class AnalyticsService : IAnalyticsService
 
         var jobs = await query.ToListAsync();
 
+        var jobIds = jobs
+            .Where(j => j.SelectedGenerationJobId.HasValue && j.SelectedAtUtc.HasValue)
+            .Select(j => j.Id)
+            .ToList();
+
+        var styleItemsByAnalysisJobId = (await _context.StyleItems
+            .AsNoTracking()
+            .Include(x => x.Jobs)
+            .Where(x => x.AnalysisJobId != null && jobIds.Contains(x.AnalysisJobId.Value))
+            .ToListAsync())
+            .GroupBy(x => x.AnalysisJobId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.CreatedAtUtc).ToList());
+
         var dataPoints = new List<RecommendationDataPoint>();
 
         foreach (var job in jobs)
@@ -59,12 +72,9 @@ public class AnalyticsService : IAnalyticsService
             var telemetrySchemaVersion = ExtractTelemetrySchemaVersion(job.FeatureVectorJson);
             var telemetrySource = ExtractTelemetrySource(job.FeatureVectorJson);
             var recommendations = ParseRecommendations(job.RecommendationsJson);
-            var linkedStyleItems = await _context.StyleItems
-                .AsNoTracking()
-                .Include(x => x.Jobs)
-                .Where(x => x.UserId == job.UserId && x.Description.Contains(job.Id.ToString()))
-                .OrderBy(x => x.CreatedAtUtc)
-                .ToListAsync();
+
+            styleItemsByAnalysisJobId.TryGetValue(job.Id, out var linkedStyleItems);
+            linkedStyleItems ??= new List<StyleItemEntity>();
 
             var shownGenerationJobIds = GetShownGenerationJobIds(linkedStyleItems).ToList();
             if (shownGenerationJobIds.Count == 0 || !shownGenerationJobIds.Contains(job.SelectedGenerationJobId.Value))

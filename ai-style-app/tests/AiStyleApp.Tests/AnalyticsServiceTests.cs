@@ -62,7 +62,8 @@ public class AnalyticsServiceTests
                 Description = $"Primary recommendation from analysis job {analysisJobId}.",
                 Prompt = "prompt",
                 ImageUrl = "https://example.com/1.jpg",
-                IsResultPublic = true
+                IsResultPublic = true,
+                AnalysisJobId = analysisJobId
             },
             new StyleItemEntity
             {
@@ -72,7 +73,8 @@ public class AnalyticsServiceTests
                 Description = $"Experimental recommendation from analysis job {analysisJobId}.",
                 Prompt = "prompt",
                 ImageUrl = "https://example.com/1.jpg",
-                IsResultPublic = false
+                IsResultPublic = false,
+                AnalysisJobId = analysisJobId
             });
 
         db.StyleJobs.AddRange(
