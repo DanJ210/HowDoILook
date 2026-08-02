@@ -295,13 +295,35 @@ public class RecommendationService : IRecommendationService
         }
 
         var selectedAtUtc = DateTimeOffset.UtcNow;
-        var updated = await _db.FaceAnalysisJobs
-            .Where(x => x.Id == analysisJobId && x.UserId == userId && x.SelectedGenerationJobId == null)
-            .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(x => x.SelectedGenerationJobId, request.GenerationJobId)
-                    .SetProperty(x => x.SelectedAtUtc, selectedAtUtc),
-                ct);
+        int updated;
+        if (_db.Database.IsRelational())
+        {
+            updated = await _db.FaceAnalysisJobs
+                .Where(x => x.Id == analysisJobId && x.UserId == userId && x.SelectedGenerationJobId == null)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(x => x.SelectedGenerationJobId, request.GenerationJobId)
+                        .SetProperty(x => x.SelectedAtUtc, selectedAtUtc),
+                    ct);
+        }
+        else
+        {
+            var candidate = await _db.FaceAnalysisJobs
+                .FirstOrDefaultAsync(
+                    x => x.Id == analysisJobId && x.UserId == userId && x.SelectedGenerationJobId == null,
+                    ct);
+
+            if (candidate is null)
+            {
+                updated = 0;
+            }
+            else
+            {
+                candidate.SelectedGenerationJobId = request.GenerationJobId;
+                candidate.SelectedAtUtc = selectedAtUtc;
+                updated = await _db.SaveChangesAsync(ct);
+            }
+        }
 
         if (updated == 0)
         {

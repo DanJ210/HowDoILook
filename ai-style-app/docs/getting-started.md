@@ -292,7 +292,7 @@ The canonical product entrypoint is **Analyze and Recommend**. In API terms, tha
 4. Click Authorize in Swagger and paste the token value.
 5. Call `POST /api/upload/image` with a file (multipart/form-data) and copy the returned `url`.
 6. Call `POST /api/recommendations` with that uploaded `imageUrl`.
-7. Poll `GET /api/recommendations/jobs/{analysisJobId}` until `status` is terminal.
+7. Poll `GET /api/recommendations/jobs/{analysisJobId}` through downstream generation. Do not stop at top-level `status = Succeeded`; wait until `bestVariant.status = Succeeded`, or until the primary and returned experimental variants are terminal and the response reports failure.
 
 If no token is provided, the API returns `401 Unauthorized` with `www-authenticate: Bearer`.
 
@@ -302,15 +302,10 @@ Upload an image first with `POST /api/upload/image`, then use the returned URL:
 
 ```json
 {
-  "imageUrl": "https://your-host/api/upload/public/user-123/abc123.jpg",
-  "gender": "female",
-  "preferences": {
-    "maintenanceLevel": "medium",
-    "styleVibe": "professional",
-    "allowHairColorChange": true,
-    "allowBeardSuggestions": false
-  }
+  "imageUrl": "https://your-host/api/upload/public/user-123/abc123.jpg"
 }
 ```
+
+`gender` and `preferences` remain optional compatibility fields; the primary product flow does not require them.
 
 Direct user-triggered style generation is no longer part of the product flow.

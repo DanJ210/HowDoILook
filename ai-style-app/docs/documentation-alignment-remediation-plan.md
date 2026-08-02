@@ -70,17 +70,17 @@ Resolve these before updating permanent documents that depend on them.
 
 ## Workstream 1: Session Completion and Polling
 
-**Problem:** analysis is marked `Succeeded` before generation jobs are enqueued. The frontend currently stops polling on terminal analysis status, so it can miss variant completion and `GENERATION_ALL_VARIANTS_FAILED`.
+**Problem:** analysis is marked `Succeeded` before generation jobs are enqueued. The frontend previously stopped polling on terminal analysis status, so it could miss variant completion and `GENERATION_ALL_VARIANTS_FAILED`.
 
-- [ ] Define a session-level completion rule independent of analysis-only status.
-- [ ] Keep polling while expected variants are queued or processing.
-- [ ] Return the automatic primary result as soon as its required generation reaches a terminal success state; do not require user finalization.
-- [ ] Define fallback behavior when the primary generation fails but an experimental candidate succeeds.
-- [ ] Surface all-terminal failure as `GENERATION_ALL_VARIANTS_FAILED` without requiring a manual refresh.
-- [ ] Add frontend tests for analysis succeeded while variants are still processing.
-- [ ] Add frontend tests for delayed all-variants-failed detection.
-- [ ] Update `docs/api-contracts.md` with exact status and polling semantics.
-- [ ] Update `docs/getting-started.md` so its smoke test waits for session readiness, not merely terminal analysis status.
+- [x] Define a session-level completion rule independent of analysis-only status.
+- [x] Keep polling while expected variants are queued or processing.
+- [x] Return the automatic primary result as soon as its required generation reaches a terminal success state; do not require user finalization.
+- [x] Define fallback behavior when the primary generation fails but an experimental candidate succeeds: do not promote the experiment automatically.
+- [x] Surface all-terminal failure as `GENERATION_ALL_VARIANTS_FAILED` without requiring a manual refresh.
+- [x] Add frontend tests for analysis succeeded while variants are still processing.
+- [x] Add frontend tests for delayed all-variants-failed detection.
+- [x] Update `docs/api-contracts.md` with exact status and polling semantics.
+- [x] Update `docs/getting-started.md` so its smoke test waits for session readiness, not merely terminal analysis status.
 
 Exit criteria:
 
@@ -95,7 +95,7 @@ Exit criteria:
 - [x] Keep `SelectedGenerationJobId` as legacy experimentation/finalization label metadata; it is not product-result state.
 - [x] Make status and public/feed retrieval resolve the automatic primary generation consistently.
 - [x] Keep experimental candidates private unless a separate research experience intentionally exposes them.
-- [ ] Ensure optional ranking/favorite feedback never blocks delivery of the primary result.
+- [x] Ensure optional ranking/favorite feedback never blocks delivery of the primary result.
 - [x] Add service tests proving owner-scoped automatic primary status is returned without finalization.
 - [x] Correct `docs/api-contracts.md`, `docs/architecture.md`, and `docs/face-analysis-recommendation-spec.md` to distinguish primary output from optional feedback labels.
 - [x] Update `docs/recommendation-finalization-plan.md` to mark user finalization as temporary learning-loop functionality rather than the target product flow.
@@ -268,3 +268,4 @@ Record only meaningful decisions and completed work so this remains concise.
 | 2026-08-01 | Copilot instructions | Added MVP scope, session-completion, selected-winner, face-guardrail, configuration, and document-hierarchy guidance. |
 | 2026-08-01 | Product direction | Confirmed photo-only automatic best recommendation as the target experience; reclassified multi-variant user ranking as optional learning data. |
 | 2026-08-01 | Automatic primary contract | Added persisted primary style/post/job linkage, owner-scoped status fields, public/feed alignment, legacy-row fallback, migration, and focused backend tests. Frontend polling alignment remains open. |
+| 2026-08-02 | Frontend automatic result | Added photo-only submission, session-level polling through generation, automatic primary completion without finalization, secondary experiments/feedback, and aligned smoke-test contracts. |

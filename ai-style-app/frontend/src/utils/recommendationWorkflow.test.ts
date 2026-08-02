@@ -1,35 +1,57 @@
 import { describe, expect, it } from 'vitest'
-import { computeWorkflowStateLabel, hasGenerationFailed } from './recommendationWorkflow'
+import {
+  computeWorkflowStateLabel,
+  hasPrimaryGenerationFailed,
+  isRecommendationSessionTerminal
+} from './recommendationWorkflow'
 import type { RecommendationRuntimeState } from './recommendationWorkflow'
 
 describe('recommendation workflow utility', () => {
-  it('returns generating while analysis is queued or processing', () => {
+  it('returns analyzing while analysis is queued or processing', () => {
     expect(
       computeWorkflowStateLabel({
         hasActiveJob: true,
         analysisStatus: 'Queued',
-        selectedGenerationJobId: null,
         bestVariant: null,
         experimentalVariants: []
       })
-    ).toBe('generating')
+    ).toBe('analyzing')
 
     expect(
       computeWorkflowStateLabel({
         hasActiveJob: true,
         analysisStatus: 'Processing',
-        selectedGenerationJobId: null,
         bestVariant: null,
         experimentalVariants: []
       })
-    ).toBe('generating')
+    ).toBe('analyzing')
   })
 
-  it('returns ready_for_selection when at least one variant succeeded', () => {
-    const label = computeWorkflowStateLabel({
+  it('returns generating after analysis succeeds while the primary is pending', () => {
+    const withoutPrimary = {
       hasActiveJob: true,
       analysisStatus: 'Succeeded',
-      selectedGenerationJobId: null,
+      bestVariant: null,
+      experimentalVariants: []
+    } satisfies RecommendationRuntimeState
+    const processingPrimary = {
+      ...withoutPrimary,
+      bestVariant: {
+        generationJobId: 'best',
+        status: 'Processing' as const,
+        resultImageUrl: null
+      }
+    }
+
+    expect(computeWorkflowStateLabel(withoutPrimary)).toBe('generating')
+    expect(computeWorkflowStateLabel(processingPrimary)).toBe('generating')
+    expect(isRecommendationSessionTerminal(processingPrimary)).toBe(false)
+  })
+
+  it('completes as soon as the automatic primary succeeds', () => {
+    const state: RecommendationRuntimeState = {
+      hasActiveJob: true,
+      analysisStatus: 'Succeeded',
       bestVariant: {
         generationJobId: 'best',
         status: 'Succeeded',
@@ -39,34 +61,27 @@ describe('recommendation workflow utility', () => {
         {
           slot: 1,
           generationJobId: 'exp-1',
-          status: 'Failed',
+          status: 'Processing',
           resultImageUrl: null,
           selectedRank: null
         }
       ]
-    })
+    }
 
-    expect(label).toBe('ready_for_selection')
-    expect(
-      hasGenerationFailed({
-        hasActiveJob: true,
-        analysisStatus: 'Succeeded',
-        selectedGenerationJobId: null,
-        bestVariant: {
-          generationJobId: 'best',
-          status: 'Succeeded',
-          resultImageUrl: 'https://example.com/best.webp'
-        },
-        experimentalVariants: []
-      })
-    ).toBe(false)
+    expect(computeWorkflowStateLabel(state)).toBe('completed')
+    expect(hasPrimaryGenerationFailed(state)).toBe(false)
+    expect(isRecommendationSessionTerminal(state)).toBe(false)
+
+    state.experimentalVariants[0].status = 'Succeeded'
+
+    expect(computeWorkflowStateLabel(state)).toBe('completed')
+    expect(isRecommendationSessionTerminal(state)).toBe(true)
   })
 
-  it('returns failed when all variants completed without success', () => {
+  it('waits for experimental jobs before reporting a failed primary', () => {
     const state: RecommendationRuntimeState = {
       hasActiveJob: true,
       analysisStatus: 'Succeeded',
-      selectedGenerationJobId: null,
       bestVariant: {
         generationJobId: 'best',
         status: 'Failed',
@@ -76,37 +91,40 @@ describe('recommendation workflow utility', () => {
         {
           slot: 1,
           generationJobId: 'exp-1',
-          status: 'TimedOut',
-          resultImageUrl: null,
-          selectedRank: null
-        },
-        {
-          slot: 2,
-          generationJobId: 'exp-2',
-          status: 'Canceled',
+          status: 'Processing',
           resultImageUrl: null,
           selectedRank: null
         }
       ]
     }
 
-    expect(hasGenerationFailed(state)).toBe(true)
-    expect(computeWorkflowStateLabel(state)).toBe('failed')
+    expect(hasPrimaryGenerationFailed(state)).toBe(false)
+    expect(computeWorkflowStateLabel(state)).toBe('generating')
+    expect(isRecommendationSessionTerminal(state)).toBe(false)
   })
 
-  it('returns completed once final selection is set', () => {
-    expect(
-      computeWorkflowStateLabel({
-        hasActiveJob: true,
-        analysisStatus: 'Succeeded',
-        selectedGenerationJobId: 'best',
-        bestVariant: {
-          generationJobId: 'best',
+  it('does not promote a succeeded experiment when the primary fails', () => {
+    const state: RecommendationRuntimeState = {
+      hasActiveJob: true,
+      analysisStatus: 'Succeeded',
+      bestVariant: {
+        generationJobId: 'best',
+        status: 'Failed',
+        resultImageUrl: null
+      },
+      experimentalVariants: [
+        {
+          slot: 1,
+          generationJobId: 'exp-1',
           status: 'Succeeded',
-          resultImageUrl: 'https://example.com/best.webp'
-        },
-        experimentalVariants: []
-      })
-    ).toBe('completed')
+          resultImageUrl: 'https://example.com/experiment.webp',
+          selectedRank: null
+        }
+      ]
+    }
+
+    expect(hasPrimaryGenerationFailed(state)).toBe(true)
+    expect(computeWorkflowStateLabel(state)).toBe('failed')
+    expect(isRecommendationSessionTerminal(state)).toBe(true)
   })
 })
