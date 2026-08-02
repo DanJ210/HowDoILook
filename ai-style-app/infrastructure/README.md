@@ -23,15 +23,15 @@ UseDevelopmentStorage=true
 
 | Resource | Purpose |
 |---|---|
-| Azure Storage Account | Queue for style-jobs + Blob storage for assets |
-| Azure Storage Queue | `style-jobs` queue consumed by the worker |
+| Azure Storage Account | Queues for analysis/style jobs + Blob storage for assets |
+| Azure Storage Queues | `analysis-jobs` (ingress) and `style-jobs` (generation) consumed by the worker |
 | Azure Blob Container | `style-assets` for uploaded/processed files |
 
 ## Environment Variables
 
 Copy `local.env.example` to `.env` and populate all values.
-- Backend reads `Queue__ConnectionString`, `Queue__QueueName`, and `Jwt__Key` from configuration.
-- Worker reads `Queue__ConnectionString` and `Queue__QueueName`.
+- Backend reads `Queue__ConnectionString`, `Queue__FaceAnalysisQueueName`, `Queue__StyleQueueName`, and `Jwt__Key` from configuration.
+- Worker reads `Queue__ConnectionString`, `Queue__FaceAnalysisQueueName`, and `Queue__StyleQueueName`.
 - Use double-underscore (`__`) when mapping env vars to .NET configuration sections.
 
 ## Security Notes

@@ -9,3 +9,4 @@ Example structure:
 - `style-analysis.md` - optional analysis prompt templates
 - `style-recommendation.md` - optional recommendation prompt templates
 - `replicate-change-haircut.md` - canonical model behavior notes for `flux-kontext-apps/change-haircut`
+- `recommendation-telemetry-research-brief.md` - reusable Copilot brief for researching evidence, datasets, and learning methods that connect telemetry and hairstyle preference

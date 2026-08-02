@@ -46,15 +46,49 @@ public class AnalyticsService : IAnalyticsService
 
         var jobs = await query.ToListAsync();
 
+        var jobIds = jobs
+            .Where(j => j.SelectedGenerationJobId.HasValue && j.SelectedAtUtc.HasValue)
+            .Select(j => j.Id)
+            .ToList();
+
+        var styleItemsByAnalysisJobId = (await _context.StyleItems
+            .AsNoTracking()
+            .Include(x => x.Jobs)
+            .Where(x => x.AnalysisJobId != null && jobIds.Contains(x.AnalysisJobId.Value))
+            .ToListAsync())
+            .GroupBy(x => x.AnalysisJobId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.CreatedAtUtc).ToList());
+
         var dataPoints = new List<RecommendationDataPoint>();
 
         foreach (var job in jobs)
         {
-            var faceShape = ExtractFaceShape(job.FeatureVectorJson);
-            var recommendations = ParseRecommendations(job.RecommendationsJson);
-            var feedback = job.Feedback.FirstOrDefault();
+            if (!job.SelectedGenerationJobId.HasValue || !job.SelectedAtUtc.HasValue)
+            {
+                continue;
+            }
 
-            // Create one data point per job (with feedback if available)
+            var faceShape = ExtractFaceShape(job.FeatureVectorJson);
+            var telemetrySchemaVersion = ExtractTelemetrySchemaVersion(job.FeatureVectorJson);
+            var telemetrySource = ExtractTelemetrySource(job.FeatureVectorJson);
+            var recommendations = ParseRecommendations(job.RecommendationsJson);
+
+            styleItemsByAnalysisJobId.TryGetValue(job.Id, out var linkedStyleItems);
+            linkedStyleItems ??= new List<StyleItemEntity>();
+
+            var shownGenerationJobIds = GetShownGenerationJobIds(linkedStyleItems).ToList();
+            if (shownGenerationJobIds.Count == 0 || !shownGenerationJobIds.Contains(job.SelectedGenerationJobId.Value))
+            {
+                continue;
+            }
+
+            var feedback = job.Feedback
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .ThenByDescending(x => x.Id)
+                .FirstOrDefault();
+            var selectedRank = ResolveSelectedRank(job.Feedback, job.SelectedGenerationJobId.Value);
+
+            // Create one complete training row per finalized analysis session.
             var dataPoint = new RecommendationDataPoint
             {
                 AnalysisJobId = job.Id,
@@ -63,6 +97,8 @@ public class AnalyticsService : IAnalyticsService
                 Gender = job.Gender,
                 QualityPassed = job.QualityPassed ?? false,
                 AnalysisConfidence = job.AnalysisConfidence ?? 0,
+                TelemetrySchemaVersion = telemetrySchemaVersion,
+                TelemetrySource = telemetrySource,
                 TopRecommendationStyleId = recommendations.FirstOrDefault()?.StyleId ?? "unknown",
                 TopRecommendationScore = recommendations.FirstOrDefault()?.Score ?? 0,
                 RecommendationCount = recommendations.Count,
@@ -71,7 +107,10 @@ public class AnalyticsService : IAnalyticsService
                 FeedbackTags = feedback?.FeedbackTagsJson,
                 AnalysisCompletedAtUtc = job.CompletedAtUtc,
                 FeedbackSubmittedAtUtc = feedback?.CreatedAtUtc,
-                RecommendationRank = GetRecommendationRank(recommendations, feedback?.SelectedStyleId)
+                RecommendationRank = selectedRank,
+                ShownGenerationJobIdsJson = JsonSerializer.Serialize(shownGenerationJobIds),
+                SelectedGenerationJobId = job.SelectedGenerationJobId.Value,
+                SelectedAtUtc = job.SelectedAtUtc.Value
             };
 
             dataPoints.Add(dataPoint);
@@ -233,13 +272,117 @@ public class AnalyticsService : IAnalyticsService
         return null;
     }
 
-    private int? GetRecommendationRank(List<RecommendationEntry> recommendations, string? selectedStyleId)
+    private static IEnumerable<Guid> GetShownGenerationJobIds(IEnumerable<StyleItemEntity> linkedStyleItems)
     {
-        if (string.IsNullOrEmpty(selectedStyleId))
-            return null;
+        var primaryStyleItem = linkedStyleItems.FirstOrDefault(x => x.IsResultPublic)
+            ?? linkedStyleItems.FirstOrDefault();
 
-        var selected = recommendations.FirstOrDefault(r => r.StyleId == selectedStyleId);
-        return selected?.Rank;
+        var orderedStyleItems = new List<StyleItemEntity>();
+        if (primaryStyleItem is not null)
+        {
+            orderedStyleItems.Add(primaryStyleItem);
+        }
+
+        orderedStyleItems.AddRange(linkedStyleItems.Where(x => primaryStyleItem is null || x.Id != primaryStyleItem.Id));
+
+        foreach (var item in orderedStyleItems)
+        {
+            var latestJob = item.Jobs
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .FirstOrDefault();
+
+            if (latestJob is not null)
+            {
+                yield return latestJob.Id;
+            }
+        }
+    }
+
+    private static int? ResolveSelectedRank(IEnumerable<RecommendationFeedbackEntity> feedbackRows, Guid selectedGenerationJobId)
+    {
+        var selectedKey = selectedGenerationJobId.ToString();
+        var selectedFeedback = feedbackRows
+            .Where(x => string.Equals(x.SelectedStyleId, selectedKey, StringComparison.Ordinal))
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefault();
+
+        return selectedFeedback?.Rating;
+    }
+
+    private int? ExtractTelemetrySchemaVersion(string? featureVectorJson)
+    {
+        if (string.IsNullOrWhiteSpace(featureVectorJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("schemaVersion", out var schemaVersionElement) &&
+                schemaVersionElement.TryGetInt32(out var schemaVersion))
+            {
+                return schemaVersion;
+            }
+
+            return ExtractTelemetrySourceSchemaVersion(doc.RootElement);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to extract telemetry schema version from feature vector");
+        }
+
+        return null;
+    }
+
+    private int? ExtractTelemetrySourceSchemaVersion(JsonElement root)
+    {
+        if (root.TryGetProperty("debugTelemetry", out var debugTelemetry) &&
+            debugTelemetry.ValueKind == JsonValueKind.Object &&
+            debugTelemetry.TryGetProperty("schemaVersion", out var nestedSchemaVersionElement) &&
+            nestedSchemaVersionElement.TryGetInt32(out var nestedSchemaVersion))
+        {
+            return nestedSchemaVersion;
+        }
+
+        return null;
+    }
+
+    private string? ExtractTelemetrySource(string? featureVectorJson)
+    {
+        if (string.IsNullOrWhiteSpace(featureVectorJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (doc.RootElement.TryGetProperty("source", out var sourceElement))
+            {
+                return sourceElement.GetString();
+            }
+
+            if (doc.RootElement.TryGetProperty("debugTelemetry", out var debugTelemetry) &&
+                debugTelemetry.ValueKind == JsonValueKind.Object &&
+                debugTelemetry.TryGetProperty("source", out var nestedSourceElement))
+            {
+                return nestedSourceElement.GetString();
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to extract telemetry source from feature vector");
+        }
+
+        return null;
     }
 
     private record RecommendationEntry
@@ -258,9 +401,14 @@ public record RecommendationDataPoint
     public string? Gender { get; set; }
     public bool QualityPassed { get; set; }
     public double AnalysisConfidence { get; set; }
+    public int? TelemetrySchemaVersion { get; set; }
+    public string? TelemetrySource { get; set; }
     public string TopRecommendationStyleId { get; set; } = null!;
     public double TopRecommendationScore { get; set; }
     public int RecommendationCount { get; set; }
+    public string ShownGenerationJobIdsJson { get; set; } = "[]";
+    public Guid SelectedGenerationJobId { get; set; }
+    public DateTimeOffset SelectedAtUtc { get; set; }
     public string? SelectedStyleId { get; set; }
     public int? FeedbackRating { get; set; }
     public string? FeedbackTags { get; set; }

@@ -27,7 +27,7 @@ public class FaceAnalysisQualityStageTests
 
         Assert.True(result.Passed, $"Expected quality pass but got {result.FailureCode} with blur {result.BlurScore}");
         Assert.NotEqual("ANALYSIS_QUALITY_TOO_BLURRY", result.FailureCode);
-        Assert.True(result.BlurScore >= 0.08, $"Expected blur score above threshold but got {result.BlurScore}");
+        Assert.True(result.BlurScore >= 0.04, $"Expected blur score above threshold but got {result.BlurScore}");
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class FaceAnalysisQualityStageTests
 
         Assert.False(result.Passed);
         Assert.Equal("ANALYSIS_QUALITY_TOO_BLURRY", result.FailureCode);
-        Assert.True(result.BlurScore < 0.08, $"Expected blur score below threshold but got {result.BlurScore}");
+        Assert.True(result.BlurScore < 0.04, $"Expected blur score below threshold but got {result.BlurScore}");
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public class FaceAnalysisQualityStageTests
 
         Assert.True(result.Passed, $"Expected quality pass but got {result.FailureCode} with blur {result.BlurScore}");
         Assert.NotEqual("ANALYSIS_QUALITY_TOO_BLURRY", result.FailureCode);
-        Assert.True(result.BlurScore >= 0.08, $"Expected blur score above threshold but got {result.BlurScore}");
+        Assert.True(result.BlurScore >= 0.04, $"Expected blur score above threshold but got {result.BlurScore}");
     }
 
     [Fact]

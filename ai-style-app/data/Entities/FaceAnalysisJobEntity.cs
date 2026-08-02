@@ -49,6 +49,16 @@ public class FaceAnalysisJobEntity
     [Column("recommendations_json", TypeName = "jsonb")]
     public string? RecommendationsJson { get; set; }
 
+    [Column("primary_style_id")]
+    [MaxLength(100)]
+    public string? PrimaryStyleId { get; set; }
+
+    [Column("primary_style_item_id")]
+    public Guid? PrimaryStyleItemId { get; set; }
+
+    [Column("primary_generation_job_id")]
+    public Guid? PrimaryGenerationJobId { get; set; }
+
     [Column("error_code")]
     [MaxLength(100)]
     public string? ErrorCode { get; set; }
@@ -65,6 +75,12 @@ public class FaceAnalysisJobEntity
 
     [Column("completed_at_utc")]
     public DateTimeOffset? CompletedAtUtc { get; set; }
+
+    [Column("selected_generation_job_id")]
+    public Guid? SelectedGenerationJobId { get; set; }
+
+    [Column("selected_at_utc")]
+    public DateTimeOffset? SelectedAtUtc { get; set; }
 
     public ICollection<RecommendationFeedbackEntity> Feedback { get; set; } = new List<RecommendationFeedbackEntity>();
 }

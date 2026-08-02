@@ -104,6 +104,74 @@ public class ReplicateWebhookProcessorTests
         Assert.Null(persisted.IntermediateImageUrl);
     }
 
+    [Fact]
+    public async Task ProcessAsync_DuplicateTerminalWebhook_DoesNotRegressStatus()
+    {
+        await using var db = CreateDbContext();
+        var queue = new TestQueuePublisher();
+        var completedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1);
+
+        var job = await SeedJobAsync(db, pipelineMode: StyleJobPipelineMode.HairOnly, currentStage: StyleJobStage.Hair, isBeardStagePending: false);
+        job.ExternalPredictionId = "terminal-prediction";
+        job.Status = JobStatus.Succeeded;
+        job.CompletedAtUtc = completedAtUtc;
+        job.ResultJson = JsonSerializer.Serialize(new[] { "https://example.com/final-output.webp" });
+        await db.SaveChangesAsync();
+
+        var processor = new ReplicateWebhookProcessor(db, queue, NullLogger<ReplicateWebhookProcessor>.Instance);
+        var payload = new ReplicateWebhookPayload(
+            Id: "terminal-prediction",
+            Status: "failed",
+            Error: "late failure",
+            Output: null,
+            CompletedAt: DateTimeOffset.UtcNow);
+
+        var result = await processor.ProcessAsync(payload);
+
+        Assert.True(result.IsKnownPrediction);
+        Assert.Equal(job.Id, result.JobId);
+        Assert.Null(queue.LastMessage);
+
+        var persisted = await db.StyleJobs.FirstAsync(x => x.Id == job.Id);
+        Assert.Equal(JobStatus.Succeeded, persisted.Status);
+        Assert.Equal(completedAtUtc, persisted.CompletedAtUtc);
+        Assert.Equal(JsonSerializer.Serialize(new[] { "https://example.com/final-output.webp" }), persisted.ResultJson);
+        Assert.Null(persisted.ErrorCode);
+        Assert.Null(persisted.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_StalePredictionAfterStageTransition_IsIgnoredAsUnknown()
+    {
+        await using var db = CreateDbContext();
+        var queue = new TestQueuePublisher();
+
+        var job = await SeedJobAsync(db, pipelineMode: StyleJobPipelineMode.HairThenBeard, currentStage: StyleJobStage.Beard, isBeardStagePending: false);
+        job.ExternalPredictionId = "beard-prediction";
+        job.Status = JobStatus.Queued;
+        job.IntermediateImageUrl = "https://example.com/intermediate.webp";
+        await db.SaveChangesAsync();
+
+        var processor = new ReplicateWebhookProcessor(db, queue, NullLogger<ReplicateWebhookProcessor>.Instance);
+        var payload = new ReplicateWebhookPayload(
+            Id: "old-hair-prediction",
+            Status: "succeeded",
+            Error: null,
+            Output: CreateJsonString("https://example.com/stale.webp"),
+            CompletedAt: DateTimeOffset.UtcNow);
+
+        var result = await processor.ProcessAsync(payload);
+
+        Assert.False(result.IsKnownPrediction);
+        Assert.Null(queue.LastMessage);
+
+        var persisted = await db.StyleJobs.FirstAsync(x => x.Id == job.Id);
+        Assert.Equal(JobStatus.Queued, persisted.Status);
+        Assert.Equal(StyleJobStage.Beard, persisted.CurrentStage);
+        Assert.Equal("beard-prediction", persisted.ExternalPredictionId);
+        Assert.Equal("https://example.com/intermediate.webp", persisted.IntermediateImageUrl);
+    }
+
     private static async Task<StyleJobEntity> SeedJobAsync(
         AppDbContext db,
         string pipelineMode,

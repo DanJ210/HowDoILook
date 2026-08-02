@@ -2,7 +2,7 @@
 
 All endpoints are prefixed with `/api`. Protected endpoints require `Authorization: Bearer <token>`.
 
-Direction (2026-07): recommendation-first contracts are canonical. The default flow is publish-first recommendation posts with one best recommendation and one generated best variant. Pre-MVP, experimentation mode is enabled for 100% of sessions and generates three additional variants for feedback collection. Backward compatibility with style-generation-first contracts is not required.
+Direction (2026-07): recommendation-first contracts are canonical. Users start by uploading an image and calling `POST /api/recommendations` (Analyze and Recommend). The system computes telemetry, ranks best-fit looks, and then fan-outs generation requests to Replicate. Pre-MVP, experimentation mode is enabled for 100% of sessions and generates three additional variants for feedback collection. Backward compatibility with style-generation-first contracts is not required.
 
 ## Authentication
 
@@ -35,7 +35,7 @@ In Swagger, click **Authorize** and paste only the JWT value from `accessToken`.
 
 ## Style Items
 
-Legacy note: these endpoints are from the style-generation-first model and are being phased out in favor of recommendation-first contracts.
+These endpoints expose recommendation posts and generated variants after the recommendation pipeline runs. They are not user entrypoints for generation.
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
@@ -72,7 +72,7 @@ Returned by `GET /api/style/feed`. Supports cursor-based pagination.
 }
 ```
 
-Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the feed, ordered by `completedAtUtc` descending. To fetch the next page, pass the `publishedAtUtc` of the last item as the `before` cursor.
+Only the automatic primary generation for each recommendation session can appear in the feed, and it must have `isResultPublic = true` and `status = Succeeded`. Pre-migration rows fall back to the latest job on the legacy-linked primary post. Results are ordered by `completedAtUtc` descending. To fetch the next page, pass the `publishedAtUtc` of the last item as the `before` cursor.
 
 ### StyleItemResponse
 
@@ -90,11 +90,11 @@ Only jobs where `isResultPublic = true` and `status = Succeeded` appear in the f
 ```
 
 Style generation jobs are system-created by the recommendation pipeline after `POST /api/recommendations`.
-Users no longer create style generation jobs directly.
+Users do not create style generation jobs directly.
 
 ## Jobs
 
-Legacy note: job endpoints in this section represent style-generation job tracking from the earlier flow.
+These endpoints provide system job tracking for generated variants. User-facing orchestration starts at `POST /api/recommendations`.
 
 | Method | Path | Auth | Request Body | Response |
 |--------|------|------|--------------|----------|
@@ -166,6 +166,7 @@ Queued → Processing → Succeeded
 | `POST` | `/api/recommendations` | Required | `CreateRecommendationsRequest` | `CreateRecommendationsResponse` (202) |
 | `GET` | `/api/recommendations/jobs/{id}` | Required | — | `RecommendationJobStatusResponse` |
 | `POST` | `/api/recommendations/jobs/{id}/ratings` | Required | `SubmitRecommendationRatingsRequest` | 202 |
+| `POST` | `/api/recommendations/jobs/{id}/finalize` | Required | `FinalizeRecommendationRequest` | `FinalizeRecommendationResponse` |
 
 ### Feature Flags Contract
 
@@ -316,7 +317,38 @@ Current implementation note:
     ]
   },
   "errorCode": "string | null",
-  "errorMessage": "string | null"
+  "errorMessage": "string | null",
+  "primaryStyleId": "string | null",
+  "primaryGenerationJobId": "uuid | null",
+  "selectedGenerationJobId": "uuid | null",
+  "selectedAtUtc": "ISO 8601 datetime | null"
+}
+```
+
+### FinalizeRecommendationRequest
+
+```json
+{
+  "generationJobId": "uuid"
+}
+```
+
+Rules:
+
+- `generationJobId` must refer to a generation job owned by the authenticated user.
+- The generation job must be linked to the provided analysis job id.
+- The generation job must be in `Succeeded` status.
+- Finalization is idempotent for the same `generationJobId`.
+- Attempting to finalize with a different generation job after finalization returns a validation error.
+
+### FinalizeRecommendationResponse
+
+```json
+{
+  "analysisJobId": "uuid",
+  "selectedGenerationJobId": "uuid",
+  "selectedAtUtc": "ISO 8601 datetime",
+  "alreadyFinalized": false
 }
 ```
 
@@ -325,8 +357,11 @@ Current implementation note:
 - Face shape is persisted at `face_analysis_jobs.feature_vector_json.faceShape` (for example, `"Square"`).
 - API consumers should treat `bestRecommendation` as the primary public posting recommendation.
 - API consumers should treat `bestVariant` as the canonical generated outcome for the post.
+- `primaryStyleId` and `primaryGenerationJobId` are the persisted automatic system decision. They are available without finalization and are distinct from optional user feedback.
+- `selectedGenerationJobId` and `selectedAtUtc` represent the legacy experimentation/finalization selection and must not replace the automatic primary result.
 - Pre-MVP, `experimentalVariants` are populated for 100% of recommendation sessions.
 - The `experiment` object reports whether experimentation was configured and actually applied for the job.
+- `errorCode` / `errorMessage` may include `GENERATION_ALL_VARIANTS_FAILED` even when analysis `status` is `Succeeded`; this indicates that all generated variants reached terminal non-success statuses and user action should be retry.
 
 ### SubmitRecommendationRatingsRequest
 
@@ -405,10 +440,15 @@ GET /api/analytics/export-recommendations?format=csv&from=2026-01-01T00:00:00Z&t
       "gender": "none | male | female | null",
       "qualityPassed": true,
       "analysisConfidence": 0.87,
+      "telemetrySchemaVersion": 2,
+      "telemetrySource": "worker-v1-staged-analysis",
       "topRecommendationStyleId": "short-quiff",
       "topRecommendationScore": 0.92,
       "recommendationCount": 5,
-      "selectedStyleId": "short-quiff | null",
+      "shownGenerationJobIdsJson": "[\"uuid-1\",\"uuid-2\",\"uuid-3\",\"uuid-4\"]",
+      "selectedGenerationJobId": "uuid-1",
+      "selectedAtUtc": "2026-01-15T14:24:20Z",
+      "selectedStyleId": "uuid-1 | null",
       "feedbackRating": 5,
       "feedbackTags": "[\"great-match\"] | null",
       "analysisCompletedAt": "2026-01-15T14:23:45Z",
@@ -419,7 +459,13 @@ GET /api/analytics/export-recommendations?format=csv&from=2026-01-01T00:00:00Z&t
 }
 ```
 
-**Response (CSV):** Comma-separated with headers. Each row represents one analysis job joined with optional feedback data.
+**Response (CSV):** Comma-separated with headers. Each row represents one finalized recommendation session with complete feature-label linkage.
+
+Training row integrity rules:
+
+- Only `Succeeded` sessions with a persisted final selection (`selectedGenerationJobId` and `selectedAtUtc`) are exported.
+- Exported rows must include at least one shown generation job id.
+- Exported rows require that `selectedGenerationJobId` is present in `shownGenerationJobIdsJson`.
 
 **Purpose:** Collect recommendation tuples (face shape, recommendations, selected style, rating) for model training, audit trails, and performance analysis.
 
@@ -543,7 +589,10 @@ Rules:
 
 ## Queue Message Contract
 
-Messages enqueued to `style-jobs` are emitted in schema v2 for recommendation analysis and style generation.
+Messages are emitted in schema v2 across split queues:
+
+- `analysis-jobs` for recommendation analysis ingress (`jobType = face-analysis`)
+- `style-jobs` for style generation (`jobType = generate-style`)
 
 ### Schema v1 (Legacy)
 

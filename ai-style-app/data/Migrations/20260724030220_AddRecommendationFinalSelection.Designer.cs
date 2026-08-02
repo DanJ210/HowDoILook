@@ -3,6 +3,7 @@ using System;
 using AiStyleApp.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AiStyleApp.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260724030220_AddRecommendationFinalSelection")]
+    partial class AddRecommendationFinalSelection
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -70,19 +73,6 @@ namespace AiStyleApp.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("preferences_json");
 
-                    b.Property<Guid?>("PrimaryGenerationJobId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("primary_generation_job_id");
-
-                    b.Property<string>("PrimaryStyleId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("primary_style_id");
-
-                    b.Property<Guid?>("PrimaryStyleItemId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("primary_style_item_id");
-
                     b.Property<string>("QualityFailureCode")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -126,12 +116,6 @@ namespace AiStyleApp.Data.Migrations
                         .HasColumnName("user_id");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("PrimaryGenerationJobId")
-                        .HasDatabaseName("ix_face_analysis_jobs_primary_generation_job_id");
-
-                    b.HasIndex("PrimaryStyleItemId")
-                        .HasDatabaseName("ix_face_analysis_jobs_primary_style_item_id");
 
                     b.HasIndex("Status")
                         .HasDatabaseName("ix_face_analysis_jobs_status");
@@ -199,10 +183,6 @@ namespace AiStyleApp.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<Guid?>("AnalysisJobId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("analysis_job_id");
-
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at_utc");
@@ -245,9 +225,6 @@ namespace AiStyleApp.Data.Migrations
                         .HasColumnName("user_id");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("AnalysisJobId")
-                        .HasDatabaseName("ix_style_items_analysis_job_id");
 
                     b.HasIndex("CreatedAtUtc")
                         .HasDatabaseName("ix_style_items_created_at");
@@ -410,19 +387,6 @@ namespace AiStyleApp.Data.Migrations
                     b.ToTable("style_jobs");
                 });
 
-            modelBuilder.Entity("AiStyleApp.Data.Entities.FaceAnalysisJobEntity", b =>
-                {
-                    b.HasOne("AiStyleApp.Data.Entities.StyleJobEntity", null)
-                        .WithMany()
-                        .HasForeignKey("PrimaryGenerationJobId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("AiStyleApp.Data.Entities.StyleItemEntity", null)
-                        .WithMany()
-                        .HasForeignKey("PrimaryStyleItemId")
-                        .OnDelete(DeleteBehavior.SetNull);
-                });
-
             modelBuilder.Entity("AiStyleApp.Data.Entities.RecommendationFeedbackEntity", b =>
                 {
                     b.HasOne("AiStyleApp.Data.Entities.FaceAnalysisJobEntity", "AnalysisJob")
@@ -432,14 +396,6 @@ namespace AiStyleApp.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("AnalysisJob");
-                });
-
-            modelBuilder.Entity("AiStyleApp.Data.Entities.StyleItemEntity", b =>
-                {
-                    b.HasOne("AiStyleApp.Data.Entities.FaceAnalysisJobEntity", null)
-                        .WithMany()
-                        .HasForeignKey("AnalysisJobId")
-                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("AiStyleApp.Data.Entities.StyleJobEntity", b =>

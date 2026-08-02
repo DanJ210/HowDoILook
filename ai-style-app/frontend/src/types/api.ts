@@ -128,6 +128,10 @@ export interface RecommendationJobStatusResponse {
   debugTelemetry: RecommendationDebugTelemetry | null
   errorCode: string | null
   errorMessage: string | null
+  primaryStyleId: string | null
+  primaryGenerationJobId: string | null
+  selectedGenerationJobId: string | null
+  selectedAtUtc: string | null
 }
 
 export interface RecommendationVariant {
@@ -178,6 +182,17 @@ export interface SubmitRecommendationRatingsRequest {
   rankings: RecommendationRankingInput[]
   feedbackTags: string[] | null
   comment: string | null
+}
+
+export interface FinalizeRecommendationRequest {
+  generationJobId: string
+}
+
+export interface FinalizeRecommendationResponse {
+  analysisJobId: string
+  selectedGenerationJobId: string
+  selectedAtUtc: string
+  alreadyFinalized: boolean
 }
 
 // ── Auth ─────────────────────────────────────────────────────────────────────

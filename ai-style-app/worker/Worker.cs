@@ -23,16 +23,30 @@ public class JobWorker : BackgroundService
     {
         var connectionString = _config["Queue:ConnectionString"]
             ?? throw new InvalidOperationException("Queue:ConnectionString is not configured.");
-        var queueName = _config["Queue:QueueName"] ?? "style-jobs";
+        var legacyQueueName = ResolveQueueName(_config["Queue:QueueName"], "style-jobs");
+        var faceAnalysisQueueName = ResolveQueueName(_config["Queue:FaceAnalysisQueueName"], legacyQueueName);
+        var styleQueueName = ResolveQueueName(_config["Queue:StyleQueueName"], legacyQueueName);
 
-        var client = new QueueClient(connectionString, queueName);
+        var queueClients = new List<(string QueueName, QueueClient Client)>
+        {
+            (faceAnalysisQueueName, new QueueClient(connectionString, faceAnalysisQueueName))
+        };
+
+        if (!string.Equals(styleQueueName, faceAnalysisQueueName, StringComparison.OrdinalIgnoreCase))
+        {
+            queueClients.Add((styleQueueName, new QueueClient(connectionString, styleQueueName)));
+        }
 
         // Retry queue connection on startup (e.g. Azurite may not be ready yet)
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await client.CreateIfNotExistsAsync(cancellationToken: stoppingToken);
+                foreach (var (_, client) in queueClients)
+                {
+                    await client.CreateIfNotExistsAsync(cancellationToken: stoppingToken);
+                }
+
                 break;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -42,32 +56,23 @@ public class JobWorker : BackgroundService
             }
         }
 
-        _logger.LogInformation("Worker started. Polling queue '{QueueName}'.", queueName);
+        _logger.LogInformation(
+            "Worker started. Polling queue(s): {QueueNames}.",
+            string.Join(", ", queueClients.Select(x => x.QueueName)));
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var response = await client.ReceiveMessageAsync(cancellationToken: stoppingToken);
-                var message = response?.Value;
+                var processedAny = false;
+                foreach (var (queueName, client) in queueClients)
+                {
+                    processedAny = await TryProcessMessageAsync(queueName, client, stoppingToken) || processedAny;
+                }
 
-                if (message is null)
+                if (!processedAny)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-                    continue;
-                }
-
-                using var scope = _scopeFactory.CreateScope();
-                var handler = scope.ServiceProvider.GetRequiredService<IMessageHandler>();
-
-                try
-                {
-                    await handler.HandleAsync(message.Body.ToString(), stoppingToken);
-                    await client.DeleteMessageAsync(message.MessageId, message.PopReceipt, stoppingToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to process message {MessageId}.", message.MessageId);
                 }
             }
             catch (OperationCanceledException)
@@ -81,4 +86,36 @@ public class JobWorker : BackgroundService
             }
         }
     }
+
+    private async Task<bool> TryProcessMessageAsync(string queueName, QueueClient client, CancellationToken stoppingToken)
+    {
+        var response = await client.ReceiveMessageAsync(cancellationToken: stoppingToken);
+        var message = response?.Value;
+        if (message is null)
+        {
+            return false;
+        }
+
+        using var scope = _scopeFactory.CreateScope();
+        var handler = scope.ServiceProvider.GetRequiredService<IMessageHandler>();
+
+        try
+        {
+            await handler.HandleAsync(message.Body.ToString(), stoppingToken);
+            await client.DeleteMessageAsync(message.MessageId, message.PopReceipt, stoppingToken);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to process message {MessageId} from queue {QueueName}.",
+                message.MessageId,
+                queueName);
+            return false;
+        }
+    }
+
+    private static string ResolveQueueName(string? value, string fallback)
+        => string.IsNullOrWhiteSpace(value) ? fallback : value;
 }

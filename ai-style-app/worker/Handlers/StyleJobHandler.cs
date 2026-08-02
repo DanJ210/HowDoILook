@@ -398,6 +398,17 @@ public class StyleJobHandler : IMessageHandler
         var isLocalHost = uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
             || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase);
 
+        if (isLocalHost && uri.AbsolutePath.StartsWith("/api/upload/public/", StringComparison.OrdinalIgnoreCase))
+        {
+            var rewrittenPublicUrl = $"{_webhookBaseUrl}{uri.PathAndQuery}";
+            _logger.LogInformation(
+                "Rewriting localhost public upload URL for Replicate access. Local={LocalUrl}, Public={PublicUrl}",
+                imageUrl,
+                rewrittenPublicUrl);
+
+            return rewrittenPublicUrl;
+        }
+
         if (!isLocalHost || uri.Port != 10000)
         {
             return imageUrl;

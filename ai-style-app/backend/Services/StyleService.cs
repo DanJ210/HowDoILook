@@ -47,7 +47,18 @@ public class StyleService : IStyleService
                 j.StyleItem.IsResultPublic &&
                 j.ResultImageUrl != null &&
                 j.Status == "Succeeded" &&
-                j.CompletedAtUtc != null);
+                j.CompletedAtUtc != null &&
+                _db.FaceAnalysisJobs.Any(analysisJob =>
+                    analysisJob.PrimaryGenerationJobId == j.Id ||
+                    (analysisJob.PrimaryGenerationJobId == null &&
+                     (analysisJob.PrimaryStyleItemId == j.StyleItemId ||
+                      (analysisJob.PrimaryStyleItemId == null &&
+                       j.StyleItem.Description.Contains(analysisJob.Id.ToString()))) &&
+                     j.Id == _db.StyleJobs
+                         .Where(candidate => candidate.StyleItemId == j.StyleItemId)
+                         .OrderByDescending(candidate => candidate.CreatedAtUtc)
+                         .Select(candidate => candidate.Id)
+                         .FirstOrDefault())));
 
         if (before.HasValue)
             query = query.Where(j => j.CompletedAtUtc < before.Value);

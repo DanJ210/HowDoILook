@@ -154,13 +154,13 @@ public class FaceAnalysisPipelineThresholdTests
 
     private sealed class StubFaceSegmentationStage : IFaceSegmentationStage
     {
-        public SegmentationFeatures Extract(Image<Rgba32> image, string? gender)
+        public SegmentationFeatures Extract(Image<Rgba32> image)
             => new(HairDensityEstimate: 0.64, BeardDensityEstimate: 0.45);
     }
 
     private sealed class StubFaceRegionEstimationStage : IFaceRegionEstimationStage
     {
-        public SegmentationFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face, string? gender)
+        public SegmentationFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face)
             => new(HairDensityEstimate: 0.64, BeardDensityEstimate: 0.45);
     }
 

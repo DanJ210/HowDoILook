@@ -20,6 +20,12 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => x.UserId).HasDatabaseName("ix_style_items_user_id");
             e.HasIndex(x => x.CreatedAtUtc).HasDatabaseName("ix_style_items_created_at");
+            e.HasIndex(x => x.AnalysisJobId).HasDatabaseName("ix_style_items_analysis_job_id");
+
+            e.HasOne<FaceAnalysisJobEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.AnalysisJobId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<StyleJobEntity>(e =>
@@ -39,6 +45,18 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(x => x.UserId).HasDatabaseName("ix_face_analysis_jobs_user_id");
             e.HasIndex(x => x.Status).HasDatabaseName("ix_face_analysis_jobs_status");
+            e.HasIndex(x => x.PrimaryStyleItemId).HasDatabaseName("ix_face_analysis_jobs_primary_style_item_id");
+            e.HasIndex(x => x.PrimaryGenerationJobId).HasDatabaseName("ix_face_analysis_jobs_primary_generation_job_id");
+
+            e.HasOne<StyleItemEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.PrimaryStyleItemId)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasOne<StyleJobEntity>()
+             .WithMany()
+             .HasForeignKey(x => x.PrimaryGenerationJobId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<RecommendationFeedbackEntity>(e =>

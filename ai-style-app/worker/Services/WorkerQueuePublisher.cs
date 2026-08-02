@@ -19,7 +19,10 @@ public class WorkerQueuePublisher : IWorkerQueuePublisher
     {
         var connectionString = configuration["Queue:ConnectionString"]
             ?? throw new InvalidOperationException("Queue:ConnectionString is not configured.");
-        var queueName = configuration["Queue:QueueName"] ?? "style-jobs";
+        var queueName = ResolveQueueName(
+            configuration["Queue:StyleQueueName"],
+            configuration["Queue:QueueName"],
+            "style-jobs");
 
         _client = new QueueClient(connectionString, queueName);
     }
@@ -54,5 +57,20 @@ public class WorkerQueuePublisher : IWorkerQueuePublisher
         {
             _ensureQueueLock.Release();
         }
+    }
+
+    private static string ResolveQueueName(string? preferred, string? fallback, string defaultName)
+    {
+        if (!string.IsNullOrWhiteSpace(preferred))
+        {
+            return preferred;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fallback))
+        {
+            return fallback;
+        }
+
+        return defaultName;
     }
 }

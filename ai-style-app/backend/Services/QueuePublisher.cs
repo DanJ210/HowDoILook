@@ -1,4 +1,5 @@
 using AiStyleApp.Api.Infrastructure;
+using AiStyleApp.Data.Queue;
 using Azure.Storage.Queues;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
@@ -12,18 +13,51 @@ public interface IQueuePublisher
 
 public class QueuePublisher : IQueuePublisher
 {
-    private readonly QueueClient _client;
+    private readonly QueueClient _analysisClient;
+    private readonly QueueClient _styleClient;
 
     public QueuePublisher(IOptions<QueueOptions> options)
     {
         var opts = options.Value;
-        _client = new QueueClient(opts.ConnectionString, opts.QueueName);
+        var analysisQueueName = ResolveQueueName(opts.FaceAnalysisQueueName, opts.QueueName, "analysis-jobs");
+        var styleQueueName = ResolveQueueName(opts.StyleQueueName, opts.QueueName, "style-jobs");
+
+        _analysisClient = new QueueClient(opts.ConnectionString, analysisQueueName);
+        _styleClient = new QueueClient(opts.ConnectionString, styleQueueName);
     }
 
     public async Task PublishAsync<T>(T message, CancellationToken ct = default)
     {
-        await _client.CreateIfNotExistsAsync(cancellationToken: ct);
+        var client = ResolveQueueClient(message);
+        await client.CreateIfNotExistsAsync(cancellationToken: ct);
         var json = JsonSerializer.Serialize(message);
-        await _client.SendMessageAsync(json, cancellationToken: ct);
+        await client.SendMessageAsync(json, cancellationToken: ct);
+    }
+
+    private QueueClient ResolveQueueClient<T>(T message)
+    {
+        if (message is StyleJob styleJob)
+        {
+            return string.Equals(styleJob.JobType, "face-analysis", StringComparison.OrdinalIgnoreCase)
+                ? _analysisClient
+                : _styleClient;
+        }
+
+        return _analysisClient;
+    }
+
+    private static string ResolveQueueName(string? preferred, string? fallback, string defaultName)
+    {
+        if (!string.IsNullOrWhiteSpace(preferred))
+        {
+            return preferred;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fallback))
+        {
+            return fallback;
+        }
+
+        return defaultName;
     }
 }

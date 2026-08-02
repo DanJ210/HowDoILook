@@ -59,7 +59,9 @@ Backend local override example (`ai-style-app/backend/appsettings.Development.js
   },
   "Queue": {
     "ConnectionString": "UseDevelopmentStorage=true",
-    "QueueName": "style-jobs"
+    "QueueName": "style-jobs",
+    "FaceAnalysisQueueName": "analysis-jobs",
+    "StyleQueueName": "style-jobs"
   },
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
@@ -81,14 +83,16 @@ Worker local override example (`ai-style-app/worker/appsettings.Development.json
 {
   "Queue": {
     "ConnectionString": "UseDevelopmentStorage=true",
-    "QueueName": "style-jobs"
+    "QueueName": "style-jobs",
+    "FaceAnalysisQueueName": "analysis-jobs",
+    "StyleQueueName": "style-jobs"
   },
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Port=5432;Database=ai_style_app;Username=postgres;Password=postgres"
   },
   "Replicate": {
     "ApiToken": "r8_YOUR_REPLICATE_TOKEN",
-    "WebhookBaseUrl": " https://4c2f-2600-1700-5660-4abf-1c19-43b0-ba8a-33a8.ngrok-free.app"
+    "WebhookBaseUrl": "https://abc123.ngrok.io"
   }
 }
 ```
@@ -187,7 +191,7 @@ cd ai-style-app/worker
 DOTNET_ENVIRONMENT=Development dotnet run
 ```
 
-The worker connects to the local queue and polls `style-jobs` every 5 seconds.
+The worker connects to local queues and polls `analysis-jobs` and `style-jobs` every 5 seconds.
 
 On Windows PowerShell, use:
 
@@ -208,7 +212,7 @@ When local dev is fully started, these components should be running:
 | Azurite | `docker compose` container `azurite` | `localhost:10000`, `10001`, `10002` |
 | Frontend | `npm run dev` in `ai-style-app/frontend` | `http://localhost:5173` |
 | Backend API | `dotnet run` in `ai-style-app/backend` | `http://localhost:5000` / `https://localhost:5001` |
-| Worker | `dotnet run` in `ai-style-app/worker` | Log contains `Worker started. Polling queue 'style-jobs'.` |
+| Worker | `dotnet run` in `ai-style-app/worker` | Log contains `Worker started. Polling queue(s): analysis-jobs, style-jobs.` |
 
 ## 8. Unit Testing
 
@@ -236,7 +240,9 @@ If you deploy with environment variables, use the .NET configuration keys below:
 | Variable | Used By | Description |
 |---|---|---|
 | `Queue__ConnectionString` | Backend, Worker | Azure Storage Queue connection string |
-| `Queue__QueueName` | Backend, Worker | Queue name (default: `style-jobs`) |
+| `Queue__FaceAnalysisQueueName` | Backend, Worker | Queue for analysis ingress (default: `analysis-jobs`) |
+| `Queue__StyleQueueName` | Backend, Worker | Queue for style generation (default: `style-jobs`) |
+| `Queue__QueueName` | Backend, Worker | Legacy fallback queue name for single-queue setups |
 | `ConnectionStrings__DefaultConnection` | Backend, Worker | PostgreSQL connection string |
 | `Jwt__Key` | Backend | Signing key, minimum 32 characters |
 | `Jwt__Issuer` | Backend | Token issuer (default: `ai-style-app`) |
@@ -262,11 +268,15 @@ After starting all services:
 - Backend API (HTTPS): `https://localhost:5001`
 - Swagger UI (HTTP): `http://localhost:5000/swagger`
 - Swagger UI (HTTPS): `https://localhost:5001/swagger`
-- Worker logs include: `Worker started. Polling queue 'style-jobs'.`
+- Worker logs include: `Worker started. Polling queue(s): analysis-jobs, style-jobs.`
 
 ## 11. Test Protected Endpoints in Swagger
 
-`/api/style` endpoints require a Bearer token.
+The canonical product entrypoint is **Analyze and Recommend**. In API terms, that means:
+
+- Upload the source image via `POST /api/upload/image`
+- Start analysis and recommendation via `POST /api/recommendations`
+- Poll status via `GET /api/recommendations/jobs/{id}`
 
 1. Open Swagger (`http://localhost:5000/swagger` or `https://localhost:5001/swagger`).
 2. Run `POST /api/auth/token` with a request body like:
@@ -280,7 +290,9 @@ After starting all services:
 
 3. Copy `accessToken` from the response.
 4. Click Authorize in Swagger and paste the token value.
-5. Call `POST /api/recommendations` with an uploaded `imageUrl`.
+5. Call `POST /api/upload/image` with a file (multipart/form-data) and copy the returned `url`.
+6. Call `POST /api/recommendations` with that uploaded `imageUrl`.
+7. Poll `GET /api/recommendations/jobs/{analysisJobId}` until `status` is terminal.
 
 If no token is provided, the API returns `401 Unauthorized` with `www-authenticate: Bearer`.
 
@@ -293,10 +305,12 @@ Upload an image first with `POST /api/upload/image`, then use the returned URL:
   "imageUrl": "https://your-host/api/upload/public/user-123/abc123.jpg",
   "gender": "female",
   "preferences": {
-    "maintenanceLevel": "low",
-    "styleVibe": "casual",
+    "maintenanceLevel": "medium",
+    "styleVibe": "professional",
     "allowHairColorChange": true,
     "allowBeardSuggestions": false
   }
 }
 ```
+
+Direct user-triggered style generation is no longer part of the product flow.

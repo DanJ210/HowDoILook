@@ -92,7 +92,22 @@ public record RecommendationJobStatusResponse(
     RecommendationExperimentResponse Experiment,
     RecommendationDebugTelemetryResponse? DebugTelemetry,
     string? ErrorCode,
-    string? ErrorMessage
+    string? ErrorMessage,
+    string? PrimaryStyleId = null,
+    Guid? PrimaryGenerationJobId = null,
+    Guid? SelectedGenerationJobId = null,
+    DateTimeOffset? SelectedAtUtc = null
+);
+
+public record FinalizeRecommendationRequest(
+    Guid GenerationJobId
+);
+
+public record FinalizeRecommendationResponse(
+    Guid AnalysisJobId,
+    Guid SelectedGenerationJobId,
+    DateTimeOffset SelectedAtUtc,
+    bool AlreadyFinalized
 );
 
 public record RecommendationRankingInput(

@@ -10,25 +10,32 @@ Define a production-ready V1 for accurate face analysis and intelligent style re
 - shared data/contracts in data
 - async queue-driven processing
 
-This spec defines the primary product flow: upload -> analyze -> publish post -> generate 1 best variant based on telemetry and recommendation mapping.
+This spec defines the primary product flow: upload one portrait -> analyze -> select and generate one automatic primary result -> return that result without user finalization.
 
-Temporary exploration mode: until best-style determination quality is validated with enough data, pre-MVP runs experimentation mode at 100% traffic, generating three additional variants and collecting feedback on the generated styles.
+Temporary exploration mode may generate up to three additional variants and collect optional feedback after primary-result delivery. Exploration traffic is configurable, and feedback does not replace the automatic primary.
 
 Implementation status:
 
 - The recommendations API, feedback persistence, queue publishing, and worker handler are implemented.
+- Automatic primary style, post, and generation-job linkage is persisted and exposed by owner-scoped status retrieval.
 - ONNX landmark extraction is supported and can be enabled via worker configuration with `fan2_68_landmark.onnx`.
 - Invalid ONNX landmark model files now fail fast with explicit analysis error codes.
 
 ## 2. Goals and Non-Goals
 
+Product entrypoint note:
+
+- Users start with **Analyze and Recommend** by submitting one photo.
+- Users do not directly trigger style generation jobs.
+- Generation happens downstream from ranked recommendations as a system fan-out step.
+
 ### Goals
 
 - Produce stable, explainable face-analysis features from user photos.
 - Generate one best style recommendation with confidence and short rationale.
-- Publish the recommendation post first, then progressively populate generated variant results.
+- Return the automatic primary result as soon as its generation succeeds; do not require finalization or feedback.
 - Generate one best variant through Replicate as the primary visual result.
-- Run a three-variant experimentation mode for 100% of pre-MVP sessions to collect ranking data.
+- Support controlled optional experimentation to collect preference data without blocking the primary result.
 - Keep analysis async and resilient using the current backend -> queue -> worker pattern.
 - Keep beard recommendations optional and only applicable when gender is male.
 - Capture feedback signals to improve recommendation quality over time.
@@ -63,13 +70,13 @@ Implementation status:
 flowchart LR
     A[Frontend: request recommendations] --> B[Backend API]
     B --> C[(PostgreSQL)]
-    B --> D[Queue: style-jobs]
+    B --> D[Queue: analysis-jobs]
     D --> E[Worker: Face Analysis Handler]
     E --> C
     E --> F[Recommendation Engine]
   F --> G[Create Public Recommendation Post]
-  G --> D
-  D --> H[Worker: Style Job Handler (generate-style)]
+  G --> Hq[Queue: style-jobs]
+  Hq --> H[Worker: Style Job Handler (generate-style)]
   H --> I[Replicate]
   I --> J[Webhook]
   J --> C
@@ -80,9 +87,10 @@ flowchart LR
 
 ### Architecture Notes
 
-- Reuse existing queue and worker with a new jobType for analysis.
+- Split transport into analysis ingress (`analysis-jobs`) and style generation (`style-jobs`).
 - Keep request/queue contracts in data and shared by backend and worker.
 - Do not block API request on heavy analysis.
+- Keep user flow recommendation-first: upload image -> analyze/recommend -> system fan-out generation.
 
 ## 5. Pipeline Design
 
@@ -92,7 +100,7 @@ flowchart LR
 2. Run quality gate.
 3. Detect face and enforce exactly one face.
 4. Extract landmarks and normalized geometry features.
-5. Run region segmentation and derive region metrics.
+5. Run region segmentation and derive region metrics. Measure visible beard density for every accepted portrait without using gender as an extraction input.
 6. Build analysis feature vector and confidence metrics.
 7. Rank recommendation candidates with reasons and select one best recommendation.
 8. Create public recommendation post with the best recommendation as primary.
@@ -221,13 +229,19 @@ All contracts below are additive and versioned.
     ]
   },
   "errorCode": "string | null",
-  "errorMessage": "string | null"
+  "errorMessage": "string | null",
+  "primaryStyleId": "string | null",
+  "primaryGenerationJobId": "uuid | null",
+  "selectedGenerationJobId": "uuid | null",
+  "selectedAtUtc": "ISO 8601 datetime | null"
 }
 ```
 
 Current implementation note:
 
 - The worker persists canonical face shape in `face_analysis_jobs.feature_vector_json.faceShape` (for example, `"Square"`).
+- `primaryStyleId` and `primaryGenerationJobId` identify the persisted automatic system decision and exist independently of user finalization.
+- `selectedGenerationJobId` is legacy experimentation/finalization metadata and cannot replace the automatic primary.
 - The status API exposes face shape via `debugTelemetry.stages[]` by reading the `landmarks` stage `notes` value (lowercase label such as `"square"`).
 - `analysisSummary.faceShape` is the canonical shape label for recommendation and posting decisions.
 
@@ -262,7 +276,7 @@ Rules:
 
 ## 6.2 Queue Contract Extension (data/Queue)
 
-Extend existing style-jobs message schema to support analysis jobs.
+Use the shared schema v2 message across both queues.
 
 ```json
 {
@@ -278,7 +292,10 @@ Extend existing style-jobs message schema to support analysis jobs.
 Notes:
 - Existing style-generation-first behavior is deprecated for this direction.
 - Queue jobType values are lowercase in runtime messages.
-- Worker router special-cases `face-analysis`; all other job types are handled by the style job handler (currently `generate-style`).
+- Queue routing:
+  - `analysis-jobs` carries `face-analysis` ingress jobs from the backend.
+  - `style-jobs` carries downstream `generate-style` jobs from the worker.
+- Worker router still special-cases `face-analysis`; all other job types are handled by the style job handler.
 
 ## 7. Database Changes (EF Core)
 
@@ -337,6 +354,11 @@ Add endpoints under /api/recommendations.
 - Auth required.
 - Stores ranking feedback for experimental generation jobs in the learning loop.
 
+4. POST /api/recommendations/jobs/{id}/finalize
+- Auth required.
+- Persists a legacy experimentation selection separately from the automatic primary result.
+- Idempotent when the same winner is submitted multiple times.
+
 ## 9. Worker Design
 
 Add new handler in worker/Handlers.
@@ -358,6 +380,7 @@ Add new handler in worker/Handlers.
 - ANALYSIS_QUALITY_BAD_EXPOSURE
 - ANALYSIS_POOR_POSE
 - ANALYSIS_SEGMENTATION_FAILED
+- ANALYSIS_RECOMMENDATION_TEMPLATE_MISSING
 - ANALYSIS_INTERNAL_ERROR
 
 ## 9.3 Recommendation Engine (V1)
@@ -406,7 +429,7 @@ Normalize the following for scoring:
 - faceShapeFit: catalog compatibility for detected face shape
 - geometryFit: jaw, forehead, elongation, symmetry fit against candidate profile
 - hairDensityFit: closeness to candidate density range
-- beardDensityFit: closeness to candidate beard profile (male only)
+- beardDensityFit: closeness to candidate beard profile; measured for all portraits but used only for eligible beard candidates
 - preferenceFit: maintenance and styleVibe alignment
 - colorFit: hair and beard color compatibility to skin tone and natural contrast
 - confidenceFit: analysisConfidence after quality adjustment
@@ -423,7 +446,7 @@ scoreBase(c) =
 0.10 * colorFit(c) +
 0.10 * beardDensityFit(c)
 
-For non-male or beard-disabled flows, set beardDensityFit(c) to 0 and re-normalize by dividing by 0.90.
+For non-male or beard-disabled flows, exclude beard candidates, set beardDensityFit(c) to 0, and re-normalize by dividing by 0.90. This eligibility policy does not alter the stored `beardDensityEstimate` telemetry.
 
 Quality and confidence attenuation:
 
@@ -468,14 +491,14 @@ If no candidate survives constraints:
   - beard NoChange
 - Mark recommendation as low-confidence in status payload
 
-### 9.3.8 Experimentation Mode (Pre-MVP Default: 100% Traffic)
+### 9.3.8 Experimentation Mode
 
 For pre-MVP recommendation sessions:
 
-- Select top 3 candidates from the same scorer
-- Apply diversity filter so variants are not near-duplicates
+- Select controlled challengers from the eligible candidate pool
+- Record experiment policy, candidate probability, and shown order
 - Keep bestRecommendation and bestVariant unchanged as canonical output
-- Treat feedback on generated variants as training signals for future model tuning
+- Treat explicit feedback on generated variants as subjective preference labels for future evaluation and tuning
 
 ### 9.3.9 Experimentation Feature Flag Contract
 
@@ -583,7 +606,7 @@ Validation commands:
 
 ## 16. V2 Plan: ONNX Face Telemetry + Replicate Style Generation
 
-The V2 title keeps naming continuity with existing docs, but the product flow remains recommendation-first with publish-first behavior.
+The V2 title keeps naming continuity with existing docs, but the product flow remains recommendation-first with automatic-primary behavior.
 
 V1 validated async flow and recommendation plumbing. V2 makes recommendations image-driven by adding true face-aware ONNX inference and strengthens recommendation-to-generation quality.
 
@@ -609,8 +632,8 @@ Current note:
 flowchart LR
     A[Frontend: recommendations] --> B[Backend: /api/recommendations]
     B --> C[(face_analysis_jobs)]
-    B --> D[Queue: style-jobs]
-    D --> E[Worker: FaceAnalysisJobHandler]
+  B --> D[Queue: analysis-jobs]
+  D --> E[Worker: FaceAnalysisJobHandler]
 
     E --> F[ONNX Stage 1: Face Detection]
     F --> G[ONNX Stage 2: Landmarks]
@@ -621,8 +644,9 @@ flowchart LR
     C --> B
     B --> A
 
-    A -. select recommendation .-> J[Existing style generation flow]
-    J --> K[Replicate Hair/Beard Models]
+    A -. select recommendation .-> J[Queue: style-jobs]
+    J --> K0[Worker: StyleJobHandler]
+    K0 --> K[Replicate Hair/Beard Models]
 ```
 
 ### 17.1 Key Principle

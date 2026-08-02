@@ -97,15 +97,35 @@ public class OnnxFaceDetectorStage : IFaceDetectorStage
 
             if (detections.Count == 0)
             {
+                _logger.LogWarning(
+                    "ONNX face detection found no faces for image {Width}x{Height}; falling back to heuristic detector.",
+                    image.Width,
+                    image.Height);
+
+                return _fallback.Detect(image) with
+                {
+                    Notes = "fallback:onnx-no-detections"
+                };
+            }
+
+            if (detections.Count > 1)
+            {
+                _logger.LogWarning(
+                    "ONNX face detection found {Count} faces for image {Width}x{Height}; rejecting multi-face uploads.",
+                    detections.Count,
+                    image.Width,
+                    image.Height);
+
+                var primary = detections.OrderByDescending(d => d.confidence).First();
                 return new FaceDetectionResult(
-                    FaceCount: 0,
-                    PrimaryFace: null,
-                    PrimaryFaceConfidence: 0,
-                    FailureCode: "ANALYSIS_NO_FACE_DETECTED",
-                    FailureMessage: "No face was detected in the image.",
+                    FaceCount: detections.Count,
+                    PrimaryFace: primary.box,
+                    PrimaryFaceConfidence: primary.confidence,
+                    FailureCode: null,
+                    FailureMessage: null,
                     Model: "onnx-face-detector",
                     ModelVersion: "v1",
-                    Notes: null);
+                    Notes: "onnx-multiple-detections");
             }
 
             var primary = detections.OrderByDescending(d => d.confidence).First();
