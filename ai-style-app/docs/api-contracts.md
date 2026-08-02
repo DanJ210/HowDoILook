@@ -361,7 +361,9 @@ Current implementation note:
 - `selectedGenerationJobId` and `selectedAtUtc` represent the legacy experimentation/finalization selection and must not replace the automatic primary result.
 - Pre-MVP, `experimentalVariants` are populated for 100% of recommendation sessions.
 - The `experiment` object reports whether experimentation was configured and actually applied for the job.
-- `errorCode` / `errorMessage` may include `GENERATION_ALL_VARIANTS_FAILED` even when analysis `status` is `Succeeded`; this indicates that all generated variants reached terminal non-success statuses and user action should be retry.
+- `errorCode` / `errorMessage` may include a generation failure even when analysis `status` is `Succeeded`:
+  - `GENERATION_ALL_VARIANTS_FAILED` means every returned variant reached a terminal non-success status.
+  - `PRIMARY_GENERATION_FAILED` means the automatic primary reached a terminal non-success status after the returned experiment set finished, even if an optional experiment succeeded. Experimental output is not promoted automatically.
 
 Polling semantics:
 
@@ -372,6 +374,7 @@ Polling semantics:
 - Continue background polling while returned experimental variants are nonterminal so optional comparison data can refresh without blocking the primary result.
 - Stop polling after an analysis terminal failure, or after `bestVariant` and all returned experimental variants are terminal.
 - If the primary generation fails, do not promote an experimental variant automatically. Report the session as failed after the returned experiment set is terminal.
+- If the primary fails but an experimental variant succeeds, surface `PRIMARY_GENERATION_FAILED` with retry guidance.
 - When every returned variant reaches terminal non-success status, surface `GENERATION_ALL_VARIANTS_FAILED` without requiring a manual refresh.
 
 ### SubmitRecommendationRatingsRequest
@@ -412,6 +415,13 @@ Rules:
 | `POST` | `/api/webhooks/replicate` | HMAC-SHA256 | Receives Replicate prediction callbacks |
 
 The webhook verifies Replicate signature headers (`webhook-id`, `webhook-timestamp`, `webhook-signature`) using HMAC-SHA256. Set `Replicate__WebhookSigningSecret` to the signing secret from Replicate. The endpoint is not protected by JWT.
+
+Processing rules:
+
+- Terminal generation states are immutable under duplicate or out-of-order callbacks.
+- Unknown Replicate statuses and stale prediction IDs return success without mutating the job.
+- A hair-stage success conditionally claims and publishes the pending beard stage in one database transaction. Concurrent duplicate callbacks do not enqueue it twice; a queue publication exception rolls back the claim so Replicate can retry the callback.
+- Style-worker submission is also conditionally claimed; redelivery after an `externalPredictionId` is stored does not submit another prediction.
 
 ## Analytics (Data Export & Metrics)
 

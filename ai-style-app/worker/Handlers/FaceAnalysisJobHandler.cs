@@ -160,13 +160,28 @@ catch (FaceAnalysisException ex)
     analysisJob.QualityMessage = ex.Message;
 
     _logger.LogWarning(ex, "Face-analysis job {JobId} failed quality/model stage with {ErrorCode}.", analysisJob.Id, ex.Code);
+    analysisJob = await ReloadAnalysisJobForFailureAsync(analysisJob.Id, cancellationToken);
+    analysisJob.QualityPassed = false;
+    analysisJob.QualityFailureCode = ex.Code;
+    analysisJob.QualityMessage = ex.Message;
     await MarkFailedAsync(analysisJob, ex.Code, ex.Message, cancellationToken);
 }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Face-analysis job {JobId} failed with unhandled exception.", analysisJob.Id);
+            analysisJob = await ReloadAnalysisJobForFailureAsync(analysisJob.Id, cancellationToken);
             await MarkFailedAsync(analysisJob, "ANALYSIS_INTERNAL_ERROR", ex.Message, cancellationToken);
         }
+    }
+
+    private async Task<FaceAnalysisJobEntity> ReloadAnalysisJobForFailureAsync(
+        Guid analysisJobId,
+        CancellationToken cancellationToken)
+    {
+        _db.ChangeTracker.Clear();
+        return await _db.FaceAnalysisJobs.FirstAsync(
+            candidate => candidate.Id == analysisJobId,
+            cancellationToken);
     }
 
     private async Task EnsureImageUrlReachableAsync(string imageUrl, CancellationToken ct)
@@ -415,7 +430,9 @@ catch (FaceAnalysisException ex)
                 return new RecommendationExposureCandidateEntity
                 {
                     StyleId = candidate.StyleId,
-                    StyleName = candidate.StyleName,
+                    StyleName = string.IsNullOrWhiteSpace(candidate.StyleName)
+                        ? candidate.StyleId ?? "Recommended Style"
+                        : candidate.StyleName,
                     RecommendationRank = recommendations.FindIndex(ranked => ReferenceEquals(ranked, candidate)) + 1,
                     RankingScore = candidate.Score,
                     IsPrimary = index == 0,

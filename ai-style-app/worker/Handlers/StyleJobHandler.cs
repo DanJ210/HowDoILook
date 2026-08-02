@@ -81,6 +81,7 @@ public class StyleJobHandler : IMessageHandler
     public async Task HandleAsync(string messageBody, CancellationToken cancellationToken)
     {
         StyleJob? job;
+        var submissionClaimed = false;
         try
         {
             job = JsonSerializer.Deserialize<StyleJob>(messageBody);
@@ -96,6 +97,10 @@ public class StyleJobHandler : IMessageHandler
             _logger.LogWarning("Received null or undeserializable style job message.");
             return;
         }
+
+        var expectedCurrentStage = string.IsNullOrWhiteSpace(job.Stage)
+            ? StyleJobStage.Queued
+            : job.Stage;
 
         _logger.LogInformation(
             "Processing style job {JobId} for item {StyleItemId} (attempt {Attempt}).",
@@ -118,18 +123,30 @@ public class StyleJobHandler : IMessageHandler
             return;
         }
 
-        var nextAttempt = entity.AttemptCount + 1;
-
-        entity.Status = "Processing";
-        entity.AttemptCount = nextAttempt;
-        entity.StartedAtUtc ??= DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(cancellationToken);
-
         try
         {
+            await using var transaction = _db.Database.IsRelational()
+                ? await _db.Database.BeginTransactionAsync(cancellationToken)
+                : null;
+            var claimedEntity = await TryClaimSubmissionAsync(entity, expectedCurrentStage, cancellationToken);
+            if (claimedEntity is null)
+            {
+                _logger.LogInformation(
+                    "Job {JobId} queue delivery for stage {MessageStage} no longer matches persisted stage {CurrentStage} or already has an active prediction; skipped.",
+                    entity.Id,
+                    expectedCurrentStage,
+                    entity.CurrentStage);
+                return;
+            }
+
+            entity = claimedEntity;
+            submissionClaimed = true;
             var webhookUrl = $"{_webhookBaseUrl}/api/webhooks/replicate";
             var stage = ResolveStage(job, entity);
-            var imageUrl = GetReplicateAccessibleImageUrl(job.ImageUrl ?? entity.IntermediateImageUrl)
+            var sourceImageUrl = string.Equals(stage, StyleJobStage.Beard, StringComparison.OrdinalIgnoreCase)
+                ? entity.IntermediateImageUrl ?? job.ImageUrl
+                : job.ImageUrl ?? entity.ImageUrl;
+            var imageUrl = GetReplicateAccessibleImageUrl(sourceImageUrl)
                 ?? throw new InvalidOperationException($"Job {job.JobId} has no input_image URL; cannot call Replicate.");
 
             EnsureReplicateCanFetchImage(imageUrl);
@@ -142,6 +159,10 @@ public class StyleJobHandler : IMessageHandler
             entity.ErrorCode = null;
             entity.ErrorMessage = null;
             await _db.SaveChangesAsync(cancellationToken);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
 
             _logger.LogInformation(
                 "Created Replicate prediction {PredictionId} for job {JobId} stage {Stage}.",
@@ -164,11 +185,14 @@ public class StyleJobHandler : IMessageHandler
                 (int)ex.StatusCode,
                 responseBody);
 
-            entity.Status = "Failed";
-            entity.ErrorCode = "replicate_request_rejected";
-            entity.ErrorMessage = TruncateForDb($"{ex.Message} Response: {responseBody}");
-            entity.CompletedAtUtc = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken);
+            await ApplySubmissionFailureAsync(
+                entity,
+                submissionClaimed,
+                expectedCurrentStage,
+                "replicate_request_rejected",
+                TruncateForDb($"{ex.Message} Response: {responseBody}"),
+                failImmediately: true,
+                cancellationToken);
         }
         catch (InvalidOperationException ex) when (
             ex.Message.Contains("input_image", StringComparison.OrdinalIgnoreCase))
@@ -178,33 +202,177 @@ public class StyleJobHandler : IMessageHandler
                 "Job {JobId} has invalid input image and will not be submitted to Replicate.",
                 entity.Id);
 
-            entity.Status = "Failed";
-            entity.ErrorCode = "invalid_input_image";
-            entity.ErrorMessage = TruncateForDb(ex.Message);
-            entity.CompletedAtUtc = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync(cancellationToken);
+            await ApplySubmissionFailureAsync(
+                entity,
+                submissionClaimed,
+                expectedCurrentStage,
+                "invalid_input_image",
+                TruncateForDb(ex.Message),
+                failImmediately: true,
+                cancellationToken);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to submit job {JobId} to Replicate (attempt {Attempt}).", entity.Id, entity.AttemptCount);
+            var outcome = await ApplySubmissionFailureAsync(
+                entity,
+                submissionClaimed,
+                expectedCurrentStage,
+                "replicate_submission_failed",
+                TruncateForDb(ex.Message),
+                failImmediately: false,
+                cancellationToken);
 
-            if (entity.AttemptCount >= entity.MaxAttempts)
+            if (outcome == SubmissionFailureOutcome.Failed)
             {
-                entity.Status = "Failed";
-                entity.ErrorCode = "replicate_submission_failed";
-                entity.ErrorMessage = TruncateForDb(ex.Message);
-                entity.CompletedAtUtc = DateTimeOffset.UtcNow;
-                await _db.SaveChangesAsync(cancellationToken);
                 _logger.LogWarning("Job {JobId} marked as Failed after {MaxAttempts} attempts.", entity.Id, entity.MaxAttempts);
             }
-            else
+            else if (outcome == SubmissionFailureOutcome.Retry)
             {
-                // Re-queue with incremented attempt — leave message on queue by rethrowing
-                entity.Status = "Queued";
-                await _db.SaveChangesAsync(cancellationToken);
                 throw; // Worker's retry logic will re-enqueue
             }
         }
+    }
+
+    private async Task<SubmissionFailureOutcome> ApplySubmissionFailureAsync(
+        Data.Entities.StyleJobEntity entity,
+        bool submissionClaimed,
+        string expectedCurrentStage,
+        string errorCode,
+        string errorMessage,
+        bool failImmediately,
+        CancellationToken cancellationToken)
+    {
+        if (!submissionClaimed)
+        {
+            return SubmissionFailureOutcome.Retry;
+        }
+
+        if (!_db.Database.IsRelational())
+        {
+            if (!string.Equals(entity.CurrentStage, expectedCurrentStage, StringComparison.OrdinalIgnoreCase))
+            {
+                return SubmissionFailureOutcome.StaleStage;
+            }
+
+            var shouldFail = failImmediately || entity.AttemptCount >= entity.MaxAttempts;
+            entity.Status = shouldFail ? "Failed" : "Queued";
+            entity.ErrorCode = shouldFail ? errorCode : null;
+            entity.ErrorMessage = shouldFail ? errorMessage : null;
+            entity.CompletedAtUtc = shouldFail ? DateTimeOffset.UtcNow : null;
+            await _db.SaveChangesAsync(cancellationToken);
+            return shouldFail ? SubmissionFailureOutcome.Failed : SubmissionFailureOutcome.Retry;
+        }
+
+        var failedAtUtc = DateTimeOffset.UtcNow;
+        var startedAtUtc = entity.StartedAtUtc ?? failedAtUtc;
+        _db.ChangeTracker.Clear();
+        var updated = await _db.StyleJobs
+            .Where(candidate => candidate.Id == entity.Id
+                && candidate.CurrentStage == expectedCurrentStage)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(candidate => candidate.AttemptCount, candidate => candidate.AttemptCount + 1)
+                    .SetProperty(candidate => candidate.StartedAtUtc, candidate => candidate.StartedAtUtc ?? startedAtUtc)
+                    .SetProperty(
+                        candidate => candidate.Status,
+                        candidate => candidate.ExternalPredictionId != null
+                            ? candidate.Status
+                            : failImmediately || candidate.AttemptCount + 1 >= candidate.MaxAttempts
+                                ? "Failed"
+                                : "Queued")
+                    .SetProperty(
+                        candidate => candidate.ErrorCode,
+                        candidate => candidate.ExternalPredictionId != null
+                            ? candidate.ErrorCode
+                            : failImmediately || candidate.AttemptCount + 1 >= candidate.MaxAttempts
+                                ? errorCode
+                                : null)
+                    .SetProperty(
+                        candidate => candidate.ErrorMessage,
+                        candidate => candidate.ExternalPredictionId != null
+                            ? candidate.ErrorMessage
+                            : failImmediately || candidate.AttemptCount + 1 >= candidate.MaxAttempts
+                                ? errorMessage
+                                : null)
+                    .SetProperty(
+                        candidate => candidate.CompletedAtUtc,
+                        candidate => candidate.ExternalPredictionId != null
+                            ? candidate.CompletedAtUtc
+                            : failImmediately || candidate.AttemptCount + 1 >= candidate.MaxAttempts
+                                ? failedAtUtc
+                                : null),
+                cancellationToken);
+
+            if (updated == 0)
+            {
+                return SubmissionFailureOutcome.StaleStage;
+            }
+
+        var persisted = await _db.StyleJobs
+            .AsNoTracking()
+            .FirstAsync(candidate => candidate.Id == entity.Id, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(persisted.ExternalPredictionId))
+        {
+            return SubmissionFailureOutcome.ActivePrediction;
+        }
+
+        return persisted.Status == "Failed"
+            ? SubmissionFailureOutcome.Failed
+            : SubmissionFailureOutcome.Retry;
+    }
+
+    private async Task<Data.Entities.StyleJobEntity?> TryClaimSubmissionAsync(
+        Data.Entities.StyleJobEntity entity,
+        string expectedCurrentStage,
+        CancellationToken cancellationToken)
+    {
+        var startedAtUtc = DateTimeOffset.UtcNow;
+        if (_db.Database.IsRelational())
+        {
+            var updated = await _db.StyleJobs
+                .Where(candidate => candidate.Id == entity.Id
+                    && candidate.CurrentStage == expectedCurrentStage
+                    && candidate.ExternalPredictionId == null
+                    && candidate.Status != "Succeeded"
+                    && candidate.Status != "Failed"
+                    && candidate.Status != "TimedOut"
+                    && candidate.Status != "Canceled")
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(candidate => candidate.Status, "Processing")
+                        .SetProperty(candidate => candidate.AttemptCount, candidate => candidate.AttemptCount + 1)
+                        .SetProperty(candidate => candidate.StartedAtUtc, candidate => candidate.StartedAtUtc ?? startedAtUtc),
+                    cancellationToken);
+
+            if (updated == 0)
+            {
+                return null;
+            }
+
+            _db.Entry(entity).State = EntityState.Detached;
+            return await _db.StyleJobs.FirstAsync(candidate => candidate.Id == entity.Id, cancellationToken);
+        }
+
+        if (!string.Equals(entity.CurrentStage, expectedCurrentStage, StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrWhiteSpace(entity.ExternalPredictionId))
+        {
+            return null;
+        }
+
+        entity.Status = "Processing";
+        entity.AttemptCount++;
+        entity.StartedAtUtc ??= startedAtUtc;
+        await _db.SaveChangesAsync(cancellationToken);
+        return entity;
+    }
+
+    private enum SubmissionFailureOutcome
+    {
+        Retry,
+        Failed,
+        ActivePrediction,
+        StaleStage
     }
 
     private async Task EnsureImageUrlReachableAsync(string imageUrl, CancellationToken ct)

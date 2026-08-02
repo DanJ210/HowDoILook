@@ -172,6 +172,153 @@ public class ReplicateWebhookProcessorTests
         Assert.Equal("https://example.com/intermediate.webp", persisted.IntermediateImageUrl);
     }
 
+    [Fact]
+    public async Task ProcessAsync_BeardQueuePublishFails_ReplayResumesHandoff()
+    {
+        await using var db = CreateDbContext();
+        var queue = new TestQueuePublisher { FailuresRemaining = 1 };
+        var job = await SeedJobAsync(
+            db,
+            pipelineMode: StyleJobPipelineMode.HairThenBeard,
+            currentStage: StyleJobStage.Hair,
+            isBeardStagePending: true);
+        job.ExternalPredictionId = "hair-prediction";
+        await db.SaveChangesAsync();
+
+        var processor = new ReplicateWebhookProcessor(db, queue, NullLogger<ReplicateWebhookProcessor>.Instance);
+        var payload = new ReplicateWebhookPayload(
+            Id: "hair-prediction",
+            Status: "succeeded",
+            Error: null,
+            Output: CreateJsonString("https://example.com/hair-output.webp"),
+            CompletedAt: DateTimeOffset.UtcNow);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => processor.ProcessAsync(payload));
+
+        var pending = await db.StyleJobs.FirstAsync(x => x.Id == job.Id);
+        Assert.Equal(JobStatus.Queued, pending.Status);
+        Assert.Equal(StyleJobStage.BeardQueued, pending.CurrentStage);
+        Assert.Equal("hair-prediction", pending.ExternalPredictionId);
+        Assert.Equal("https://example.com/hair-output.webp", pending.IntermediateImageUrl);
+
+        var replay = await processor.ProcessAsync(payload);
+
+        Assert.True(replay.IsKnownPrediction);
+        Assert.Equal(2, queue.PublishCalls);
+        var persisted = await db.StyleJobs.FirstAsync(x => x.Id == job.Id);
+        Assert.Equal(StyleJobStage.Beard, persisted.CurrentStage);
+        Assert.Null(persisted.ExternalPredictionId);
+        Assert.IsType<StyleJob>(queue.LastMessage);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_UnknownStatus_DoesNotMutateJob()
+    {
+        await using var db = CreateDbContext();
+        var queue = new TestQueuePublisher();
+        var startedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-2);
+        var job = await SeedJobAsync(
+            db,
+            pipelineMode: StyleJobPipelineMode.HairOnly,
+            currentStage: StyleJobStage.Hair,
+            isBeardStagePending: false);
+        job.ExternalPredictionId = "active-prediction";
+        job.ResultJson = "{\"preserved\":true}";
+        job.ErrorCode = "preserved_code";
+        job.ErrorMessage = "Preserved message.";
+        job.StartedAtUtc = startedAtUtc;
+        await db.SaveChangesAsync();
+
+        var processor = new ReplicateWebhookProcessor(db, queue, NullLogger<ReplicateWebhookProcessor>.Instance);
+        var payload = new ReplicateWebhookPayload(
+            Id: "active-prediction",
+            Status: "paused",
+            Error: "unexpected payload error",
+            Output: CreateJsonString("https://example.com/unexpected.webp"),
+            CompletedAt: DateTimeOffset.UtcNow);
+
+        var result = await processor.ProcessAsync(payload);
+
+        Assert.True(result.IsKnownPrediction);
+        Assert.Null(queue.LastMessage);
+        var persisted = await db.StyleJobs.FirstAsync(x => x.Id == job.Id);
+        Assert.Equal(JobStatus.Processing, persisted.Status);
+        Assert.Equal("{\"preserved\":true}", persisted.ResultJson);
+        Assert.Equal("preserved_code", persisted.ErrorCode);
+        Assert.Equal("Preserved message.", persisted.ErrorMessage);
+        Assert.Equal(startedAtUtc, persisted.StartedAtUtc);
+        Assert.Null(persisted.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_QueuedStatus_MapsToProcessing()
+    {
+        await using var db = CreateDbContext();
+        var queue = new TestQueuePublisher();
+        var job = await SeedJobAsync(
+            db,
+            pipelineMode: StyleJobPipelineMode.HairOnly,
+            currentStage: StyleJobStage.Hair,
+            isBeardStagePending: false);
+        job.Status = JobStatus.Queued;
+        job.StartedAtUtc = null;
+        job.ExternalPredictionId = "queued-prediction";
+        await db.SaveChangesAsync();
+
+        var processor = new ReplicateWebhookProcessor(db, queue, NullLogger<ReplicateWebhookProcessor>.Instance);
+        var payload = new ReplicateWebhookPayload(
+            Id: "queued-prediction",
+            Status: "queued",
+            Error: null,
+            Output: null,
+            CompletedAt: null);
+
+        var result = await processor.ProcessAsync(payload);
+
+        Assert.True(result.IsKnownPrediction);
+        Assert.Null(queue.LastMessage);
+        var persisted = await db.StyleJobs.FirstAsync(x => x.Id == job.Id);
+        Assert.Equal(JobStatus.Processing, persisted.Status);
+        Assert.NotNull(persisted.StartedAtUtc);
+        Assert.Null(persisted.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_BeardHandoffPending_LaterFailureDoesNotPublishOrRegressState()
+    {
+        await using var db = CreateDbContext();
+        var queue = new TestQueuePublisher();
+        var job = await SeedJobAsync(
+            db,
+            pipelineMode: StyleJobPipelineMode.HairThenBeard,
+            currentStage: StyleJobStage.BeardQueued,
+            isBeardStagePending: false);
+        job.Status = JobStatus.Queued;
+        job.ExternalPredictionId = "hair-prediction";
+        job.IntermediateImageUrl = "https://example.com/hair-output.webp";
+        await db.SaveChangesAsync();
+
+        var processor = new ReplicateWebhookProcessor(db, queue, NullLogger<ReplicateWebhookProcessor>.Instance);
+        var payload = new ReplicateWebhookPayload(
+            Id: "hair-prediction",
+            Status: "failed",
+            Error: "late failure",
+            Output: null,
+            CompletedAt: DateTimeOffset.UtcNow);
+
+        var result = await processor.ProcessAsync(payload);
+
+        Assert.True(result.IsKnownPrediction);
+        Assert.Null(queue.LastMessage);
+        var persisted = await db.StyleJobs.FirstAsync(x => x.Id == job.Id);
+        Assert.Equal(JobStatus.Queued, persisted.Status);
+        Assert.Equal(StyleJobStage.BeardQueued, persisted.CurrentStage);
+        Assert.Equal("hair-prediction", persisted.ExternalPredictionId);
+        Assert.Equal("https://example.com/hair-output.webp", persisted.IntermediateImageUrl);
+        Assert.Null(persisted.ErrorCode);
+        Assert.Null(persisted.ErrorMessage);
+    }
+
     private static async Task<StyleJobEntity> SeedJobAsync(
         AppDbContext db,
         string pipelineMode,
@@ -224,9 +371,18 @@ public class ReplicateWebhookProcessorTests
     private sealed class TestQueuePublisher : IQueuePublisher
     {
         public object? LastMessage { get; private set; }
+        public int FailuresRemaining { get; set; }
+        public int PublishCalls { get; private set; }
 
         public Task PublishAsync<T>(T message, CancellationToken ct = default)
         {
+            PublishCalls++;
+            if (FailuresRemaining > 0)
+            {
+                FailuresRemaining--;
+                throw new InvalidOperationException("Queue unavailable.");
+            }
+
             LastMessage = message;
             return Task.CompletedTask;
         }

@@ -59,6 +59,9 @@ public class FaceAnalysisJobHandlerTests
         Assert.Equal("Failed", persisted.Status);
         Assert.Equal("ANALYSIS_QUALITY_TOO_BLURRY", persisted.ErrorCode);
         Assert.Equal("Image appears too blurry. Try a sharper photo with better focus.", persisted.ErrorMessage);
+        Assert.False(persisted.QualityPassed);
+        Assert.Equal("ANALYSIS_QUALITY_TOO_BLURRY", persisted.QualityFailureCode);
+        Assert.Equal("Image appears too blurry. Try a sharper photo with better focus.", persisted.QualityMessage);
         Assert.NotNull(persisted.StartedAtUtc);
         Assert.NotNull(persisted.CompletedAtUtc);
         Assert.Equal(1, pipeline.Calls);
@@ -92,13 +95,17 @@ public class FaceAnalysisJobHandlerTests
         await handler.HandleAsync(CreateMessageBody(analysisJob), CancellationToken.None);
 
         var persisted = await db.FaceAnalysisJobs.FirstAsync(x => x.Id == analysisJob.Id);
-        Assert.Equal("Succeeded", persisted.Status);
+        Assert.True(
+            persisted.Status == "Succeeded",
+            $"Job failed with {persisted.ErrorCode}: {persisted.ErrorMessage}");
         Assert.True(persisted.QualityPassed);
         Assert.Equal(featureVectorJson, persisted.FeatureVectorJson);
         Assert.Equal(0.941, persisted.AnalysisConfidence);
         Assert.Equal(recommendationsJson, persisted.RecommendationsJson);
         Assert.Equal(analysisJob.PreferencesJson, pipeline.LastPreferencesJson);
         Assert.Single(queue.Messages);
+        var exposureCandidate = await db.RecommendationExposureCandidates.SingleAsync();
+        Assert.Equal("textured-crop", exposureCandidate.StyleName);
         Assert.NotNull(persisted.StartedAtUtc);
         Assert.NotNull(persisted.CompletedAtUtc);
     }

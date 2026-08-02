@@ -50,7 +50,8 @@ graph TD
 - Persists face analysis jobs, recommendation posts, and recommendation generation jobs to PostgreSQL via EF Core 8.
 - Enqueues recommendation analysis and recommendation generation jobs to Azure Storage Queue.
 - Accepts image uploads via `POST /api/upload/image` and exposes `GET /api/upload/public/{userId}/{fileName}` for external model fetches.
-- Receives Replicate webhook callbacks (`POST /api/webhooks/replicate`), verifies HMAC-SHA256 signature, and updates recommendation variant generation status/results.
+- Receives Replicate webhook callbacks (`POST /api/webhooks/replicate`), verifies HMAC-SHA256 signatures, ignores unknown or stale state transitions, and updates recommendation variant generation status/results.
+- Claims the hair-to-beard queue handoff transactionally with the generation-job update. Duplicate callbacks cannot enqueue the beard stage twice, and queue publication failures leave the accepted hair callback retryable.
 - Archives generated images to blob storage and stores permanent `result_image_url` values for recommendation variants.
 - Exposes Swagger at `/swagger` in development.
 - Auto-applies EF Core migrations on startup in Development.
@@ -61,7 +62,7 @@ graph TD
 - For face-analysis jobs, computes telemetry, ranks candidates, persists one best recommendation, and schedules one best-variant generation job.
 - Pre-MVP, experimentation mode is enabled at 100% traffic and schedules three additional variant jobs for feedback capture.
 - Experimentation flags: `Features:ExperimentationModeEnabled=true` and `Features:ExperimentationTrafficPercent=100` (pre-MVP).
-- For style generation jobs (`jobType` typically `generate-style`), submits predictions to Replicate and stores returned `external_prediction_id` values.
+- For style generation jobs (`jobType` typically `generate-style`), transactionally claims submission, submits predictions to Replicate, and stores returned `external_prediction_id` values. A duplicate queue delivery skips submission once that ID is present.
 - Retries up to 3 times on Replicate API failure; marks `Failed` on exhaustion.
 - Deletes the message from the queue only after successful processing.
 - Uses configured Replicate hair and beard models to render recommendation variants, resolving `latest_version.id` dynamically from Replicate.
@@ -79,6 +80,7 @@ graph TD
 ## Unit Testing Footprint
 
 - Backend unit tests use xUnit in `tests/AiStyleApp.Tests` with EF Core InMemory for service-level validation.
+- `PostgresReliabilityTests` are opt-in provider integration tests for transactional webhook/worker behavior. Set `AISTYLEAPP_POSTGRES_TEST_CONNECTION` to a disposable PostgreSQL database and run `dotnet test tests/AiStyleApp.Tests/AiStyleApp.Tests.csproj --filter "FullyQualifiedName~PostgresReliabilityTests"`; the tests apply migrations automatically and skip when the variable is absent.
 - Frontend unit tests use Vitest with `src/**/*.test.ts` discovery.
 - Current test files:
   - `tests/AiStyleApp.Tests/FaceAnalysisJobHandlerTests.cs` — analysis pipeline orchestration and recommendation fan-out
@@ -155,10 +157,12 @@ One row per generation-eligible ranked candidate. Rows persist recommendation ra
 6. Worker keeps the top heuristic result as primary and deterministically samples up to three eligible challengers. Challenger order is independently randomized per analysis.
 7. Worker atomically persists generation jobs and an immutable exposure snapshot containing telemetry identity, experiment version, the eligible pool, ranking scores, shown order, and selection propensities.
 8. Replicate sends webhook callback to `POST /api/webhooks/replicate` for variant completion.
-9. Backend verifies HMAC signatures, updates generated variant states/results, and archives final images.
-10. Status and public-feed reads resolve the persisted primary generation; pre-migration rows use the legacy linked-post fallback.
-11. Frontend renders the system-selected primary result without requiring user finalization.
-12. Optional comparison/ranking feedback is accepted only for generation jobs recorded as shown in that exposure and does not replace the automatic primary.
+9. Backend verifies HMAC signatures and applies only known, monotonic state changes. Terminal jobs are immutable; unknown statuses and stale prediction IDs are ignored.
+10. For a hair-then-beard job, the backend conditionally claims the handoff and publishes the beard-stage message in one database transaction. A publication failure rolls back the claim for webhook retry.
+11. Backend archives successful final images; worker submission claims prevent normal duplicate queue delivery from creating another Replicate prediction.
+12. Status and public-feed reads resolve the persisted primary generation; pre-migration rows use the legacy linked-post fallback.
+13. Frontend renders the system-selected primary result without requiring user finalization.
+14. Optional comparison/ranking feedback is accepted only for generation jobs recorded as shown in that exposure and does not replace the automatic primary.
 
 Experimental note: experimentation may expose additional generated variants for optional feedback. Experiment traffic is configurable and must not block primary-result delivery.
 

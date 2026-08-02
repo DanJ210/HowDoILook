@@ -244,6 +244,8 @@ Current implementation note:
 - The worker persists canonical face shape in `face_analysis_jobs.feature_vector_json.faceShape` (for example, `"Square"`).
 - `primaryStyleId` and `primaryGenerationJobId` identify the persisted automatic system decision and exist independently of user finalization.
 - `selectedGenerationJobId` is legacy experimentation/finalization metadata and cannot replace the automatic primary.
+- When all returned variants are terminal, `PRIMARY_GENERATION_FAILED` reports that the automatic primary failed even if an experimental variant succeeded; experiments are never promoted automatically.
+- `GENERATION_ALL_VARIANTS_FAILED` takes precedence when every returned variant ended in a terminal non-success state.
 - The status API exposes face shape via `debugTelemetry.stages[]` by reading the `landmarks` stage `notes` value (lowercase label such as `"square"`).
 - `analysisSummary.faceShape` is the canonical shape label for recommendation and posting decisions.
 
@@ -854,6 +856,8 @@ Use a single internal payload for the handoff between recommendation output and 
 - Beard fields must be `No change` unless `gender == male` and `allowBeardSuggestions == true`.
 - If `qualityPassed == false` or `analysisConfidence < minimumConfidenceRequired`, do not enqueue style generation.
 - `pipelineMode` must be one of `HairOnly`, `BeardOnly`, `HairThenBeard` and map directly to the existing style job pipeline behavior.
+- `HairThenBeard` advances only from a recognized success callback for the current hair prediction. The queue handoff is conditionally claimed with the job update so duplicate callbacks are idempotent and publication failures remain retryable.
+- Replicate terminal states are immutable; unknown statuses and callbacks for stale prediction IDs do not mutate generation state.
 - This contract is reflected by public recommendation status DTOs and includes experimentation fields (pre-MVP: populated for 100% of sessions).
 
 ## 22. API and UI Additions (V2)

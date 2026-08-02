@@ -51,7 +51,29 @@ public class ReplicateWebhookProcessor : IReplicateWebhookProcessor
             return new ReplicateWebhookProcessResult(true, job.Id, job.UserId);
         }
 
-        var status = MapStatus(payload.Status, job.Status);
+        if (!TryMapStatus(payload.Status, out var status))
+        {
+            _logger.LogWarning(
+                "Webhook for job {JobId} used unsupported Replicate status {ReplicateStatus}; ignored.",
+                job.Id,
+                payload.Status);
+            return new ReplicateWebhookProcessResult(true, job.Id, job.UserId);
+        }
+
+        if (string.Equals(job.CurrentStage, StyleJobStage.BeardQueued, StringComparison.OrdinalIgnoreCase))
+        {
+            if (status == JobStatus.Succeeded)
+            {
+                return await PublishBeardStageAsync(job, ct);
+            }
+
+            _logger.LogInformation(
+                "Webhook for job {JobId} arrived after its hair-to-beard handoff was accepted; status {Status} ignored.",
+                job.Id,
+                status);
+            return new ReplicateWebhookProcessResult(true, job.Id, job.UserId);
+        }
+
         if (status == JobStatus.Succeeded
             && string.Equals(job.CurrentStage, StyleJobStage.Hair, StringComparison.OrdinalIgnoreCase)
             && job.IsBeardStagePending)
@@ -114,15 +136,109 @@ public class ReplicateWebhookProcessor : IReplicateWebhookProcessor
             return new ReplicateWebhookProcessResult(true, job.Id, job.UserId);
         }
 
+        var hairResultJson = payload.Output is not null
+            ? JsonSerializer.Serialize(payload.Output)
+            : null;
+        await using var transaction = _db.Database.IsRelational()
+            ? await _db.Database.BeginTransactionAsync(ct)
+            : null;
+        var claimed = await TryClaimBeardHandoffAsync(job, intermediateImageUrl, hairResultJson, ct);
+        if (!claimed)
+        {
+            _logger.LogInformation(
+                "Hair-to-beard handoff for job {JobId} was already claimed; duplicate webhook ignored.",
+                job.Id);
+            return new ReplicateWebhookProcessResult(true, job.Id, job.UserId);
+        }
+
+        var result = await PublishBeardStageAsync(job, ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
+        return result;
+    }
+
+    private async Task<bool> TryClaimBeardHandoffAsync(
+        StyleJobEntity job,
+        string intermediateImageUrl,
+        string? hairResultJson,
+        CancellationToken ct)
+    {
+        if (_db.Database.IsRelational())
+        {
+            var updated = await _db.StyleJobs
+                .Where(candidate => candidate.Id == job.Id
+                    && candidate.ExternalPredictionId == job.ExternalPredictionId
+                    && candidate.CurrentStage == StyleJobStage.Hair
+                    && candidate.IsBeardStagePending
+                    && candidate.Status != JobStatus.Succeeded
+                    && candidate.Status != JobStatus.Failed
+                    && candidate.Status != JobStatus.TimedOut
+                    && candidate.Status != JobStatus.Canceled)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(candidate => candidate.Status, JobStatus.Queued)
+                        .SetProperty(candidate => candidate.CurrentStage, StyleJobStage.BeardQueued)
+                        .SetProperty(candidate => candidate.IntermediateImageUrl, intermediateImageUrl)
+                        .SetProperty(candidate => candidate.ResultJson, hairResultJson)
+                        .SetProperty(candidate => candidate.ErrorCode, (string?)null)
+                        .SetProperty(candidate => candidate.ErrorMessage, (string?)null)
+                        .SetProperty(candidate => candidate.IsBeardStagePending, false),
+                    ct);
+
+            if (updated == 0)
+            {
+                return false;
+            }
+
+            _db.Entry(job).State = EntityState.Detached;
+        }
+        else
+        {
+            if (!string.Equals(job.CurrentStage, StyleJobStage.Hair, StringComparison.OrdinalIgnoreCase)
+                || !job.IsBeardStagePending
+                || JobStatus.IsTerminal(job.Status))
+            {
+                return false;
+            }
+
+            job.Status = JobStatus.Queued;
+            job.CurrentStage = StyleJobStage.BeardQueued;
+            job.IntermediateImageUrl = intermediateImageUrl;
+            job.ResultJson = hairResultJson;
+            job.ErrorCode = null;
+            job.ErrorMessage = null;
+            job.IsBeardStagePending = false;
+            await _db.SaveChangesAsync(ct);
+        }
+
         job.Status = JobStatus.Queued;
-        job.ResultJson = null;
+        job.CurrentStage = StyleJobStage.BeardQueued;
+        job.IntermediateImageUrl = intermediateImageUrl;
+        job.ResultJson = hairResultJson;
         job.ErrorCode = null;
         job.ErrorMessage = null;
-        job.CurrentStage = StyleJobStage.Beard;
-        job.IntermediateImageUrl = intermediateImageUrl;
-        job.ExternalPredictionId = null;
         job.IsBeardStagePending = false;
-        await _db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    private async Task<ReplicateWebhookProcessResult> PublishBeardStageAsync(
+        StyleJobEntity job,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(job.IntermediateImageUrl))
+        {
+            job.Status = JobStatus.Failed;
+            job.ErrorCode = "replicate_missing_intermediate_output";
+            job.ErrorMessage = "The accepted hair result is missing, so beard generation cannot continue.";
+            job.CompletedAtUtc = DateTimeOffset.UtcNow;
+            await _db.SaveChangesAsync(ct);
+            return new ReplicateWebhookProcessResult(true, job.Id, job.UserId);
+        }
+
+        job.Status = JobStatus.Queued;
 
         await _queue.PublishAsync(
             new StyleJob(
@@ -135,7 +251,7 @@ public class ReplicateWebhookProcessor : IReplicateWebhookProcessor
                 CorrelationId: job.CorrelationId ?? Guid.NewGuid().ToString(),
                 Attempt: job.AttemptCount,
                 SchemaVersion: 2,
-                ImageUrl: intermediateImageUrl,
+                ImageUrl: job.IntermediateImageUrl,
                 Haircut: job.Haircut,
                 HairColor: job.HairColor,
                 BeardStyle: job.BeardStyle,
@@ -144,24 +260,47 @@ public class ReplicateWebhookProcessor : IReplicateWebhookProcessor
                 Stage: StyleJobStage.Beard),
             ct);
 
+        if (_db.Database.IsRelational())
+        {
+            await _db.StyleJobs
+                .Where(candidate => candidate.Id == job.Id
+                    && candidate.CurrentStage == StyleJobStage.BeardQueued)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(candidate => candidate.CurrentStage, StyleJobStage.Beard)
+                        .SetProperty(candidate => candidate.ExternalPredictionId, (string?)null),
+                    ct);
+        }
+        else
+        {
+            job.CurrentStage = StyleJobStage.Beard;
+            job.ExternalPredictionId = null;
+            await _db.SaveChangesAsync(ct);
+        }
+
         _logger.LogInformation(
             "Queued beard stage for job {JobId} using intermediate image {IntermediateImageUrl}.",
             job.Id,
-            intermediateImageUrl);
+            job.IntermediateImageUrl);
 
         return new ReplicateWebhookProcessResult(true, job.Id, job.UserId);
     }
 
-    private static string MapStatus(string? replicateStatus, string currentStatus)
-        => replicateStatus switch
+    private static bool TryMapStatus(string? replicateStatus, out string status)
+    {
+        status = replicateStatus switch
         {
+            "queued" => JobStatus.Processing,
             "starting" => JobStatus.Processing,
             "processing" => JobStatus.Processing,
             "succeeded" => JobStatus.Succeeded,
             "failed" => JobStatus.Failed,
             "canceled" => JobStatus.Canceled,
-            _ => currentStatus
+            _ => string.Empty
         };
+
+        return status.Length > 0;
+    }
 
     private static string? ExtractOutputUrl(object? output)
     {
