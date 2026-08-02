@@ -416,7 +416,7 @@ catch (FaceAnalysisException ex)
                 {
                     StyleId = candidate.StyleId,
                     StyleName = candidate.StyleName,
-                    RecommendationRank = recommendations.IndexOf(candidate) + 1,
+                    RecommendationRank = recommendations.FindIndex(ranked => ReferenceEquals(ranked, candidate)) + 1,
                     RankingScore = candidate.Score,
                     IsPrimary = index == 0,
                     WasShown = generated is not null,
