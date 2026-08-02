@@ -328,13 +328,17 @@ public class RecommendationServiceTests
         };
         experimentalItem.Jobs.Add(experimentalJob);
 
+        analysisJob.PrimaryStyleId = "textured-crop";
+        analysisJob.PrimaryStyleItemId = primaryItem.Id;
+        analysisJob.PrimaryGenerationJobId = primaryJob.Id;
+
         db.StyleItems.AddRange(primaryItem, experimentalItem);
         db.RecommendationFeedback.Add(new RecommendationFeedbackEntity
         {
             AnalysisJobId = analysisJob.Id,
             UserId = "user-1",
             SelectedStyleId = experimentalJob.Id.ToString(),
-            Rating = 2
+            Rating = 1
         });
 
         await db.SaveChangesAsync();
@@ -354,9 +358,10 @@ public class RecommendationServiceTests
         Assert.Equal("Square", result.AnalysisSummary.FaceShape);
         Assert.NotNull(result.BestVariant);
         Assert.Equal(primaryJob.Id, result.BestVariant!.GenerationJobId);
+        Assert.Equal(primaryJob.Id, result.PrimaryGenerationJobId);
         Assert.Single(result.ExperimentalVariants);
         Assert.Equal(experimentalJob.Id, result.ExperimentalVariants[0].GenerationJobId);
-        Assert.Equal("2", result.ExperimentalVariants[0].SelectedRank);
+        Assert.Equal("1", result.ExperimentalVariants[0].SelectedRank);
     }
 
     [Fact]
@@ -757,6 +762,54 @@ public class RecommendationServiceTests
         Assert.NotNull(result);
         Assert.Null(result!.ErrorCode);
         Assert.Null(result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_PrimaryFailedButExperimentSucceeded_ReturnsActionablePrimaryFailure()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Status = JobStatus.Succeeded,
+            QualityPassed = true,
+            RecommendationsJson = "[]"
+        };
+
+        var primaryItem = CreateLinkedStyleItem(
+            analysisJob,
+            "Primary",
+            "https://example.com/primary.jpg",
+            DateTimeOffset.UtcNow.AddMinutes(-1));
+        var primaryJob = primaryItem.Jobs.Single();
+        primaryJob.Status = JobStatus.Failed;
+        primaryJob.ResultImageUrl = null;
+
+        var experimentalItem = CreateLinkedStyleItem(
+            analysisJob,
+            "Experimental",
+            "https://example.com/experimental.jpg",
+            DateTimeOffset.UtcNow);
+        var experimentalJob = experimentalItem.Jobs.Single();
+
+        analysisJob.PrimaryStyleItemId = primaryItem.Id;
+        analysisJob.PrimaryGenerationJobId = primaryJob.Id;
+        db.FaceAnalysisJobs.Add(analysisJob);
+        db.StyleItems.AddRange(primaryItem, experimentalItem);
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+
+        var result = await service.GetStatusAsync(analysisJob.Id, analysisJob.UserId);
+
+        Assert.NotNull(result);
+        Assert.Equal("PRIMARY_GENERATION_FAILED", result!.ErrorCode);
+        Assert.Contains("automatic primary result", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(primaryJob.Id, result.BestVariant?.GenerationJobId);
+        Assert.Equal(primaryJob.Id, result.PrimaryGenerationJobId);
+        Assert.Equal(experimentalJob.Id, Assert.Single(result.ExperimentalVariants).GenerationJobId);
     }
 
     [Fact]

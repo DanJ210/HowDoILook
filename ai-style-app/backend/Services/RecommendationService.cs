@@ -14,6 +14,8 @@ public class RecommendationService : IRecommendationService
 {
     private const string GenerationAllVariantsFailedCode = "GENERATION_ALL_VARIANTS_FAILED";
     private const string GenerationAllVariantsFailedMessage = "Generation finished without any successful variants. Try another photo or run Analyze and Recommend again.";
+    private const string PrimaryGenerationFailedCode = "PRIMARY_GENERATION_FAILED";
+    private const string PrimaryGenerationFailedMessage = "The automatic primary result could not be generated. Try another photo or run Analyze and Recommend again.";
     private static readonly JsonSerializerOptions RecommendationJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -201,6 +203,10 @@ public class RecommendationService : IRecommendationService
         var generationAllVariantsFailed = IsGenerationAllVariantsFailed(
             analysisJob.Status,
             variantStatuses);
+        var primaryGenerationFailed = IsPrimaryGenerationFailed(
+            analysisJob.Status,
+            bestJob?.Status,
+            variantStatuses);
 
         var errorCode = analysisJob.ErrorCode;
         var errorMessage = analysisJob.ErrorMessage;
@@ -209,6 +215,11 @@ public class RecommendationService : IRecommendationService
         {
             errorCode = GenerationAllVariantsFailedCode;
             errorMessage = GenerationAllVariantsFailedMessage;
+        }
+        else if (primaryGenerationFailed && string.IsNullOrWhiteSpace(errorCode))
+        {
+            errorCode = PrimaryGenerationFailedCode;
+            errorMessage = PrimaryGenerationFailedMessage;
         }
 
         return new RecommendationJobStatusResponse(
@@ -474,6 +485,18 @@ public class RecommendationService : IRecommendationService
         }
 
         return !variantStatuses.Any(status => string.Equals(status, JobStatus.Succeeded, StringComparison.Ordinal));
+    }
+
+    private static bool IsPrimaryGenerationFailed(
+        string analysisStatus,
+        string? primaryStatus,
+        IReadOnlyCollection<string> variantStatuses)
+    {
+        return string.Equals(analysisStatus, JobStatus.Succeeded, StringComparison.Ordinal)
+            && primaryStatus is not null
+            && JobStatus.IsTerminal(primaryStatus)
+            && !string.Equals(primaryStatus, JobStatus.Succeeded, StringComparison.Ordinal)
+            && variantStatuses.All(JobStatus.IsTerminal);
     }
 
     private static RecommendationDebugTelemetryResponse? ParseDebugTelemetry(string? featureVectorJson)

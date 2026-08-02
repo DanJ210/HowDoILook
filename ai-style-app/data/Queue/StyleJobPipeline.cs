@@ -11,6 +11,7 @@ public static class StyleJobStage
 {
     public const string Queued = "Queued";
     public const string Hair = "Hair";
+    public const string BeardQueued = "BeardQueued";
     public const string Beard = "Beard";
 }
 

@@ -184,6 +184,8 @@ Exit:
 
 ## PR 4 (Days 10-12): Reliability and Hardening
 
+Status: complete. Webhook and worker submission transitions now use transactional conditional claims, duplicate/stale/unknown callbacks are idempotent, queue publication failures remain retryable, failed automatic primary results return stable actionable errors, and optional feedback remains isolated from the canonical primary decision.
+
 - Add/expand tests for webhook, automatic primary-result, and optional feedback interplay.
 - Tighten failure messaging for failed generation sessions.
 - Run focused regression suite.
