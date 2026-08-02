@@ -111,15 +111,21 @@ public class OnnxFaceDetectorStage : IFaceDetectorStage
             if (detections.Count > 1)
             {
                 _logger.LogWarning(
-                    "ONNX face detection found {Count} faces for image {Width}x{Height}; falling back to heuristic detector to avoid rejecting valid portraits as multi-face.",
+                    "ONNX face detection found {Count} faces for image {Width}x{Height}; rejecting multi-face uploads.",
                     detections.Count,
                     image.Width,
                     image.Height);
 
-                return _fallback.Detect(image) with
-                {
-                    Notes = "fallback:onnx-multiple-detections"
-                };
+                var primary = detections.OrderByDescending(d => d.confidence).First();
+                return new FaceDetectionResult(
+                    FaceCount: detections.Count,
+                    PrimaryFace: primary.box,
+                    PrimaryFaceConfidence: primary.confidence,
+                    FailureCode: null,
+                    FailureMessage: null,
+                    Model: "onnx-face-detector",
+                    ModelVersion: "v1",
+                    Notes: "onnx-multiple-detections");
             }
 
             var primary = detections.OrderByDescending(d => d.confidence).First();
