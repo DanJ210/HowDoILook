@@ -156,6 +156,8 @@ Exit:
 
 ## PR 2 (Days 4-6): Frontend Automatic-Result UX
 
+Status: complete. The frontend accepts a portrait-only submission, polls through primary generation, completes without finalization, and keeps experiments, feedback, and telemetry secondary.
+
 - Simplify recommendations page to portrait upload, progress, and the automatic primary result.
 - Keep telemetry in collapsed "technical details" section.
 - Keep experimental comparison and feedback secondary and optional.

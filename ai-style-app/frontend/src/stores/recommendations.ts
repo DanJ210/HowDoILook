@@ -9,7 +9,7 @@ import type {
   SubmitRecommendationRatingsRequest,
   UploadImageResponse
 } from '@/types/api'
-import { TERMINAL_STATUSES } from '@/types/api'
+import { isRecommendationSessionTerminal } from '@/utils/recommendationWorkflow'
 
 export const useRecommendationsStore = defineStore('recommendations', () => {
   const jobs = ref<Record<string, RecommendationJobStatusResponse>>({})
@@ -60,6 +60,19 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
   function startPolling(jobId: string, onComplete?: (job: RecommendationJobStatusResponse) => void) {
     if (activePollingIds.value.has(jobId)) return
 
+    const existing = jobs.value[jobId]
+    if (existing && isRecommendationSessionTerminal({
+      hasActiveJob: true,
+      analysisStatus: existing.status,
+      bestVariant: existing.bestVariant,
+      experimentalVariants: existing.experimentalVariants
+    })) {
+      pollingState.value[jobId] = 'completed'
+      pollingError.value[jobId] = null
+      onComplete?.(existing)
+      return
+    }
+
     activePollingIds.value.add(jobId)
     pollingState.value[jobId] = 'polling'
     pollingError.value[jobId] = null
@@ -77,7 +90,12 @@ export const useRecommendationsStore = defineStore('recommendations', () => {
       try {
         const job = await fetchStatus(jobId)
 
-        if (TERMINAL_STATUSES.includes(job.status)) {
+        if (isRecommendationSessionTerminal({
+          hasActiveJob: true,
+          analysisStatus: job.status,
+          bestVariant: job.bestVariant,
+          experimentalVariants: job.experimentalVariants
+        })) {
           activePollingIds.value.delete(jobId)
           clearPollingTimer(jobId)
           pollingState.value[jobId] = 'completed'

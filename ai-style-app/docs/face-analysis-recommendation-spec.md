@@ -534,10 +534,14 @@ Add recommendation flow in frontend/src:
 
 UX requirements:
 
-- Reuse upload flow and job polling pattern.
+- Require only one portrait in the primary flow; gender and preference controls are not required.
+- Continue polling after analysis succeeds until primary generation reaches a user-actionable state.
+- Show `completed` immediately when the automatic primary succeeds, without finalization.
+- Keep optional experimental refresh, comparison, and feedback secondary to the delivered primary result.
 - Show quality gate failures with specific retake guidance.
 - Display the best recommendation and best generated variant with reasons and confidence indicator.
-- Pre-MVP, display three variants and allow ranking submission as 1, 2, and 3 for all recommendation sessions.
+- Keep telemetry and ranked-candidate diagnostics in a collapsed technical-details section.
+- Do not automatically promote an experimental result when primary generation fails.
 
 ## 11. Security and Privacy
 
@@ -583,9 +587,10 @@ Worker tests:
 - deterministic ranking output for fixed feature vectors
 
 Frontend tests:
-- polling lifecycle and terminal states
+- polling through downstream primary generation and delayed all-variants failure
+- automatic completion without finalization
 - quality failure message rendering
-- recommendation selection and feedback submission
+- optional experimental feedback submission
 
 Validation commands:
 
@@ -601,7 +606,7 @@ Validation commands:
 - Poor-quality input yields user-actionable failure response.
 - Best recommendation is exposed as the primary recommendation for public post views.
 - One best generated variant is created and shown on the public post.
-- Ranking endpoint stores 1/2/3 user response linked to analysis and experimental generation jobs for all pre-MVP recommendation sessions.
+- Optional ranking feedback is linked to analysis and succeeded experimental generation jobs when the user submits it.
 - Contracts are documented in docs/api-contracts.md before merge.
 
 ## 16. V2 Plan: ONNX Face Telemetry + Replicate Style Generation

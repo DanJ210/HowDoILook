@@ -116,11 +116,11 @@ public class OnnxFaceDetectorStage : IFaceDetectorStage
                     image.Width,
                     image.Height);
 
-                var primary = detections.OrderByDescending(d => d.confidence).First();
+                var multiFacePrimary = detections.OrderByDescending(d => d.confidence).First();
                 return new FaceDetectionResult(
                     FaceCount: detections.Count,
-                    PrimaryFace: primary.box,
-                    PrimaryFaceConfidence: primary.confidence,
+                    PrimaryFace: multiFacePrimary.box,
+                    PrimaryFaceConfidence: multiFacePrimary.confidence,
                     FailureCode: null,
                     FailureMessage: null,
                     Model: "onnx-face-detector",

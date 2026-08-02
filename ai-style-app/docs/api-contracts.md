@@ -363,6 +363,17 @@ Current implementation note:
 - The `experiment` object reports whether experimentation was configured and actually applied for the job.
 - `errorCode` / `errorMessage` may include `GENERATION_ALL_VARIANTS_FAILED` even when analysis `status` is `Succeeded`; this indicates that all generated variants reached terminal non-success statuses and user action should be retry.
 
+Polling semantics:
+
+- Top-level `status` describes analysis only. `status = Succeeded` does not mean the generated result is ready.
+- Treat the session as `analyzing` while analysis is `Queued` or `Processing`.
+- Treat the session as `generating` after analysis succeeds while `bestVariant` is absent or nonterminal.
+- Deliver the automatic result as `completed` as soon as `bestVariant.status = Succeeded`; finalization and feedback are not required.
+- Continue background polling while returned experimental variants are nonterminal so optional comparison data can refresh without blocking the primary result.
+- Stop polling after an analysis terminal failure, or after `bestVariant` and all returned experimental variants are terminal.
+- If the primary generation fails, do not promote an experimental variant automatically. Report the session as failed after the returned experiment set is terminal.
+- When every returned variant reaches terminal non-success status, surface `GENERATION_ALL_VARIANTS_FAILED` without requiring a manual refresh.
+
 ### SubmitRecommendationRatingsRequest
 
 ```json

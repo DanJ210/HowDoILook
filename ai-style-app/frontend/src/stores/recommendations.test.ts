@@ -55,16 +55,57 @@ describe('recommendations store', () => {
     vi.unstubAllGlobals()
   })
 
-  it('transitions polling state to completed when job reaches terminal status', async () => {
+  it('creates a recommendation from only an uploaded portrait', async () => {
+    const store = useRecommendationsStore()
+    const file = new File(['portrait'], 'portrait.jpg', { type: 'image/jpeg' })
+    const created = {
+      analysisJobId: 'job-1',
+      recommendationPostId: 'post-1',
+      status: 'Queued',
+      statusEndpoint: '/api/recommendations/jobs/job-1',
+      publicEndpoint: '/api/style/post-1'
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ url: 'https://example.com/portrait.jpg' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(created), { status: 202 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(store.create({}, file)).resolves.toEqual(created)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const [, createOptions] = fetchMock.mock.calls[1]
+    expect(JSON.parse(createOptions.body as string)).toEqual({
+      imageUrl: 'https://example.com/portrait.jpg'
+    })
+  })
+
+  it('continues polling after analysis succeeds until the primary generation succeeds', async () => {
     const store = useRecommendationsStore()
 
     const queued = createRecommendationStatus({ status: 'Queued' })
-    const succeeded = createRecommendationStatus({ status: 'Succeeded' })
+    const generating = createRecommendationStatus({
+      status: 'Succeeded',
+      bestVariant: {
+        generationJobId: 'primary-1',
+        status: 'Processing',
+        resultImageUrl: null
+      }
+    })
+    const completed = createRecommendationStatus({
+      status: 'Succeeded',
+      bestVariant: {
+        generationJobId: 'primary-1',
+        status: 'Succeeded',
+        resultImageUrl: 'https://example.com/primary.webp'
+      }
+    })
 
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(queued), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(succeeded), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(generating), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(completed), { status: 200 }))
 
     vi.stubGlobal('fetch', fetchMock)
 
@@ -78,9 +119,91 @@ describe('recommendations store', () => {
     await vi.advanceTimersByTimeAsync(3000)
     await Promise.resolve()
 
+    expect(store.getPollingState('job-1')).toBe('polling')
+    expect(store.getJob('job-1')?.bestVariant?.status).toBe('Processing')
+    expect(store.activePollingIds.has('job-1')).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(4500)
+    await Promise.resolve()
+
     expect(store.getPollingState('job-1')).toBe('completed')
     expect(store.getJob('job-1')?.status).toBe('Succeeded')
+    expect(store.getJob('job-1')?.bestVariant?.status).toBe('Succeeded')
     expect(store.activePollingIds.has('job-1')).toBe(false)
+  })
+
+  it('continues polling until delayed all-variants-failed status is available', async () => {
+    const store = useRecommendationsStore()
+    const experimentsProcessing = createRecommendationStatus({
+      status: 'Succeeded',
+      bestVariant: {
+        generationJobId: 'primary-1',
+        status: 'Failed',
+        resultImageUrl: null
+      },
+      experimentalVariants: [
+        {
+          slot: 1,
+          generationJobId: 'experiment-1',
+          status: 'Processing',
+          resultImageUrl: null,
+          selectedRank: null
+        }
+      ]
+    })
+    const allFailed = createRecommendationStatus({
+      ...experimentsProcessing,
+      experimentalVariants: [
+        {
+          slot: 1,
+          generationJobId: 'experiment-1',
+          status: 'TimedOut',
+          resultImageUrl: null,
+          selectedRank: null
+        }
+      ],
+      errorCode: 'GENERATION_ALL_VARIANTS_FAILED',
+      errorMessage: 'Generation completed without any successful variants.'
+    })
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(experimentsProcessing), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(allFailed), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    store.startPolling('job-1')
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await Promise.resolve()
+
+    expect(store.getPollingState('job-1')).toBe('polling')
+    expect(store.getJob('job-1')?.errorCode).toBeNull()
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await Promise.resolve()
+
+    expect(store.getPollingState('job-1')).toBe('completed')
+    expect(store.getJob('job-1')?.errorCode).toBe('GENERATION_ALL_VARIANTS_FAILED')
+    expect(store.activePollingIds.has('job-1')).toBe(false)
+  })
+
+  it('does not restart polling for a restored terminal session', () => {
+    const store = useRecommendationsStore()
+    store.jobs['job-1'] = createRecommendationStatus({
+      status: 'Succeeded',
+      bestVariant: {
+        generationJobId: 'primary-1',
+        status: 'Succeeded',
+        resultImageUrl: 'https://example.com/primary.webp'
+      }
+    })
+    const onComplete = vi.fn()
+
+    store.startPolling('job-1', onComplete)
+
+    expect(store.getPollingState('job-1')).toBe('completed')
+    expect(store.activePollingIds.has('job-1')).toBe(false)
+    expect(onComplete).toHaveBeenCalledWith(store.jobs['job-1'])
   })
 
   it('stores failed quality-gate status payload from API', async () => {

@@ -66,6 +66,8 @@ Exit criteria:
 
 ## Phase 2: Automatic Primary Completion and Publication
 
+Status (2026-08-02): implemented. Status and public retrieval resolve the persisted primary, and the photo-only frontend completes on primary generation success without finalization.
+
 Goal: make the system-selected primary the completed and publicly retrievable result without user finalization.
 
 - Add recommendation session state model:
@@ -95,25 +97,20 @@ Exit criteria:
 
 - Replaying identical callbacks yields stable final DB state.
 
-## Phase 4: UI/UX Rebuild for Staged Experience
+## Phase 4: Automatic-Result UX Polish
 
-Goal: replace one-page overload with a guided, scalable flow.
+Goal: refine the photo-only automatic-result experience without adding required choices.
 
-- New staged UI structure:
-  - Analyze
-  - Compare
-  - Finalize
-  - Share
+- Keep portrait upload, progress, and the automatic primary result as the page hierarchy.
 - Keep telemetry visible but secondary (collapsed technical section).
-- Promote clear user actions:
-  - select final look
-  - publish/unpublish
-- Keep experimentation variants available for ranking without cluttering primary path.
+- Keep succeeded experimental variants available in an optional comparison section.
+- Keep feedback optional and separate from automatic completion.
+- Add share or visibility controls only after the primary result is available.
 
 Exit criteria:
 
 - Users can complete the full journey without reading debug telemetry.
-- Selection and publish actions are obvious and separate.
+- The primary result remains obvious while optional comparison and sharing stay secondary.
 
 ## Phase 5: Telemetry v3 and Stage Interface Evolution
 

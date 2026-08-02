@@ -37,9 +37,9 @@ graph TD
 - **Pinia** stores: `auth`, `recommendations`, `job`.
 - `auth` store: Dev login via `POST /api/auth/token`, persists JWT to `localStorage`.
 - **Top auth bar + account route**: persistent header actions expose `Dev Login`, `Account`, and `Logout`, and `/account` shows the current session state plus shortcuts back to generation and job history.
-- `recommendations` store: starts recommendation analysis, polls job status, and renders the published best recommendation with its generated best variant.
+- `recommendations` store: starts photo-only recommendation analysis, keeps polling through primary generation, and refreshes optional experimental variants in the background until they are terminal.
 - `job` store: Polls `GET /api/recommendations/jobs/{id}` with exponential backoff (2 s -> 10 s cap) until terminal.
-- **Recommendations page**: authenticated analysis/generation workflow with recommendation-first UX and public-post visibility from first publish.
+- **Recommendations page**: authenticated photo-only workflow centered on analyzing, generating, completed, and failed states. It renders the automatic primary result without finalization and keeps experiments, feedback, and telemetry secondary.
 - Calls the backend via `fetch` proxied through Vite dev server (`/api → localhost:5000`).
 - **Public feed** (`HomePage`): anonymous infinite-scroll grid of public recommendation posts where each item includes the main recommendation and its best generated variant. The feed uses cursor-based pagination and `IntersectionObserver` sentinel loading.
 - **`useBackendRequestState` composable**: shared loading/error/offline state across all data-fetching pages. Detects network failures (`statusCode: 0`) and schedules automatic retries for read operations. Submit flows use `handleError` without a retry function so errors surface immediately without re-submitting.
@@ -259,15 +259,16 @@ Migration notes:
 
 ### Recommendation Data Flow (Current Baseline)
 
-1. User submits recommendation request with image URL and preferences.
+1. User submits a photo-only recommendation request with an image URL; compatibility preferences remain optional API inputs.
 2. Backend writes `face_analysis_jobs` row with `Queued` status.
 3. Backend enqueues queue message (`jobType = face-analysis`, `schemaVersion = 2`) to `analysis-jobs`.
 4. Worker dequeues message and marks analysis job `Processing`.
 5. Worker validates image URL format/reachability.
 7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector (including `faceShape`) + stage telemetry (landmarks `notes` contains the shape label). Segmentation records visible lower-face beard density independently of gender; gender and user permission remain separate beard-recommendation eligibility rules.
 8. Worker persists recommendation payload plus automatic primary linkage and enqueues generation jobs to `style-jobs`.
-9. Frontend polls status endpoint, which resolves the explicit primary linkage for new rows and retains a legacy fallback for older rows.
-10. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
+9. Frontend polls through downstream generation. It displays `completed` as soon as the primary succeeds while continuing background refresh for nonterminal experimental variants.
+10. A failed primary is not replaced by an experimental result; terminal failures are surfaced after the returned variant set settles.
+11. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
 
 ### Analytics and Data Collection
 

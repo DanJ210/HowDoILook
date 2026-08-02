@@ -3,28 +3,17 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useRecommendationsStore } from '@/stores/recommendations'
-import { useBackendRequestState } from '@/composables/useBackendRequestState'
 import { useImageFileInput } from '@/composables/useImageFileInput'
 import StateCard from '@/components/StateCard.vue'
-import { getLightJobStatusPillClass } from '@/constants/jobStatusStyles'
 import { computeWorkflowStateLabel, hasGenerationFailed } from '@/utils/recommendationWorkflow'
 
 const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 const recommendationsStore = useRecommendationsStore()
-const requestState = useBackendRequestState()
 const { selectedFile, previewUrl, onFileChange: onFileChangeFromInput, onDrop: onDropFromInput, removeFile } = useImageFileInput()
 
 const LAST_ANALYSIS_JOB_KEY = 'recommendations:lastAnalysisJobId'
-
-const form = ref({
-  gender: 'none' as 'none' | 'male' | 'female',
-  maintenanceLevel: 'medium' as 'low' | 'medium' | 'high',
-  styleVibe: 'professional' as 'professional' | 'casual' | 'trendy',
-  allowHairColorChange: true,
-  allowBeardSuggestions: true
-})
 
 const isSubmitting = ref(false)
 const submitError = ref<string | null>(null)
@@ -38,10 +27,6 @@ const variantRanks = ref<Record<string, 1 | 2 | 3 | null>>({})
 const feedbackMessage = ref<string | null>(null)
 const feedbackError = ref<string | null>(null)
 const isSubmittingFeedback = ref(false)
-const finalizeCandidateGenerationJobId = ref('')
-const finalizeMessage = ref<string | null>(null)
-const finalizeError = ref<string | null>(null)
-const isFinalizing = ref(false)
 
 const feedbackTagOptions = [
   { value: 'tooBold', label: 'Too bold' },
@@ -57,17 +42,12 @@ const pollingError = computed(() => (activeJobId.value ? recommendationsStore.ge
 const bestRecommendation = computed(() => activeJob.value?.bestRecommendation ?? null)
 const bestVariant = computed(() => activeJob.value?.bestVariant ?? null)
 const experimentalVariants = computed(() => activeJob.value?.experimentalVariants ?? [])
+const succeededExperimentalVariants = computed(() => experimentalVariants.value.filter(variant => variant.status === 'Succeeded'))
 const rankedRecommendations = computed(() => activeJob.value?.recommendations ?? [])
 const debugTelemetry = computed(() => activeJob.value?.debugTelemetry ?? null)
-const selectedGenerationJobId = computed(() => activeJob.value?.selectedGenerationJobId ?? null)
-const selectedAtUtc = computed(() => activeJob.value?.selectedAtUtc ?? null)
-const hasSucceeded = computed(() => activeJob.value?.status === 'Succeeded')
-const hasFailed = computed(() => activeJob.value?.status === 'Failed')
-const hasFinalSelection = computed(() => Boolean(selectedGenerationJobId.value))
 const hasGenerationFailure = computed(() => hasGenerationFailed({
   hasActiveJob: Boolean(activeJob.value),
   analysisStatus: activeJob.value?.status ?? null,
-  selectedGenerationJobId: selectedGenerationJobId.value,
   bestVariant: bestVariant.value,
   experimentalVariants: experimentalVariants.value
 }))
@@ -75,55 +55,20 @@ const workflowStateLabel = computed(() => {
   return computeWorkflowStateLabel({
     hasActiveJob: Boolean(activeJob.value),
     analysisStatus: activeJob.value?.status ?? null,
-    selectedGenerationJobId: selectedGenerationJobId.value,
     bestVariant: bestVariant.value,
     experimentalVariants: experimentalVariants.value
   })
 })
+const analysisSucceeded = computed(() => activeJob.value?.status === 'Succeeded')
+const hasFailed = computed(() => workflowStateLabel.value === 'failed')
+const hasCompleted = computed(() => workflowStateLabel.value === 'completed')
 const generationFailureMessage = computed(() => {
   if (!hasGenerationFailure.value) {
     return null
   }
 
-  return 'Generation finished without any successful variants. Try another photo or run Analyze and Recommend again.'
-})
-const selectedVariantImageUrl = computed(() => {
-  if (!selectedGenerationJobId.value) {
-    return null
-  }
-
-  if (bestVariant.value?.generationJobId === selectedGenerationJobId.value) {
-    return bestVariant.value.resultImageUrl
-  }
-
-  const match = experimentalVariants.value.find(v => v.generationJobId === selectedGenerationJobId.value)
-  return match?.resultImageUrl ?? null
-})
-const succeededVariantOptions = computed(() => {
-  const options: Array<{ generationJobId: string; label: string }> = []
-  const seen = new Set<string>()
-
-  if (bestVariant.value?.status === 'Succeeded' && !seen.has(bestVariant.value.generationJobId)) {
-    seen.add(bestVariant.value.generationJobId)
-    options.push({
-      generationJobId: bestVariant.value.generationJobId,
-      label: `Best variant (${bestRecommendation.value?.styleName ?? 'recommended'})`
-    })
-  }
-
-  for (const variant of experimentalVariants.value) {
-    if (variant.status !== 'Succeeded' || seen.has(variant.generationJobId)) {
-      continue
-    }
-
-    seen.add(variant.generationJobId)
-    options.push({
-      generationJobId: variant.generationJobId,
-      label: `Experimental variant ${variant.slot}`
-    })
-  }
-
-  return options
+  return activeJob.value?.errorMessage
+    ?? 'The automatic primary result could not be generated. Try another photo or run Analyze and Recommend again.'
 })
 const resolvedPublicEndpoint = computed(() => {
   if (publicEndpoint.value) {
@@ -137,22 +82,6 @@ const resolvedPublicEndpoint = computed(() => {
 function getRouteJobId(): string | null {
   const value = route.query.jobId
   return typeof value === 'string' && value.length > 0 ? value : null
-}
-
-function getFinalizeCandidateValue() {
-  if (finalizeCandidateGenerationJobId.value) {
-    return finalizeCandidateGenerationJobId.value
-  }
-
-  if (selectedGenerationJobId.value) {
-    return selectedGenerationJobId.value
-  }
-
-  return succeededVariantOptions.value[0]?.generationJobId ?? ''
-}
-
-function onFinalizeCandidateChange(event: Event) {
-  finalizeCandidateGenerationJobId.value = (event.target as HTMLSelectElement).value
 }
 
 function persistJobId(jobId: string | null) {
@@ -240,10 +169,6 @@ function resetFeedbackState() {
   feedbackMessage.value = null
   feedbackError.value = null
   isSubmittingFeedback.value = false
-  finalizeCandidateGenerationJobId.value = ''
-  finalizeMessage.value = null
-  finalizeError.value = null
-  isFinalizing.value = false
 }
 
 async function startRecommendation() {
@@ -259,18 +184,7 @@ async function startRecommendation() {
   isSubmitting.value = true
 
   try {
-    const created = await recommendationsStore.create(
-      {
-        gender: form.value.gender,
-        preferences: {
-          maintenanceLevel: form.value.maintenanceLevel,
-          styleVibe: form.value.styleVibe,
-          allowHairColorChange: form.value.allowHairColorChange,
-          allowBeardSuggestions: form.value.allowBeardSuggestions
-        }
-      },
-      selectedFile.value
-    )
+    const created = await recommendationsStore.create({}, selectedFile.value)
 
     activeJobId.value = created.analysisJobId
     recommendationPostId.value = created.recommendationPostId
@@ -284,35 +198,6 @@ async function startRecommendation() {
     submitError.value = (err as { message?: string })?.message ?? 'Failed to create recommendation job.'
   } finally {
     isSubmitting.value = false
-  }
-}
-
-async function finalizeSelection() {
-  if (!activeJobId.value) {
-    return
-  }
-
-  const candidate = getFinalizeCandidateValue()
-  if (!candidate) {
-    finalizeError.value = 'No succeeded variant is available to finalize yet.'
-    return
-  }
-
-  isFinalizing.value = true
-  finalizeMessage.value = null
-  finalizeError.value = null
-
-  try {
-    const result = await recommendationsStore.finalizeSelection(activeJobId.value, candidate)
-    await recommendationsStore.fetchStatus(activeJobId.value)
-    finalizeCandidateGenerationJobId.value = result.selectedGenerationJobId
-    finalizeMessage.value = result.alreadyFinalized
-      ? 'Final look was already selected for this session.'
-      : 'Final look selected and saved.'
-  } catch (err: unknown) {
-    finalizeError.value = (err as { message?: string })?.message ?? 'Failed to finalize selected look.'
-  } finally {
-    isFinalizing.value = false
   }
 }
 
@@ -397,9 +282,9 @@ onMounted(async () => {
 
 <template>
   <main class="mx-auto max-w-4xl px-4 py-6 sm:py-8">
-    <h1 class="mb-2 text-2xl font-bold text-white">Style Recommendations</h1>
+    <h1 class="mb-2 text-2xl font-bold text-white">How do I look?</h1>
     <p class="mb-6 text-sm text-slate-300">
-      Upload a portrait and get ranked style suggestions with reasons, constraints, and confidence.
+      Upload one portrait to receive an automatically selected best-look recommendation.
     </p>
 
     <StateCard
@@ -412,7 +297,7 @@ onMounted(async () => {
 
     <div v-else class="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
       <section class="rounded-3xl border border-white/10 bg-white/5 p-5">
-        <h2 class="text-lg font-semibold text-white">Input</h2>
+        <h2 class="text-lg font-semibold text-white">Your portrait</h2>
 
         <div class="mt-4 space-y-4">
           <div>
@@ -448,58 +333,6 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div>
-            <label for="gender" class="mb-1 block text-sm font-medium">Gender</label>
-            <select
-              id="gender"
-              v-model="form.gender"
-              class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-            >
-              <option value="none">Not specified</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-            </select>
-          </div>
-
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label for="maintenance" class="mb-1 block text-sm font-medium">Maintenance</label>
-              <select
-                id="maintenance"
-                v-model="form.maintenanceLevel"
-                class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="style-vibe" class="mb-1 block text-sm font-medium">Style vibe</label>
-              <select
-                id="style-vibe"
-                v-model="form.styleVibe"
-                class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-              >
-                <option value="professional">Professional</option>
-                <option value="casual">Casual</option>
-                <option value="trendy">Trendy</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="space-y-2 rounded-xl border border-white/10 bg-slate-900/50 p-3">
-            <label class="flex items-center justify-between gap-4 text-sm">
-              <span>Allow hair color suggestions</span>
-              <input v-model="form.allowHairColorChange" type="checkbox" class="h-4 w-4" />
-            </label>
-            <label class="flex items-center justify-between gap-4 text-sm">
-              <span>Allow beard suggestions</span>
-              <input v-model="form.allowBeardSuggestions" type="checkbox" class="h-4 w-4" />
-            </label>
-          </div>
-
           <div v-if="submitError" class="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
             {{ submitError }}
           </div>
@@ -516,7 +349,7 @@ onMounted(async () => {
       </section>
 
       <section class="rounded-3xl border border-white/10 bg-white/5 p-5">
-        <h2 class="text-lg font-semibold text-white">Status</h2>
+        <h2 class="text-lg font-semibold text-white">Your automatic result</h2>
 
         <StateCard
           v-if="!activeJobId"
@@ -526,71 +359,43 @@ onMounted(async () => {
         />
 
         <div v-else-if="activeJob" class="mt-4 space-y-4">
-          <div class="rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2 text-sm text-slate-200">
-            Workflow state: <span class="font-semibold text-white">{{ workflowStateLabel }}</span>
-          </div>
-
-          <div v-if="hasFinalSelection" class="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
-            <h3 class="text-sm font-semibold text-emerald-100">Final look selected</h3>
-            <p class="mt-1 text-xs text-emerald-200">
-              Winner: <span class="font-mono">{{ selectedGenerationJobId }}</span>
-            </p>
-            <p v-if="selectedAtUtc" class="mt-1 text-xs text-emerald-200">
-              Selected at: {{ new Date(selectedAtUtc).toLocaleString() }}
-            </p>
-            <img
-              v-if="selectedVariantImageUrl"
-              :src="selectedVariantImageUrl"
-              alt="Selected final look"
-              class="mt-3 max-h-72 w-full rounded-xl object-cover"
-            />
-          </div>
-
           <div class="flex flex-wrap items-center gap-2">
-            <span :class="['rounded-full px-3 py-1 text-sm font-medium', getLightJobStatusPillClass(activeJob.status)]">
-              {{ activeJob.status }}
+            <span
+              :class="[
+                'rounded-full px-3 py-1 text-sm font-medium capitalize',
+                hasFailed
+                  ? 'bg-rose-500/20 text-rose-100'
+                  : hasCompleted
+                    ? 'bg-emerald-500/20 text-emerald-100'
+                    : 'bg-sky-500/20 text-sky-100'
+              ]"
+            >
+              {{ workflowStateLabel }}
             </span>
-            <span v-if="pollingState === 'polling'" class="text-sm text-slate-400">polling…</span>
-            <span v-else-if="pollingState === 'completed'" class="text-sm text-slate-400">polling complete</span>
-            <span v-else-if="pollingState === 'error'" class="text-sm text-rose-300">polling error</span>
+            <span v-if="pollingState === 'polling'" class="text-sm text-slate-400">Checking for updates…</span>
+            <span v-else-if="pollingState === 'error'" class="text-sm text-rose-300">Updates paused</span>
           </div>
 
           <div v-if="pollingError" class="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
             {{ pollingError }}
           </div>
 
-          <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-            <dt class="text-slate-400">Job ID</dt>
-            <dd class="break-all font-mono text-slate-200 sm:text-right">{{ activeJob.analysisJobId }}</dd>
-            <dt class="text-slate-400">Recommendation post</dt>
-            <dd class="break-all font-mono text-slate-200 sm:text-right">{{ activeJob.recommendationPostId ?? recommendationPostId ?? 'Pending' }}</dd>
-            <dt class="text-slate-400">Publish status</dt>
-            <dd class="sm:text-right">{{ activeJob.publishStatus ?? 'Pending' }}</dd>
-            <dt class="text-slate-400">Quality gate</dt>
-            <dd class="sm:text-right">{{ activeJob.qualityGate.passed === null ? 'Pending' : activeJob.qualityGate.passed ? 'Passed' : 'Failed' }}</dd>
-            <dt class="text-slate-400">Face shape</dt>
-            <dd class="sm:text-right">{{ activeJob.analysisSummary.faceShape ?? 'Pending' }}</dd>
-            <dt class="text-slate-400">Confidence</dt>
-            <dd class="sm:text-right">{{ activeJob.analysisSummary.confidence === null ? 'Pending' : activeJob.analysisSummary.confidence.toFixed(3) }}</dd>
-          </dl>
-
           <div v-if="hasFailed" class="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-            <p class="font-medium">{{ activeJob.errorCode ?? activeJob.qualityGate.failureCode ?? 'Analysis failed' }}</p>
-            <p v-if="activeJob.errorMessage || activeJob.qualityGate.message" class="mt-1">{{ activeJob.errorMessage ?? activeJob.qualityGate.message }}</p>
+            <p class="font-medium">
+              {{ activeJob.errorCode ?? activeJob.qualityGate.failureCode ?? (hasGenerationFailure ? 'PRIMARY_GENERATION_FAILED' : 'ANALYSIS_FAILED') }}
+            </p>
+            <p class="mt-1">
+              {{ activeJob.errorMessage ?? activeJob.qualityGate.message ?? generationFailureMessage ?? 'Try another portrait.' }}
+            </p>
           </div>
 
-          <div v-else-if="generationFailureMessage" class="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-            <p class="font-medium">GENERATION_ALL_VARIANTS_FAILED</p>
-            <p class="mt-1">{{ generationFailureMessage }}</p>
-          </div>
-
-          <div v-if="hasSucceeded" class="space-y-3">
-            <h3 class="text-base font-semibold">Best Recommendation</h3>
+          <div v-if="analysisSucceeded" class="space-y-3">
+            <h3 class="text-base font-semibold">Best recommendation</h3>
 
             <StateCard
               v-if="!bestRecommendation"
               title="No best recommendation produced"
-              description="Try another photo or adjust preferences."
+              description="Try another portrait."
               padding-class="p-4"
             />
 
@@ -617,34 +422,26 @@ onMounted(async () => {
             </article>
 
             <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
-              <h3 class="text-sm font-semibold">Best variant</h3>
+              <h3 class="text-sm font-semibold">Generated preview</h3>
               <div v-if="bestVariant" class="mt-2 text-sm text-slate-200">
-                <p class="font-mono text-xs">{{ bestVariant.generationJobId }}</p>
-                <p class="mt-1">Status: {{ bestVariant.status }}</p>
                 <img
                   v-if="bestVariant.resultImageUrl"
                   :src="bestVariant.resultImageUrl"
                   alt="Best generated recommendation"
-                  class="mt-3 max-h-72 w-full rounded-xl object-cover"
+                  class="max-h-72 w-full rounded-xl object-cover"
                 />
+                <p v-else>Generation status: {{ bestVariant.status }}</p>
               </div>
-              <p v-else class="mt-2 text-sm text-slate-400">Best variant generation is still pending.</p>
+              <p v-else class="mt-2 text-sm text-slate-400">Preparing your automatic result…</p>
             </div>
 
-            <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
-              <h3 class="text-sm font-semibold">Experimental variants</h3>
-              <p class="mt-1 text-xs text-slate-400">Pre-MVP: rank available variants as 1, 2, and 3.</p>
+            <details v-if="hasCompleted && succeededExperimentalVariants.length > 0" class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
+              <summary class="cursor-pointer text-sm font-semibold text-white">Optional comparison</summary>
+              <p class="mt-2 text-xs text-slate-400">Compare experimental looks and rank any you prefer.</p>
 
-              <StateCard
-                v-if="experimentalVariants.length === 0"
-                title="No experimental variants"
-                description="Experimentation may be disabled or still processing."
-                padding-class="p-4"
-              />
-
-              <div v-else class="mt-3 space-y-3">
+              <div class="mt-3 space-y-3">
                 <article
-                  v-for="variant in experimentalVariants"
+                  v-for="variant in succeededExperimentalVariants"
                   :key="variant.generationJobId"
                   class="rounded-xl border border-white/10 bg-slate-950/40 p-3"
                 >
@@ -674,65 +471,29 @@ onMounted(async () => {
                   </div>
                 </article>
               </div>
-            </div>
-
-            <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
-              <h3 class="text-sm font-semibold">Select final look</h3>
-              <p class="mt-1 text-xs text-slate-400">
-                Choose one succeeded variant as your canonical best look for this recommendation session.
-              </p>
-
-              <p v-if="selectedGenerationJobId" class="mt-2 text-xs text-emerald-200">
-                Selected winner: <span class="font-mono">{{ selectedGenerationJobId }}</span>
-              </p>
-
-              <div class="mt-3">
-                <label class="mb-1 block text-xs uppercase tracking-wide text-slate-400">Variant</label>
-                <select
-                  :value="getFinalizeCandidateValue()"
-                  @change="onFinalizeCandidateChange"
-                  :disabled="isFinalizing || succeededVariantOptions.length === 0"
-                  class="w-full rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <option :value="''" disabled>
-                    {{ succeededVariantOptions.length === 0 ? 'No succeeded variants yet' : 'Select a variant' }}
-                  </option>
-                  <option
-                    v-for="variant in succeededVariantOptions"
-                    :key="variant.generationJobId"
-                    :value="variant.generationJobId"
-                  >
-                    {{ variant.label }}
-                  </option>
-                </select>
-              </div>
-
-              <div v-if="finalizeMessage" class="mt-3 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
-                {{ finalizeMessage }}
-              </div>
-
-              <div v-if="finalizeError" class="mt-3 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-                {{ finalizeError }}
-              </div>
-
-              <button
-                type="button"
-                :disabled="isFinalizing || succeededVariantOptions.length === 0"
-                @click="finalizeSelection"
-                class="mt-3 w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {{ isFinalizing ? 'Saving selection…' : 'Select Final Look' }}
-              </button>
-            </div>
-
-            <div v-if="resolvedPublicEndpoint" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">
-              Public post endpoint: <span class="font-mono">{{ resolvedPublicEndpoint }}</span>
-            </div>
+            </details>
 
             <details class="rounded-2xl border border-white/10 bg-slate-900/40 p-4">
               <summary class="cursor-pointer text-sm font-semibold text-white">Technical details</summary>
 
               <div class="mt-3 space-y-3">
+                <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                  <dt class="text-slate-400">Job ID</dt>
+                  <dd class="break-all font-mono text-slate-200 sm:text-right">{{ activeJob.analysisJobId }}</dd>
+                  <dt class="text-slate-400">Recommendation post</dt>
+                  <dd class="break-all font-mono text-slate-200 sm:text-right">{{ activeJob.recommendationPostId ?? recommendationPostId ?? 'Pending' }}</dd>
+                  <dt class="text-slate-400">Publish status</dt>
+                  <dd class="sm:text-right">{{ activeJob.publishStatus ?? 'Pending' }}</dd>
+                  <dt class="text-slate-400">Quality gate</dt>
+                  <dd class="sm:text-right">{{ activeJob.qualityGate.passed === null ? 'Pending' : activeJob.qualityGate.passed ? 'Passed' : 'Failed' }}</dd>
+                  <dt class="text-slate-400">Face shape</dt>
+                  <dd class="sm:text-right">{{ activeJob.analysisSummary.faceShape ?? 'Pending' }}</dd>
+                  <dt class="text-slate-400">Confidence</dt>
+                  <dd class="sm:text-right">{{ activeJob.analysisSummary.confidence === null ? 'Pending' : activeJob.analysisSummary.confidence.toFixed(3) }}</dd>
+                  <dt v-if="resolvedPublicEndpoint" class="text-slate-400">Public endpoint</dt>
+                  <dd v-if="resolvedPublicEndpoint" class="break-all font-mono text-slate-200 sm:text-right">{{ resolvedPublicEndpoint }}</dd>
+                </dl>
+
                 <div v-if="debugTelemetry" class="rounded-2xl border border-white/10 bg-slate-900/50 p-3">
                   <h3 class="text-sm font-semibold text-white">Stage telemetry</h3>
                   <p class="mt-1 text-xs text-slate-300">
@@ -767,7 +528,7 @@ onMounted(async () => {
                 <StateCard
                   v-if="rankedRecommendations.length === 0"
                   title="No recommendations produced"
-                  description="Try another photo or adjust preferences."
+                  description="Try another portrait."
                   padding-class="p-4"
                 />
 
@@ -796,8 +557,8 @@ onMounted(async () => {
               </div>
             </details>
 
-            <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
-              <h3 class="text-sm font-semibold">Ranking feedback</h3>
+            <details v-if="hasCompleted && succeededExperimentalVariants.length > 0" class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
+              <summary class="cursor-pointer text-sm font-semibold text-white">Optional feedback</summary>
 
               <div class="mt-3">
                 <p class="mb-1 text-xs uppercase tracking-wide text-slate-400">Tags</p>
@@ -845,7 +606,7 @@ onMounted(async () => {
               >
                 {{ isSubmittingFeedback ? 'Submitting…' : 'Submit rankings' }}
               </button>
-            </div>
+            </details>
           </div>
         </div>
 
@@ -853,8 +614,5 @@ onMounted(async () => {
       </section>
     </div>
 
-    <div v-if="requestState.error" class="mt-4 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
-      {{ requestState.error }}
-    </div>
   </main>
 </template>
