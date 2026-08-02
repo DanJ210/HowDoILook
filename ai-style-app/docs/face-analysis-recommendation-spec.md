@@ -573,6 +573,7 @@ UX requirements:
 - Require only one portrait in the primary flow; gender and preference controls are not required.
 - Continue polling after analysis succeeds until primary generation reaches a user-actionable state.
 - Show `completed` immediately when the automatic primary succeeds, without finalization.
+- Lead the active-session view with the uncropped automatic primary result and show share/full-size actions only after it succeeds.
 - Keep optional experimental refresh, comparison, and feedback secondary to the delivered primary result.
 - Show quality gate failures with specific retake guidance.
 - Display the best recommendation and best generated variant with reasons and confidence indicator.
