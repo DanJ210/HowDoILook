@@ -293,14 +293,37 @@ public class RecommendationService : IRecommendationService
                 AlreadyFinalized: true);
         }
 
-        analysisJob.SelectedGenerationJobId = request.GenerationJobId;
-        analysisJob.SelectedAtUtc = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        var selectedAtUtc = DateTimeOffset.UtcNow;
+        var updated = await _db.FaceAnalysisJobs
+            .Where(x => x.Id == analysisJobId && x.UserId == userId && x.SelectedGenerationJobId == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.SelectedGenerationJobId, request.GenerationJobId)
+                    .SetProperty(x => x.SelectedAtUtc, selectedAtUtc),
+                ct);
+
+        if (updated == 0)
+        {
+            var refreshed = await _db.FaceAnalysisJobs
+                .AsNoTracking()
+                .FirstAsync(x => x.Id == analysisJobId && x.UserId == userId, ct);
+
+            if (refreshed.SelectedGenerationJobId.HasValue && refreshed.SelectedGenerationJobId.Value != request.GenerationJobId)
+            {
+                throw new ArgumentException("A different final selection already exists for this analysis job.", nameof(request));
+            }
+
+            return new FinalizeRecommendationResponse(
+                AnalysisJobId: refreshed.Id,
+                SelectedGenerationJobId: refreshed.SelectedGenerationJobId!.Value,
+                SelectedAtUtc: refreshed.SelectedAtUtc ?? refreshed.UpdatedOrCreatedAtUtc(),
+                AlreadyFinalized: true);
+        }
 
         return new FinalizeRecommendationResponse(
             AnalysisJobId: analysisJob.Id,
-            SelectedGenerationJobId: analysisJob.SelectedGenerationJobId.Value,
-            SelectedAtUtc: analysisJob.SelectedAtUtc.Value,
+            SelectedGenerationJobId: request.GenerationJobId,
+            SelectedAtUtc: selectedAtUtc,
             AlreadyFinalized: false);
     }
 
