@@ -10,7 +10,7 @@ export type RecommendationRuntimeState = {
 const terminalVariantStatuses = new Set(['Succeeded', 'Failed', 'TimedOut', 'Canceled'])
 const failedAnalysisStatuses = new Set(['Failed', 'TimedOut', 'Canceled'])
 
-export function hasGenerationFailed(state: RecommendationRuntimeState): boolean {
+export function hasPrimaryGenerationFailed(state: RecommendationRuntimeState): boolean {
   if (!state.hasActiveJob || state.analysisStatus !== 'Succeeded' || !state.bestVariant) {
     return false
   }
@@ -39,7 +39,7 @@ export function computeWorkflowStateLabel(state: RecommendationRuntimeState): st
     return 'completed'
   }
 
-  if (hasGenerationFailed(state)) {
+  if (hasPrimaryGenerationFailed(state)) {
     return 'failed'
   }
 

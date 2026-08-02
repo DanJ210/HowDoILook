@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeWorkflowStateLabel,
-  hasGenerationFailed,
+  hasPrimaryGenerationFailed,
   isRecommendationSessionTerminal
 } from './recommendationWorkflow'
 import type { RecommendationRuntimeState } from './recommendationWorkflow'
@@ -69,7 +69,7 @@ describe('recommendation workflow utility', () => {
     }
 
     expect(computeWorkflowStateLabel(state)).toBe('completed')
-    expect(hasGenerationFailed(state)).toBe(false)
+    expect(hasPrimaryGenerationFailed(state)).toBe(false)
     expect(isRecommendationSessionTerminal(state)).toBe(false)
 
     state.experimentalVariants[0].status = 'Succeeded'
@@ -98,7 +98,7 @@ describe('recommendation workflow utility', () => {
       ]
     }
 
-    expect(hasGenerationFailed(state)).toBe(false)
+    expect(hasPrimaryGenerationFailed(state)).toBe(false)
     expect(computeWorkflowStateLabel(state)).toBe('generating')
     expect(isRecommendationSessionTerminal(state)).toBe(false)
   })
@@ -123,7 +123,7 @@ describe('recommendation workflow utility', () => {
       ]
     }
 
-    expect(hasGenerationFailed(state)).toBe(true)
+    expect(hasPrimaryGenerationFailed(state)).toBe(true)
     expect(computeWorkflowStateLabel(state)).toBe('failed')
     expect(isRecommendationSessionTerminal(state)).toBe(true)
   })

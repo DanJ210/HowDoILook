@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useImageFileInput } from '@/composables/useImageFileInput'
 import StateCard from '@/components/StateCard.vue'
-import { computeWorkflowStateLabel, hasGenerationFailed } from '@/utils/recommendationWorkflow'
+import { computeWorkflowStateLabel, hasPrimaryGenerationFailed } from '@/utils/recommendationWorkflow'
 
 const authStore = useAuthStore()
 const route = useRoute()
@@ -45,7 +45,7 @@ const experimentalVariants = computed(() => activeJob.value?.experimentalVariant
 const succeededExperimentalVariants = computed(() => experimentalVariants.value.filter(variant => variant.status === 'Succeeded'))
 const rankedRecommendations = computed(() => activeJob.value?.recommendations ?? [])
 const debugTelemetry = computed(() => activeJob.value?.debugTelemetry ?? null)
-const hasGenerationFailure = computed(() => hasGenerationFailed({
+const hasGenerationFailure = computed(() => hasPrimaryGenerationFailed({
   hasActiveJob: Boolean(activeJob.value),
   analysisStatus: activeJob.value?.status ?? null,
   bestVariant: bestVariant.value,
