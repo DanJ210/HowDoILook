@@ -169,7 +169,7 @@ public class AnalyticsController : ControllerBase
         var sb = new StringBuilder();
         
         // Write CSV header
-        var properties = typeof(T).GetProperties();
+        var properties = typeof(T).GetProperties().OrderBy(p => p.Name, StringComparer.Ordinal).ToArray();
         sb.AppendLine(string.Join(",", properties.Select(p => EscapeCsv(p.Name))));
         
         // Write data rows
