@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
 using AiStyleApp.Data.Queue;
@@ -9,6 +11,7 @@ namespace AiStyleApp.Worker.Handlers;
 
 public class FaceAnalysisJobHandler : IMessageHandler
 {
+    private const string ExperimentVersion = "controlled-exploration-v1";
     private const string JobStatusQueued = "Queued";
     private const string JobStatusProcessing = "Processing";
     private const string JobStatusSucceeded = "Succeeded";
@@ -278,9 +281,22 @@ catch (FaceAnalysisException ex)
         }
 
         var experimentApplied = IsExperimentApplied(pipelineResult.FeatureVectorJson);
-        var selected = recommendations
-            .Take(experimentApplied ? 4 : 1)
+        ResolveTemplateOrThrow(recommendations[0].StyleId, analysisJob.Gender);
+
+        var eligibleCandidates = recommendations
+            .Where((candidate, index) => index == 0 || IsGenerationEligible(candidate.StyleId))
             .ToList();
+        var eligibleChallengers = eligibleCandidates.Skip(1).ToList();
+        var challengerCount = experimentApplied ? Math.Min(3, eligibleChallengers.Count) : 0;
+        var selectedChallengers = SelectChallengers(
+            eligibleChallengers,
+            challengerCount,
+            analysisJob.Id);
+        var selected = new List<RecommendationCandidate>(1 + selectedChallengers.Count)
+        {
+            eligibleCandidates[0]
+        };
+        selected.AddRange(selectedChallengers);
 
         var existingPrimaryPost = await _db.StyleItems
             .Include(x => x.Jobs)
@@ -311,6 +327,7 @@ catch (FaceAnalysisException ex)
                 item.Prompt = BuildPrompt(styleName, candidate.Reasons);
                 item.ImageUrl = analysisJob.ImageUrl;
                 item.IsResultPublic = true;
+                item.AnalysisJobId = analysisJob.Id;
                 item.UpdatedAtUtc = DateTimeOffset.UtcNow;
             }
             else
@@ -369,10 +386,53 @@ catch (FaceAnalysisException ex)
             }
         }
 
+        var generationByStyleId = selected
+            .Select((candidate, index) => new
+            {
+                candidate.StyleId,
+                StyleItemId = styleJobs[index].StyleItemId,
+                GenerationJobId = styleJobs[index].Id,
+                ShownOrder = index + 1
+            })
+            .ToDictionary(x => x.StyleId, StringComparer.OrdinalIgnoreCase);
+        var challengerSelectionProbability = eligibleChallengers.Count == 0
+            ? 0
+            : (double)challengerCount / eligibleChallengers.Count;
+        var telemetry = ParseTelemetryIdentity(pipelineResult.FeatureVectorJson);
+        var exposure = new RecommendationExposureEntity
+        {
+            AnalysisJobId = analysisJob.Id,
+            UserId = analysisJob.UserId,
+            ExperimentVersion = ExperimentVersion,
+            ExperimentApplied = experimentApplied,
+            TelemetrySchemaVersion = telemetry.SchemaVersion,
+            TelemetrySource = telemetry.Source,
+            PrimaryStyleId = eligibleCandidates[0].StyleId,
+            PrimaryGenerationJobId = styleJobs[0].Id,
+            Candidates = eligibleCandidates.Select((candidate, index) =>
+            {
+                generationByStyleId.TryGetValue(candidate.StyleId, out var generated);
+                return new RecommendationExposureCandidateEntity
+                {
+                    StyleId = candidate.StyleId,
+                    StyleName = candidate.StyleName,
+                    RecommendationRank = recommendations.IndexOf(candidate) + 1,
+                    RankingScore = candidate.Score,
+                    IsPrimary = index == 0,
+                    WasShown = generated is not null,
+                    ShownOrder = generated?.ShownOrder,
+                    SelectionProbability = index == 0 ? 1 : challengerSelectionProbability,
+                    StyleItemId = generated?.StyleItemId,
+                    GenerationJobId = generated?.GenerationJobId
+                };
+            }).ToList()
+        };
+
         if (styleItems.Count > 0)
         {
             _db.StyleItems.AddRange(styleItems);
         }
+        _db.RecommendationExposures.Add(exposure);
         await _db.SaveChangesAsync(cancellationToken);
 
         foreach (var job in styleJobs)
@@ -455,6 +515,59 @@ catch (FaceAnalysisException ex)
         }
     }
 
+    private static bool IsGenerationEligible(string? styleId)
+        => !string.IsNullOrWhiteSpace(styleId)
+            && RecommendationStyleTemplates.ContainsKey(styleId);
+
+    private static List<RecommendationCandidate> SelectChallengers(
+        IReadOnlyCollection<RecommendationCandidate> candidates,
+        int count,
+        Guid analysisJobId)
+    {
+        return candidates
+            .OrderBy(candidate => ComputeSamplingKey(analysisJobId, candidate.StyleId, "select"), StringComparer.Ordinal)
+            .Take(count)
+            .OrderBy(candidate => ComputeSamplingKey(analysisJobId, candidate.StyleId, "order"), StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private static string ComputeSamplingKey(Guid analysisJobId, string styleId, string purpose)
+    {
+        var input = Encoding.UTF8.GetBytes($"{ExperimentVersion}:{analysisJobId:N}:{purpose}:{styleId}");
+        return Convert.ToHexString(SHA256.HashData(input));
+    }
+
+    private static TelemetryIdentity ParseTelemetryIdentity(string? featureVectorJson)
+    {
+        if (string.IsNullOrWhiteSpace(featureVectorJson))
+        {
+            return new TelemetryIdentity(null, null);
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(featureVectorJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return new TelemetryIdentity(null, null);
+            }
+
+            var schemaVersion = doc.RootElement.TryGetProperty("schemaVersion", out var schemaElement)
+                && schemaElement.TryGetInt32(out var parsedSchemaVersion)
+                    ? parsedSchemaVersion
+                    : (int?)null;
+            var source = doc.RootElement.TryGetProperty("source", out var sourceElement)
+                ? sourceElement.GetString()
+                : null;
+
+            return new TelemetryIdentity(schemaVersion, source);
+        }
+        catch (JsonException)
+        {
+            return new TelemetryIdentity(null, null);
+        }
+    }
+
     private static RecommendationStyleTemplate ResolveTemplateOrThrow(string? styleId, string? gender)
     {
         if (string.IsNullOrWhiteSpace(styleId))
@@ -499,4 +612,6 @@ catch (FaceAnalysisException ex)
         string HairColor,
         string? BeardStyle,
         string? BeardColor);
+
+    private sealed record TelemetryIdentity(int? SchemaVersion, string? Source);
 }

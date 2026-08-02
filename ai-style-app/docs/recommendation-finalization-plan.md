@@ -44,7 +44,7 @@ Deliver one automatic primary result after a photo-only submission. Additional v
 
 ## Phase 1: Recommendation Decision Contract Hardening
 
-Status (2026-08-01): partially implemented. Analysis jobs now persist the primary style ID, post ID, and generation job ID. Owner-scoped status exposes these fields and falls back to legacy discovery only for older rows. Per-variant decision snapshots and enqueue-time guardrail snapshots remain open.
+Status (2026-08-02): substantially implemented. Analysis jobs persist primary linkage, and normalized exposure/candidate rows now preserve telemetry identity, eligible candidates, scores, shown order, propensities, and generated artifact IDs. Persisting resolved prompt/model/guardrail snapshots remains open.
 
 Goal: make analysis-to-generation handoff explicit and auditable.
 
@@ -140,6 +140,8 @@ Exit criteria:
 - Human-readable reasons trace back to weighted contributions.
 
 ## Data Learning Loop (Parallel Track)
+
+Status (2026-08-02): the exposure/outcome and preference-label exports, shown-candidate write validation, and style/analysis-confidence coverage report are implemented. Pairwise outcomes, richer generation-model metadata, and offline held-out evaluation remain open.
 
 Goal: ensure the data collected now is actually usable for model training later.
 

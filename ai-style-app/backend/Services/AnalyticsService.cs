@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using AiStyleApp.Api.Models;
 using AiStyleApp.Data;
 using AiStyleApp.Data.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,15 @@ namespace AiStyleApp.Api.Services;
 
 public interface IAnalyticsService
 {
-    Task<IEnumerable<RecommendationDataPoint>> ExportRecommendationsDataAsync(
+    Task<IReadOnlyList<RecommendationExposureDataPoint>> ExportExposureOutcomesAsync(
+        DateTimeOffset? fromDate = null,
+        DateTimeOffset? toDate = null);
+
+    Task<IReadOnlyList<RecommendationPreferenceDataPoint>> ExportPreferenceLabelsAsync(
+        DateTimeOffset? fromDate = null,
+        DateTimeOffset? toDate = null);
+
+    Task<RecommendationCoverageReport> GetCoverageAsync(
         DateTimeOffset? fromDate = null,
         DateTimeOffset? toDate = null);
 
@@ -20,6 +29,7 @@ public interface IAnalyticsService
 
 public class AnalyticsService : IAnalyticsService
 {
+    private const int MinimumCoverageSampleSize = 20;
     private readonly AppDbContext _context;
     private readonly ILogger<AnalyticsService> _logger;
 
@@ -29,100 +39,190 @@ public class AnalyticsService : IAnalyticsService
         _logger = logger;
     }
 
-    public async Task<IEnumerable<RecommendationDataPoint>> ExportRecommendationsDataAsync(
+    public async Task<IReadOnlyList<RecommendationExposureDataPoint>> ExportExposureOutcomesAsync(
         DateTimeOffset? fromDate = null,
         DateTimeOffset? toDate = null)
     {
-        var query = _context.Set<FaceAnalysisJobEntity>()
-            .Include(j => j.Feedback)
-            .Where(j => j.Status == "Succeeded" && j.RecommendationsJson != null)
+        var query = _context.RecommendationExposures
+            .AsNoTracking()
+            .Include(exposure => exposure.AnalysisJob)
+            .Include(exposure => exposure.Candidates)
             .AsQueryable();
 
         if (fromDate.HasValue)
-            query = query.Where(j => j.CompletedAtUtc >= fromDate.Value);
+            query = query.Where(exposure => exposure.CreatedAtUtc >= fromDate.Value);
 
         if (toDate.HasValue)
-            query = query.Where(j => j.CompletedAtUtc <= toDate.Value);
+            query = query.Where(exposure => exposure.CreatedAtUtc <= toDate.Value);
 
-        var jobs = await query.ToListAsync();
+        var exposures = await query.ToListAsync();
+        var generationJobIds = exposures
+            .SelectMany(exposure => exposure.Candidates)
+            .Where(candidate => candidate.GenerationJobId.HasValue)
+            .Select(candidate => candidate.GenerationJobId!.Value)
+            .Distinct()
+            .ToList();
+        var generationJobs = await _context.StyleJobs
+            .AsNoTracking()
+            .Where(job => generationJobIds.Contains(job.Id))
+            .ToDictionaryAsync(job => job.Id);
 
-        var jobIds = jobs
-            .Where(j => j.SelectedGenerationJobId.HasValue && j.SelectedAtUtc.HasValue)
-            .Select(j => j.Id)
+        var dataPoints = exposures
+            .SelectMany(exposure => exposure.Candidates
+                .OrderBy(candidate => candidate.RecommendationRank)
+                .Select(candidate => CreateExposureDataPoint(exposure, candidate, generationJobs)))
             .ToList();
 
-        var styleItemsByAnalysisJobId = (await _context.StyleItems
-            .AsNoTracking()
-            .Include(x => x.Jobs)
-            .Where(x => x.AnalysisJobId != null && jobIds.Contains(x.AnalysisJobId.Value))
-            .ToListAsync())
-            .GroupBy(x => x.AnalysisJobId!.Value)
-            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.CreatedAtUtc).ToList());
-
-        var dataPoints = new List<RecommendationDataPoint>();
-
-        foreach (var job in jobs)
-        {
-            if (!job.SelectedGenerationJobId.HasValue || !job.SelectedAtUtc.HasValue)
-            {
-                continue;
-            }
-
-            var faceShape = ExtractFaceShape(job.FeatureVectorJson);
-            var telemetrySchemaVersion = ExtractTelemetrySchemaVersion(job.FeatureVectorJson);
-            var telemetrySource = ExtractTelemetrySource(job.FeatureVectorJson);
-            var recommendations = ParseRecommendations(job.RecommendationsJson);
-
-            styleItemsByAnalysisJobId.TryGetValue(job.Id, out var linkedStyleItems);
-            linkedStyleItems ??= new List<StyleItemEntity>();
-
-            var shownGenerationJobIds = GetShownGenerationJobIds(linkedStyleItems).ToList();
-            if (shownGenerationJobIds.Count == 0 || !shownGenerationJobIds.Contains(job.SelectedGenerationJobId.Value))
-            {
-                continue;
-            }
-
-            var feedback = job.Feedback
-                .OrderByDescending(x => x.CreatedAtUtc)
-                .ThenByDescending(x => x.Id)
-                .FirstOrDefault();
-            var selectedRank = ResolveSelectedRank(job.Feedback, job.SelectedGenerationJobId.Value);
-
-            // Create one complete training row per finalized analysis session.
-            var dataPoint = new RecommendationDataPoint
-            {
-                AnalysisJobId = job.Id,
-                UserId = job.UserId,
-                FaceShape = faceShape,
-                Gender = job.Gender,
-                QualityPassed = job.QualityPassed ?? false,
-                AnalysisConfidence = job.AnalysisConfidence ?? 0,
-                TelemetrySchemaVersion = telemetrySchemaVersion,
-                TelemetrySource = telemetrySource,
-                TopRecommendationStyleId = recommendations.FirstOrDefault()?.StyleId ?? "unknown",
-                TopRecommendationScore = recommendations.FirstOrDefault()?.Score ?? 0,
-                RecommendationCount = recommendations.Count,
-                SelectedStyleId = feedback?.SelectedStyleId,
-                FeedbackRating = feedback?.Rating,
-                FeedbackTags = feedback?.FeedbackTagsJson,
-                AnalysisCompletedAtUtc = job.CompletedAtUtc,
-                FeedbackSubmittedAtUtc = feedback?.CreatedAtUtc,
-                RecommendationRank = selectedRank,
-                ShownGenerationJobIdsJson = JsonSerializer.Serialize(shownGenerationJobIds),
-                SelectedGenerationJobId = job.SelectedGenerationJobId.Value,
-                SelectedAtUtc = job.SelectedAtUtc.Value
-            };
-
-            dataPoints.Add(dataPoint);
-        }
-
         _logger.LogInformation(
-            "Exported {Count} recommendation data points (from: {From}, to: {To})",
+            "Exported {Count} recommendation exposure/outcome rows (from: {From}, to: {To})",
             dataPoints.Count,
             fromDate?.UtcDateTime,
             toDate?.UtcDateTime);
 
         return dataPoints;
+    }
+
+    public async Task<IReadOnlyList<RecommendationPreferenceDataPoint>> ExportPreferenceLabelsAsync(
+        DateTimeOffset? fromDate = null,
+        DateTimeOffset? toDate = null)
+    {
+        var query = _context.RecommendationExposures
+            .AsNoTracking()
+            .Include(exposure => exposure.Candidates)
+            .Include(exposure => exposure.AnalysisJob)
+                .ThenInclude(analysisJob => analysisJob.Feedback)
+            .AsQueryable();
+
+        if (fromDate.HasValue)
+            query = query.Where(exposure => exposure.CreatedAtUtc >= fromDate.Value);
+
+        if (toDate.HasValue)
+            query = query.Where(exposure => exposure.CreatedAtUtc <= toDate.Value);
+
+        var exposures = await query.ToListAsync();
+        var rows = new List<RecommendationPreferenceDataPoint>();
+
+        foreach (var exposure in exposures)
+        {
+            var shownCandidates = exposure.Candidates
+                .Where(candidate => candidate.WasShown && candidate.GenerationJobId.HasValue && candidate.ShownOrder.HasValue)
+                .ToDictionary(candidate => candidate.GenerationJobId!.Value);
+
+            foreach (var feedback in exposure.AnalysisJob.Feedback)
+            {
+                if (!feedback.Rating.HasValue
+                    || !Guid.TryParse(feedback.SelectedStyleId, out var generationJobId)
+                    || !shownCandidates.TryGetValue(generationJobId, out var candidate))
+                {
+                    continue;
+                }
+
+                rows.Add(new RecommendationPreferenceDataPoint
+                {
+                    FeedbackId = feedback.Id,
+                    ExposureId = exposure.Id,
+                    AnalysisJobId = exposure.AnalysisJobId,
+                    UserId = exposure.UserId,
+                    ExperimentVersion = exposure.ExperimentVersion,
+                    SystemSelectedStyleId = exposure.PrimaryStyleId,
+                    PrimaryGenerationJobId = exposure.PrimaryGenerationJobId,
+                    CandidateStyleId = candidate.StyleId,
+                    GenerationJobId = generationJobId,
+                    IsPrimary = candidate.IsPrimary,
+                    ShownOrder = candidate.ShownOrder!.Value,
+                    SelectionProbability = candidate.SelectionProbability,
+                    SubmittedRank = feedback.Rating.Value,
+                    FeedbackTagsJson = feedback.FeedbackTagsJson,
+                    Comment = feedback.Comment,
+                    FeedbackSubmittedAtUtc = feedback.CreatedAtUtc
+                });
+            }
+        }
+
+        _logger.LogInformation(
+            "Exported {Count} complete recommendation preference-label rows (from: {From}, to: {To})",
+            rows.Count,
+            fromDate?.UtcDateTime,
+            toDate?.UtcDateTime);
+
+        return rows;
+    }
+
+    public async Task<RecommendationCoverageReport> GetCoverageAsync(
+        DateTimeOffset? fromDate = null,
+        DateTimeOffset? toDate = null)
+    {
+        var query = _context.RecommendationExposures
+            .AsNoTracking()
+            .Include(exposure => exposure.Candidates)
+            .Include(exposure => exposure.AnalysisJob)
+                .ThenInclude(analysisJob => analysisJob.Feedback)
+            .AsQueryable();
+
+        if (fromDate.HasValue)
+            query = query.Where(exposure => exposure.CreatedAtUtc >= fromDate.Value);
+
+        if (toDate.HasValue)
+            query = query.Where(exposure => exposure.CreatedAtUtc <= toDate.Value);
+
+        var exposures = await query.ToListAsync();
+        var generationJobIds = exposures
+            .SelectMany(exposure => exposure.Candidates)
+            .Where(candidate => candidate.GenerationJobId.HasValue)
+            .Select(candidate => candidate.GenerationJobId!.Value)
+            .Distinct()
+            .ToList();
+        var succeededGenerationJobIds = (await _context.StyleJobs
+            .AsNoTracking()
+            .Where(job => generationJobIds.Contains(job.Id) && job.Status == "Succeeded")
+            .Select(job => job.Id)
+            .ToListAsync())
+            .ToHashSet();
+        var preferenceGenerationJobIds = GetCompletePreferenceGenerationJobIds(exposures);
+
+        var styleCoverage = exposures
+            .SelectMany(exposure => exposure.Candidates)
+            .GroupBy(candidate => candidate.StyleId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new StyleCoveragePoint
+            {
+                StyleId = group.Key,
+                EligibleCount = group.Count(),
+                ShownCount = group.Count(candidate => candidate.WasShown),
+                PrimaryCount = group.Count(candidate => candidate.IsPrimary),
+                SucceededGenerationCount = group.Count(candidate =>
+                    candidate.GenerationJobId.HasValue
+                    && succeededGenerationJobIds.Contains(candidate.GenerationJobId.Value)),
+                PreferenceLabelCount = group.Count(candidate =>
+                    candidate.GenerationJobId.HasValue
+                    && preferenceGenerationJobIds.Contains(candidate.GenerationJobId.Value)),
+                AverageSelectionProbability = group.Average(candidate => candidate.SelectionProbability),
+                IsSparse = group.Count(candidate => candidate.WasShown) < MinimumCoverageSampleSize
+            })
+            .OrderBy(point => point.StyleId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var confidenceRanges = new[]
+        {
+            new ConfidenceRange("0.00-0.60", 0, 0.6),
+            new ConfidenceRange("0.60-0.80", 0.6, 0.8),
+            new ConfidenceRange("0.80-0.90", 0.8, 0.9),
+            new ConfidenceRange("0.90-1.00", 0.9, null)
+        };
+        var telemetryCoverage = confidenceRanges
+            .Select(range => CreateTelemetryRangeCoverage(range, exposures, preferenceGenerationJobIds))
+            .ToList();
+
+        return new RecommendationCoverageReport
+        {
+            MinimumSampleSize = MinimumCoverageSampleSize,
+            ExposureCount = exposures.Count,
+            PreferenceLabelCount = preferenceGenerationJobIds.Count,
+            Styles = styleCoverage,
+            AnalysisConfidenceRanges = telemetryCoverage,
+            PeriodStart = fromDate,
+            PeriodEnd = toDate,
+            ComputedAtUtc = DateTimeOffset.UtcNow
+        };
     }
 
     public async Task<RecommendationMetrics> GetMetricsAsync(
@@ -148,7 +248,7 @@ public class AnalyticsService : IAnalyticsService
         var withFeedback = jobs.Count(j => j.Feedback.Any());
         var withPositiveFeedback = jobs
             .Where(j => j.Feedback.Any())
-            .Count(j => j.Feedback.Any(f => f.Rating.HasValue && f.Rating.Value >= 4));
+            .Count(j => j.Feedback.Any(f => f.Rating == 1));
 
         var confidences = jobs
             .Where(j => j.AnalysisConfidence.HasValue)
@@ -272,42 +372,104 @@ public class AnalyticsService : IAnalyticsService
         return null;
     }
 
-    private static IEnumerable<Guid> GetShownGenerationJobIds(IEnumerable<StyleItemEntity> linkedStyleItems)
+    private RecommendationExposureDataPoint CreateExposureDataPoint(
+        RecommendationExposureEntity exposure,
+        RecommendationExposureCandidateEntity candidate,
+        IReadOnlyDictionary<Guid, StyleJobEntity> generationJobs)
     {
-        var primaryStyleItem = linkedStyleItems.FirstOrDefault(x => x.IsResultPublic)
-            ?? linkedStyleItems.FirstOrDefault();
-
-        var orderedStyleItems = new List<StyleItemEntity>();
-        if (primaryStyleItem is not null)
+        StyleJobEntity? generationJob = null;
+        if (candidate.GenerationJobId.HasValue)
         {
-            orderedStyleItems.Add(primaryStyleItem);
+            generationJobs.TryGetValue(candidate.GenerationJobId.Value, out generationJob);
         }
 
-        orderedStyleItems.AddRange(linkedStyleItems.Where(x => primaryStyleItem is null || x.Id != primaryStyleItem.Id));
-
-        foreach (var item in orderedStyleItems)
+        return new RecommendationExposureDataPoint
         {
-            var latestJob = item.Jobs
-                .OrderByDescending(x => x.CreatedAtUtc)
-                .FirstOrDefault();
-
-            if (latestJob is not null)
-            {
-                yield return latestJob.Id;
-            }
-        }
+            ExposureId = exposure.Id,
+            AnalysisJobId = exposure.AnalysisJobId,
+            UserId = exposure.UserId,
+            ExposureCreatedAtUtc = exposure.CreatedAtUtc,
+            AnalysisCompletedAtUtc = exposure.AnalysisJob.CompletedAtUtc,
+            FaceShape = ExtractFaceShape(exposure.AnalysisJob.FeatureVectorJson),
+            Gender = exposure.AnalysisJob.Gender,
+            QualityPassed = exposure.AnalysisJob.QualityPassed ?? false,
+            AnalysisConfidence = exposure.AnalysisJob.AnalysisConfidence ?? 0,
+            TelemetrySchemaVersion = exposure.TelemetrySchemaVersion,
+            TelemetrySource = exposure.TelemetrySource,
+            ExperimentVersion = exposure.ExperimentVersion,
+            ExperimentApplied = exposure.ExperimentApplied,
+            SystemSelectedStyleId = exposure.PrimaryStyleId,
+            PrimaryGenerationJobId = exposure.PrimaryGenerationJobId,
+            EligibleCandidateCount = exposure.Candidates.Count,
+            ShownCandidateCount = exposure.Candidates.Count(item => item.WasShown),
+            CandidateStyleId = candidate.StyleId,
+            CandidateStyleName = candidate.StyleName,
+            RecommendationRank = candidate.RecommendationRank,
+            RankingScore = candidate.RankingScore,
+            IsPrimary = candidate.IsPrimary,
+            WasShown = candidate.WasShown,
+            ShownOrder = candidate.ShownOrder,
+            SelectionProbability = candidate.SelectionProbability,
+            StyleItemId = candidate.StyleItemId,
+            GenerationJobId = candidate.GenerationJobId,
+            GenerationStatus = generationJob?.Status,
+            GenerationErrorCode = generationJob?.ErrorCode,
+            GenerationCompletedAtUtc = generationJob?.CompletedAtUtc
+        };
     }
 
-    private static int? ResolveSelectedRank(IEnumerable<RecommendationFeedbackEntity> feedbackRows, Guid selectedGenerationJobId)
+    private static HashSet<Guid> GetCompletePreferenceGenerationJobIds(
+        IEnumerable<RecommendationExposureEntity> exposures)
     {
-        var selectedKey = selectedGenerationJobId.ToString();
-        var selectedFeedback = feedbackRows
-            .Where(x => string.Equals(x.SelectedStyleId, selectedKey, StringComparison.Ordinal))
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .ThenByDescending(x => x.Id)
-            .FirstOrDefault();
+        var result = new HashSet<Guid>();
+        foreach (var exposure in exposures)
+        {
+            var shownGenerationJobIds = exposure.Candidates
+                .Where(candidate => candidate.WasShown && candidate.GenerationJobId.HasValue)
+                .Select(candidate => candidate.GenerationJobId!.Value)
+                .ToHashSet();
 
-        return selectedFeedback?.Rating;
+            foreach (var feedback in exposure.AnalysisJob.Feedback)
+            {
+                if (feedback.Rating.HasValue
+                    && Guid.TryParse(feedback.SelectedStyleId, out var generationJobId)
+                    && shownGenerationJobIds.Contains(generationJobId))
+                {
+                    result.Add(generationJobId);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static TelemetryRangeCoveragePoint CreateTelemetryRangeCoverage(
+        ConfidenceRange range,
+        IReadOnlyCollection<RecommendationExposureEntity> exposures,
+        IReadOnlySet<Guid> preferenceGenerationJobIds)
+    {
+        var matchingExposures = exposures
+            .Where(exposure => exposure.AnalysisJob.AnalysisConfidence.HasValue)
+            .Where(exposure => exposure.AnalysisJob.AnalysisConfidence!.Value >= range.LowerInclusive)
+            .Where(exposure => !range.UpperExclusive.HasValue
+                || exposure.AnalysisJob.AnalysisConfidence!.Value < range.UpperExclusive.Value)
+            .ToList();
+        var matchingCandidates = matchingExposures
+            .SelectMany(exposure => exposure.Candidates)
+            .ToList();
+
+        return new TelemetryRangeCoveragePoint
+        {
+            Range = range.Name,
+            LowerInclusive = range.LowerInclusive,
+            UpperExclusive = range.UpperExclusive,
+            ExposureCount = matchingExposures.Count,
+            ShownCandidateCount = matchingCandidates.Count(candidate => candidate.WasShown),
+            PreferenceLabelCount = matchingCandidates.Count(candidate =>
+                candidate.GenerationJobId.HasValue
+                && preferenceGenerationJobIds.Contains(candidate.GenerationJobId.Value)),
+            IsSparse = matchingExposures.Count < MinimumCoverageSampleSize
+        };
     }
 
     private int? ExtractTelemetrySchemaVersion(string? featureVectorJson)
@@ -391,30 +553,8 @@ public class AnalyticsService : IAnalyticsService
         public double Score { get; set; }
         public int Rank { get; set; }
     }
-}
 
-public record RecommendationDataPoint
-{
-    public Guid AnalysisJobId { get; set; }
-    public string UserId { get; set; } = null!;
-    public string? FaceShape { get; set; }
-    public string? Gender { get; set; }
-    public bool QualityPassed { get; set; }
-    public double AnalysisConfidence { get; set; }
-    public int? TelemetrySchemaVersion { get; set; }
-    public string? TelemetrySource { get; set; }
-    public string TopRecommendationStyleId { get; set; } = null!;
-    public double TopRecommendationScore { get; set; }
-    public int RecommendationCount { get; set; }
-    public string ShownGenerationJobIdsJson { get; set; } = "[]";
-    public Guid SelectedGenerationJobId { get; set; }
-    public DateTimeOffset SelectedAtUtc { get; set; }
-    public string? SelectedStyleId { get; set; }
-    public int? FeedbackRating { get; set; }
-    public string? FeedbackTags { get; set; }
-    public DateTimeOffset? AnalysisCompletedAtUtc { get; set; }
-    public DateTimeOffset? FeedbackSubmittedAtUtc { get; set; }
-    public int? RecommendationRank { get; set; }
+    private sealed record ConfidenceRange(string Name, double LowerInclusive, double? UpperExclusive);
 }
 
 public record RecommendationMetrics

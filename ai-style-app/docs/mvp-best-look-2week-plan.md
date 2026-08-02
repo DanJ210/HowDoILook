@@ -20,7 +20,7 @@ During the learning phase, the system may generate 3 to 4 candidates and optiona
 
 ## 1) Automatic Best-Decision Contract
 
-Implementation status (2026-08-01): backend persistence, owner-scoped status retrieval, and public/feed lookup alignment are implemented. Frontend completion semantics remain open.
+Implementation status (2026-08-02): backend persistence, owner-scoped status/public lookup, and frontend automatic-result completion semantics are implemented.
 
 - Persist the system-selected primary recommendation and its generation job explicitly.
 - Keep the automatic decision traceable to the telemetry snapshot and ranking inputs used at the time.
@@ -168,6 +168,8 @@ Exit:
 - User receives the automatic best result after submitting only a portrait.
 
 ## PR 3 (Days 7-9): Decision and Label Data Integrity
+
+Status: complete. The worker atomically persists normalized exposure/candidate audit records, uses deterministic controlled challenger sampling with recorded propensities and shown order, validates feedback against the shown set, separates exposure and preference exports, and reports sparse support by style and analysis-confidence range.
 
 - Ensure telemetry, automatic decision, primary result, and shown experimental variants are linked.
 - Validate analytics/export distinguishes system decisions from optional user preference labels.

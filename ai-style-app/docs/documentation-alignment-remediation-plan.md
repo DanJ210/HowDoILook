@@ -107,24 +107,24 @@ Exit criteria:
 
 ## Workstream 3: Bias-Aware Learning Data
 
-**Problem:** current experimentation generates the deterministic top four heuristic candidates. Feedback is stored through `recommendation_feedback.selected_style_id`, and analytics exports only sessions with `SelectedGenerationJobId`. There is no persisted candidate pool, randomized exposure probability, experiment version, shown order, or no-feedback exposure row. Training directly from this data would reinforce the current heuristic and underrepresent styles or telemetry regions it rarely selects.
+**Implementation status (2026-08-02):** normalized exposure records, controlled challenger selection/order, propensities, no-feedback exposure exports, strict shown-candidate label validation, and initial style/analysis-confidence coverage reporting are implemented. Pairwise outcomes and advanced evaluation controls remain open.
 
-- [ ] Define immutable exposure records linked to analysis job, telemetry schema/version, system decision, candidate pool, displayed candidates, shown order, ranking scores, and experiment version.
-- [ ] Persist each experimental candidate's selection probability (propensity) so offline evaluation can correct for nonuniform exposure.
-- [ ] Sample challengers from eligible styles under controlled exploration instead of always taking ranks 2 through 4.
-- [ ] Keep the top heuristic candidate as the automatic primary while exploration is collecting evidence.
+- [x] Define immutable exposure records linked to analysis job, telemetry schema/version, system decision, candidate pool, displayed candidates, shown order, ranking scores, and experiment version.
+- [x] Persist each experimental candidate's selection probability (propensity) so offline evaluation can correct for nonuniform exposure.
+- [x] Sample challengers from eligible styles under controlled exploration instead of always taking ranks 2 through 4.
+- [x] Keep the top heuristic candidate as the automatic primary while exploration is collecting evidence.
 - [ ] Add optional pairwise feedback with `left`, `right`, `left preferred`, `right preferred`, `neither`, and `no preference` semantics.
-- [ ] Randomize comparison order and retain the presented order in the exposure record.
+- [x] Randomize challenger presentation order and retain the presented order in the exposure record.
 - [ ] Record generation model/version, prompt-template version, source image, aspect ratio, status, and quality outcome for every displayed generation.
-- [ ] Store system-selected primary, experimental exposure, and user preference as distinct concepts; do not overload finalization fields.
-- [ ] Export exposure/outcome rows for all completed sessions, including sessions with no feedback.
+- [x] Store system-selected primary, experimental exposure, and user preference as distinct concepts; do not overload finalization fields.
+- [x] Export exposure/outcome rows for all persisted exposures, including sessions with no feedback.
 - [ ] Export preference-label rows only when telemetry, both compared generations, exposure metadata, and explicit outcome are complete.
-- [ ] Treat missing feedback as missing, never as rejection.
+- [x] Treat missing feedback as missing, never as rejection.
 - [ ] Add coverage reports over continuous telemetry ranges, style exposures, comparison outcomes, analysis confidence, and image quality.
 - [ ] Define sparse/out-of-distribution thresholds that retain the validated heuristic rather than issuing unsupported learned recommendations.
 - [ ] Split offline evaluation by user and time; compare learned rankers against the existing heuristic before rollout.
 - [ ] Start exploration at a controlled traffic percentage and increase it only after generation quality, cost, and feedback-completion checks pass.
-- [ ] Add migration, service, API, export, and integrity tests for the new exposure and preference contracts.
+- [x] Add migration, service, API, export, and integrity tests for the new exposure and preference contracts.
 
 Exit criteria:
 

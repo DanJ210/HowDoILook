@@ -192,6 +192,20 @@ public class FaceAnalysisJobHandlerTests
                 Assert.Equal("textured-crop", persisted.PrimaryStyleId);
                 Assert.Equal(styleItems[0].Id, persisted.PrimaryStyleItemId);
                 Assert.Equal(queue.Messages[0].JobId, persisted.PrimaryGenerationJobId);
+
+                var exposure = await db.RecommendationExposures
+                    .AsNoTracking()
+                    .Include(x => x.Candidates)
+                    .SingleAsync(x => x.AnalysisJobId == analysisJob.Id);
+                Assert.Equal("controlled-exploration-v1", exposure.ExperimentVersion);
+                Assert.True(exposure.ExperimentApplied);
+                Assert.Equal("textured-crop", exposure.PrimaryStyleId);
+                Assert.Equal(queue.Messages[0].JobId, exposure.PrimaryGenerationJobId);
+                Assert.Equal(4, exposure.Candidates.Count);
+                Assert.All(exposure.Candidates, candidate => Assert.True(candidate.WasShown));
+                Assert.All(exposure.Candidates, candidate => Assert.Equal(1, candidate.SelectionProbability));
+                Assert.Equal([1, 2, 3, 4], exposure.Candidates.OrderBy(x => x.ShownOrder).Select(x => x.ShownOrder));
+                Assert.DoesNotContain(exposure.Candidates, candidate => candidate.StyleId == "other-style");
         }
 
         [Fact]
@@ -239,6 +253,18 @@ public class FaceAnalysisJobHandlerTests
                 var styleItems = await db.StyleItems.AsNoTracking().ToListAsync();
                 Assert.Single(styleItems);
                 Assert.True(styleItems[0].IsResultPublic);
+
+                var exposure = await db.RecommendationExposures
+                    .AsNoTracking()
+                    .Include(x => x.Candidates)
+                    .SingleAsync(x => x.AnalysisJobId == analysisJob.Id);
+                Assert.False(exposure.ExperimentApplied);
+                Assert.Equal(2, exposure.Candidates.Count);
+                Assert.True(exposure.Candidates.Single(x => x.IsPrimary).WasShown);
+                var challenger = exposure.Candidates.Single(x => !x.IsPrimary);
+                Assert.False(challenger.WasShown);
+                Assert.Equal(0, challenger.SelectionProbability);
+                Assert.Null(challenger.GenerationJobId);
         }
 
     [Fact]

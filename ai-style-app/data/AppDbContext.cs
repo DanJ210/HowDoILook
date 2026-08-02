@@ -11,6 +11,8 @@ public class AppDbContext : DbContext
     public DbSet<StyleJobEntity> StyleJobs => Set<StyleJobEntity>();
     public DbSet<FaceAnalysisJobEntity> FaceAnalysisJobs => Set<FaceAnalysisJobEntity>();
     public DbSet<RecommendationFeedbackEntity> RecommendationFeedback => Set<RecommendationFeedbackEntity>();
+    public DbSet<RecommendationExposureEntity> RecommendationExposures => Set<RecommendationExposureEntity>();
+    public DbSet<RecommendationExposureCandidateEntity> RecommendationExposureCandidates => Set<RecommendationExposureCandidateEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -68,6 +70,51 @@ public class AppDbContext : DbContext
              .WithMany(x => x.Feedback)
              .HasForeignKey(x => x.AnalysisJobId)
              .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RecommendationExposureEntity>(e =>
+        {
+            e.HasIndex(x => x.AnalysisJobId)
+             .IsUnique()
+             .HasDatabaseName("ux_recommendation_exposures_analysis_job_id");
+            e.HasIndex(x => x.UserId).HasDatabaseName("ix_recommendation_exposures_user_id");
+            e.HasIndex(x => x.CreatedAtUtc).HasDatabaseName("ix_recommendation_exposures_created_at");
+            e.HasIndex(x => x.PrimaryGenerationJobId)
+             .HasDatabaseName("ix_recommendation_exposures_primary_generation_job_id");
+
+            e.HasOne(x => x.AnalysisJob)
+             .WithOne(x => x.Exposure)
+             .HasForeignKey<RecommendationExposureEntity>(x => x.AnalysisJobId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.PrimaryGenerationJob)
+             .WithMany()
+             .HasForeignKey(x => x.PrimaryGenerationJobId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<RecommendationExposureCandidateEntity>(e =>
+        {
+            e.HasIndex(x => new { x.ExposureId, x.StyleId })
+             .IsUnique()
+             .HasDatabaseName("ux_recommendation_exposure_candidates_exposure_style");
+            e.HasIndex(x => x.GenerationJobId)
+             .HasDatabaseName("ix_recommendation_exposure_candidates_generation_job_id");
+
+            e.HasOne(x => x.Exposure)
+             .WithMany(x => x.Candidates)
+             .HasForeignKey(x => x.ExposureId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+              e.HasOne(x => x.StyleItem)
+               .WithMany()
+               .HasForeignKey(x => x.StyleItemId)
+               .OnDelete(DeleteBehavior.Restrict);
+
+              e.HasOne(x => x.GenerationJob)
+               .WithMany()
+               .HasForeignKey(x => x.GenerationJobId)
+               .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

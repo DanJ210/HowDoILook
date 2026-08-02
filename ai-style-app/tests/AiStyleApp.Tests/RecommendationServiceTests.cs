@@ -53,6 +53,45 @@ public class RecommendationServiceTests
         db.FaceAnalysisJobs.Add(analysisJob);
         await db.SaveChangesAsync();
 
+        var firstGenerationJobId = Guid.NewGuid();
+        var secondGenerationJobId = Guid.NewGuid();
+        db.RecommendationExposures.Add(new RecommendationExposureEntity
+        {
+            AnalysisJobId = analysisJob.Id,
+            UserId = analysisJob.UserId,
+            ExperimentVersion = "controlled-exploration-v1",
+            ExperimentApplied = true,
+            PrimaryStyleId = "short-quiff",
+            PrimaryGenerationJobId = firstGenerationJobId,
+            Candidates =
+            [
+                new RecommendationExposureCandidateEntity
+                {
+                    StyleId = "short-quiff",
+                    StyleName = "Short Quiff",
+                    RecommendationRank = 1,
+                    RankingScore = 0.9,
+                    IsPrimary = true,
+                    WasShown = true,
+                    ShownOrder = 1,
+                    SelectionProbability = 1,
+                    GenerationJobId = firstGenerationJobId
+                },
+                new RecommendationExposureCandidateEntity
+                {
+                    StyleId = "classic-side-part",
+                    StyleName = "Classic Side Part",
+                    RecommendationRank = 2,
+                    RankingScore = 0.8,
+                    WasShown = true,
+                    ShownOrder = 2,
+                    SelectionProbability = 1,
+                    GenerationJobId = secondGenerationJobId
+                }
+            ]
+        });
+        await db.SaveChangesAsync();
+
         var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
         var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
 
@@ -60,8 +99,8 @@ public class RecommendationServiceTests
             AnalysisJobId: analysisJob.Id,
             Rankings: new[]
             {
-                new RecommendationRankingInput(Guid.NewGuid(), 1),
-                new RecommendationRankingInput(Guid.NewGuid(), 2)
+                new RecommendationRankingInput(firstGenerationJobId, 1),
+                new RecommendationRankingInput(secondGenerationJobId, 2)
             },
             FeedbackTags: new[] { "greatMatch" },
             Comment: "top 2 look strong");
@@ -77,6 +116,62 @@ public class RecommendationServiceTests
         Assert.Equal(1, saved[0].Rating);
         Assert.Equal(2, saved[1].Rating);
         Assert.Equal("top 2 look strong", saved[0].Comment);
+    }
+
+    [Fact]
+    public async Task SubmitRatingsAsync_UnshownGenerationJob_ThrowsWithoutPersistingFeedback()
+    {
+        await using var db = CreateDbContext();
+        var analysisJob = new FaceAnalysisJobEntity
+        {
+            UserId = "user-1",
+            ImageUrl = "https://example.com/photo.jpg",
+            Gender = "female",
+            Status = "Succeeded"
+        };
+        db.FaceAnalysisJobs.Add(analysisJob);
+        await db.SaveChangesAsync();
+
+        var shownGenerationJobId = Guid.NewGuid();
+        db.RecommendationExposures.Add(new RecommendationExposureEntity
+        {
+            AnalysisJobId = analysisJob.Id,
+            UserId = analysisJob.UserId,
+            ExperimentVersion = "controlled-exploration-v1",
+            ExperimentApplied = true,
+            PrimaryStyleId = "short-quiff",
+            PrimaryGenerationJobId = shownGenerationJobId,
+            Candidates =
+            [
+                new RecommendationExposureCandidateEntity
+                {
+                    StyleId = "short-quiff",
+                    StyleName = "Short Quiff",
+                    RecommendationRank = 1,
+                    RankingScore = 0.9,
+                    IsPrimary = true,
+                    WasShown = true,
+                    ShownOrder = 1,
+                    SelectionProbability = 1,
+                    GenerationJobId = shownGenerationJobId
+                }
+            ]
+        });
+        await db.SaveChangesAsync();
+
+        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
+        var service = new RecommendationService(db, new StubQueuePublisher(), new StubMetricsLogger(), config);
+        var request = new SubmitRecommendationRatingsRequest(
+            AnalysisJobId: analysisJob.Id,
+            Rankings: [new RecommendationRankingInput(Guid.NewGuid(), 1)],
+            FeedbackTags: null,
+            Comment: null);
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(
+            () => service.SubmitRatingsAsync(analysisJob.Id, request, analysisJob.UserId));
+
+        Assert.Contains("shown candidate set", error.Message, StringComparison.Ordinal);
+        Assert.Empty(db.RecommendationFeedback);
     }
 
     [Fact]

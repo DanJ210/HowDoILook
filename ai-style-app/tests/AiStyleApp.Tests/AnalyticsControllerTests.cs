@@ -1,4 +1,5 @@
 using AiStyleApp.Api.Controllers;
+using AiStyleApp.Api.Models;
 using AiStyleApp.Api.Services;
 using AiStyleApp.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -34,12 +35,36 @@ public class AnalyticsControllerTests
         Assert.Contains("csv", responseJson, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ExportRecommendationsAsync_InvalidDataset_ReturnsBadRequest()
+    {
+        var controller = new AnalyticsController(new StubAnalyticsService(), NullLogger<AnalyticsController>.Instance);
+
+        var result = await controller.ExportRecommendationsAsync(dataset: "labels");
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        var responseJson = JsonSerializer.Serialize(badRequest.Value);
+        Assert.Contains("Invalid dataset: labels", responseJson, StringComparison.Ordinal);
+        Assert.Contains("exposures", responseJson, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("preferences", responseJson, StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed class StubAnalyticsService : IAnalyticsService
     {
-        public Task<IEnumerable<RecommendationDataPoint>> ExportRecommendationsDataAsync(
+        public Task<IReadOnlyList<RecommendationExposureDataPoint>> ExportExposureOutcomesAsync(
             DateTimeOffset? fromDate = null,
             DateTimeOffset? toDate = null)
-            => Task.FromResult<IEnumerable<RecommendationDataPoint>>([]);
+            => Task.FromResult<IReadOnlyList<RecommendationExposureDataPoint>>([]);
+
+        public Task<IReadOnlyList<RecommendationPreferenceDataPoint>> ExportPreferenceLabelsAsync(
+            DateTimeOffset? fromDate = null,
+            DateTimeOffset? toDate = null)
+            => Task.FromResult<IReadOnlyList<RecommendationPreferenceDataPoint>>([]);
+
+        public Task<RecommendationCoverageReport> GetCoverageAsync(
+            DateTimeOffset? fromDate = null,
+            DateTimeOffset? toDate = null)
+            => Task.FromResult(new RecommendationCoverageReport());
 
         public Task<RecommendationMetrics> GetMetricsAsync(
             DateTimeOffset? fromDate = null,
