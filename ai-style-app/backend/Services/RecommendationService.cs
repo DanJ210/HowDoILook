@@ -308,9 +308,21 @@ public class RecommendationService : IRecommendationService
         }
         else
         {
-            analysisJob.SelectedGenerationJobId = request.GenerationJobId;
-            analysisJob.SelectedAtUtc = selectedAtUtc;
-            updated = await _db.SaveChangesAsync(ct);
+            var candidate = await _db.FaceAnalysisJobs
+                .FirstOrDefaultAsync(
+                    x => x.Id == analysisJobId && x.UserId == userId && x.SelectedGenerationJobId == null,
+                    ct);
+
+            if (candidate is null)
+            {
+                updated = 0;
+            }
+            else
+            {
+                candidate.SelectedGenerationJobId = request.GenerationJobId;
+                candidate.SelectedAtUtc = selectedAtUtc;
+                updated = await _db.SaveChangesAsync(ct);
+            }
         }
 
         if (updated == 0)
