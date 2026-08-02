@@ -290,6 +290,7 @@ public class ReplicateWebhookProcessor : IReplicateWebhookProcessor
     {
         status = replicateStatus switch
         {
+            "queued" => JobStatus.Processing,
             "starting" => JobStatus.Processing,
             "processing" => JobStatus.Processing,
             "succeeded" => JobStatus.Succeeded,

@@ -251,6 +251,39 @@ public class ReplicateWebhookProcessorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_QueuedStatus_MapsToProcessing()
+    {
+        await using var db = CreateDbContext();
+        var queue = new TestQueuePublisher();
+        var job = await SeedJobAsync(
+            db,
+            pipelineMode: StyleJobPipelineMode.HairOnly,
+            currentStage: StyleJobStage.Hair,
+            isBeardStagePending: false);
+        job.Status = JobStatus.Queued;
+        job.StartedAtUtc = null;
+        job.ExternalPredictionId = "queued-prediction";
+        await db.SaveChangesAsync();
+
+        var processor = new ReplicateWebhookProcessor(db, queue, NullLogger<ReplicateWebhookProcessor>.Instance);
+        var payload = new ReplicateWebhookPayload(
+            Id: "queued-prediction",
+            Status: "queued",
+            Error: null,
+            Output: null,
+            CompletedAt: null);
+
+        var result = await processor.ProcessAsync(payload);
+
+        Assert.True(result.IsKnownPrediction);
+        Assert.Null(queue.LastMessage);
+        var persisted = await db.StyleJobs.FirstAsync(x => x.Id == job.Id);
+        Assert.Equal(JobStatus.Processing, persisted.Status);
+        Assert.NotNull(persisted.StartedAtUtc);
+        Assert.Null(persisted.CompletedAtUtc);
+    }
+
+    [Fact]
     public async Task ProcessAsync_BeardHandoffPending_LaterFailureDoesNotPublishOrRegressState()
     {
         await using var db = CreateDbContext();
