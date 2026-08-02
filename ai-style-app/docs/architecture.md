@@ -254,7 +254,7 @@ Migration notes:
 3. Backend enqueues queue message (`jobType = face-analysis`, `schemaVersion = 2`) to `analysis-jobs`.
 4. Worker dequeues message and marks analysis job `Processing`.
 5. Worker validates image URL format/reachability.
-7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector (including `faceShape`) + stage telemetry (landmarks `notes` contains the shape label).
+7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector (including `faceShape`) + stage telemetry (landmarks `notes` contains the shape label). Segmentation records visible lower-face beard density independently of gender; gender and user permission remain separate beard-recommendation eligibility rules.
 8. Worker persists recommendation payload and enqueues generation jobs to `style-jobs`.
 9. Frontend polls status endpoint and renders either recommendations or retry guidance.
 10. Frontend submits optional feedback, backend persists to `recommendation_feedback`.

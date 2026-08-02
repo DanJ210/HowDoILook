@@ -99,7 +99,7 @@ flowchart LR
 2. Run quality gate.
 3. Detect face and enforce exactly one face.
 4. Extract landmarks and normalized geometry features.
-5. Run region segmentation and derive region metrics.
+5. Run region segmentation and derive region metrics. Measure visible beard density for every accepted portrait without using gender as an extraction input.
 6. Build analysis feature vector and confidence metrics.
 7. Rank recommendation candidates with reasons and select one best recommendation.
 8. Create public recommendation post with the best recommendation as primary.
@@ -424,7 +424,7 @@ Normalize the following for scoring:
 - faceShapeFit: catalog compatibility for detected face shape
 - geometryFit: jaw, forehead, elongation, symmetry fit against candidate profile
 - hairDensityFit: closeness to candidate density range
-- beardDensityFit: closeness to candidate beard profile (male only)
+- beardDensityFit: closeness to candidate beard profile; measured for all portraits but used only for eligible beard candidates
 - preferenceFit: maintenance and styleVibe alignment
 - colorFit: hair and beard color compatibility to skin tone and natural contrast
 - confidenceFit: analysisConfidence after quality adjustment
@@ -441,7 +441,7 @@ scoreBase(c) =
 0.10 * colorFit(c) +
 0.10 * beardDensityFit(c)
 
-For non-male or beard-disabled flows, set beardDensityFit(c) to 0 and re-normalize by dividing by 0.90.
+For non-male or beard-disabled flows, exclude beard candidates, set beardDensityFit(c) to 0, and re-normalize by dividing by 0.90. This eligibility policy does not alter the stored `beardDensityEstimate` telemetry.
 
 Quality and confidence attenuation:
 

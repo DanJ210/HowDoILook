@@ -99,12 +99,12 @@ public interface IFaceLandmarkModelStage
 
 public interface IFaceSegmentationStage
 {
-    SegmentationFeatures Extract(Image<Rgba32> image, string? gender);
+    SegmentationFeatures Extract(Image<Rgba32> image);
 }
 
 public interface IFaceRegionEstimationStage
 {
-    SegmentationFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face, string? gender);
+    SegmentationFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face);
 }
 
 public interface IRecommendationStage
@@ -158,14 +158,14 @@ public class HeuristicFaceLandmarkModelStage : IFaceLandmarkModelStage
 
 public class HeuristicFaceSegmentationStage : IFaceSegmentationStage
 {
-    public SegmentationFeatures Extract(Image<Rgba32> image, string? gender)
-        => FaceAnalysisPipeline.ComputeSegmentationFeatures(image, gender);
+    public SegmentationFeatures Extract(Image<Rgba32> image)
+        => FaceAnalysisPipeline.ComputeSegmentationFeatures(image);
 }
 
 public class HeuristicFaceRegionEstimationStage : IFaceRegionEstimationStage
 {
-    public SegmentationFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face, string? gender)
-        => FaceAnalysisPipeline.ComputeSegmentationFeatures(image, gender);
+    public SegmentationFeatures Extract(Image<Rgba32> image, FaceBoundingBox? face)
+        => FaceAnalysisPipeline.ComputeSegmentationFeatures(image);
 }
 
 public class RuleBasedRecommendationStage : IRecommendationStage
@@ -359,8 +359,8 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
 
         var segmentationStopwatch = Stopwatch.StartNew();
         var segmentation = _features.OnnxRegionEstimation
-            ? _regionEstimationStage.Extract(image, detection.PrimaryFace, gender)
-            : _segmentationStage.Extract(image, gender);
+            ? _regionEstimationStage.Extract(image, detection.PrimaryFace)
+            : _segmentationStage.Extract(image);
         segmentationStopwatch.Stop();
         stageTelemetry.Add(new StageTelemetry(
             Stage: "segmentation",
@@ -601,7 +601,7 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
             FaceElongation: faceElongation);
     }
 
-    internal static SegmentationFeatures ComputeSegmentationFeatures(Image<Rgba32> image, string? gender)
+    internal static SegmentationFeatures ComputeSegmentationFeatures(Image<Rgba32> image)
     {
         var width = image.Width;
         var height = image.Height;
@@ -609,11 +609,8 @@ public class FaceAnalysisPipeline : IFaceAnalysisPipeline
         var hairRegionDarkRatio = DarkPixelRatio(image, 0.0, 0.30, 0.18);
         var lowerFaceDarkRatio = DarkPixelRatio(image, 0.62, 0.92, 0.20, xStartFactor: 0.25, xEndFactor: 0.75);
 
-        var beardDensityEstimate = string.Equals(gender, "male", StringComparison.OrdinalIgnoreCase)
-            ? Clamp01(lowerFaceDarkRatio)
-            : 0.0;
-
         var hairDensityEstimate = Clamp01(hairRegionDarkRatio);
+        var beardDensityEstimate = Clamp01(lowerFaceDarkRatio);
 
         return new SegmentationFeatures(
             HairDensityEstimate: hairDensityEstimate,
