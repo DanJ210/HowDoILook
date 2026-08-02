@@ -83,4 +83,5 @@ public class FaceAnalysisJobEntity
     public DateTimeOffset? SelectedAtUtc { get; set; }
 
     public ICollection<RecommendationFeedbackEntity> Feedback { get; set; } = new List<RecommendationFeedbackEntity>();
+    public RecommendationExposureEntity? Exposure { get; set; }
 }

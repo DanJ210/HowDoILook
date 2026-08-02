@@ -417,7 +417,8 @@ The webhook verifies Replicate signature headers (`webhook-id`, `webhook-timesta
 
 | Method | Path | Auth | Query Params | Response |
 |--------|------|------|--------------|----------|
-| `GET` | `/api/analytics/export-recommendations` | Required | `format`, `from`, `to` | CSV/JSON |
+| `GET` | `/api/analytics/export-recommendations` | Required | `dataset`, `format`, `from`, `to` | CSV/JSON |
+| `GET` | `/api/analytics/coverage` | Required | `from`, `to` | `RecommendationCoverageReport` |
 | `GET` | `/api/analytics/metrics` | Required | `from`, `to` | `RecommendationMetrics` |
 
 ### ExportRecommendationsQuery
@@ -426,59 +427,85 @@ The webhook verifies Replicate signature headers (`webhook-id`, `webhook-timesta
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
+| `dataset` | `exposures` \| `preferences` | `exposures` | Export system decisions/outcomes or complete explicit preference labels. |
 | `format` | `json` \| `csv` | `json` | Export format |
 | `from` | ISO 8601 datetime | — | Filter from date (UTC). Omit for no lower bound. |
 | `to` | ISO 8601 datetime | — | Filter to date (UTC). Omit for no upper bound. |
 
 **Example:**
 ```
-GET /api/analytics/export-recommendations?format=csv&from=2026-01-01T00:00:00Z&to=2026-01-31T23:59:59Z
+GET /api/analytics/export-recommendations?dataset=exposures&format=csv&from=2026-01-01T00:00:00Z&to=2026-01-31T23:59:59Z
 ```
 
-**Response (JSON):**
+All JSON export envelopes include `dataset`, `count`, `periodStart`, `periodEnd`, and `data`.
+
+**Exposure/outcome row (`dataset=exposures`):**
 
 ```json
 {
-  "format": "json",
-  "count": 1250,
-  "periodStart": "2026-01-01T00:00:00Z",
-  "periodEnd": "2026-01-31T23:59:59Z",
-  "data": [
-    {
-      "analysisJobId": "uuid",
-      "userId": "string",
-      "faceShape": "Round | Oval | Square | Heart | Diamond | Oblong",
-      "gender": "none | male | female | null",
-      "qualityPassed": true,
-      "analysisConfidence": 0.87,
-      "telemetrySchemaVersion": 2,
-      "telemetrySource": "worker-v1-staged-analysis",
-      "topRecommendationStyleId": "short-quiff",
-      "topRecommendationScore": 0.92,
-      "recommendationCount": 5,
-      "shownGenerationJobIdsJson": "[\"uuid-1\",\"uuid-2\",\"uuid-3\",\"uuid-4\"]",
-      "selectedGenerationJobId": "uuid-1",
-      "selectedAtUtc": "2026-01-15T14:24:20Z",
-      "selectedStyleId": "uuid-1 | null",
-      "feedbackRating": 5,
-      "feedbackTags": "[\"great-match\"] | null",
-      "analysisCompletedAt": "2026-01-15T14:23:45Z",
-      "feedbackSubmittedAt": "2026-01-15T14:25:30Z",
-      "recommendationRank": 1
-    }
-  ]
+  "exposureId": "uuid",
+  "analysisJobId": "uuid",
+  "userId": "string",
+  "faceShape": "Square",
+  "analysisConfidence": 0.87,
+  "telemetrySchemaVersion": 2,
+  "telemetrySource": "worker-v1-staged-analysis",
+  "experimentVersion": "controlled-exploration-v1",
+  "experimentApplied": true,
+  "systemSelectedStyleId": "short-quiff",
+  "primaryGenerationJobId": "uuid-primary",
+  "eligibleCandidateCount": 4,
+  "shownCandidateCount": 4,
+  "candidateStyleId": "classic-side-part",
+  "recommendationRank": 2,
+  "rankingScore": 0.88,
+  "isPrimary": false,
+  "wasShown": true,
+  "shownOrder": 3,
+  "selectionProbability": 1.0,
+  "generationJobId": "uuid-experiment",
+  "generationStatus": "Succeeded",
+  "generationErrorCode": null
 }
 ```
 
-**Response (CSV):** Comma-separated with headers. Each row represents one finalized recommendation session with complete feature-label linkage.
+One exposure row is emitted per eligible candidate. Unshown candidates remain present with `wasShown=false` and no generation job, preserving the complete candidate pool. Sessions do not need finalization or feedback to appear.
+
+**Preference-label row (`dataset=preferences`):**
+
+```json
+{
+  "feedbackId": "uuid",
+  "exposureId": "uuid",
+  "analysisJobId": "uuid",
+  "experimentVersion": "controlled-exploration-v1",
+  "systemSelectedStyleId": "short-quiff",
+  "primaryGenerationJobId": "uuid-primary",
+  "candidateStyleId": "classic-side-part",
+  "generationJobId": "uuid-experiment",
+  "isPrimary": false,
+  "shownOrder": 3,
+  "selectionProbability": 1.0,
+  "submittedRank": 1,
+  "feedbackTagsJson": "[\"greatMatch\"]",
+  "feedbackSubmittedAtUtc": "2026-01-15T14:25:30Z"
+}
+```
+
+**Response (CSV):** Comma-separated headers match the selected dataset's row type.
 
 Training row integrity rules:
 
-- Only `Succeeded` sessions with a persisted final selection (`selectedGenerationJobId` and `selectedAtUtc`) are exported.
-- Exported rows must include at least one shown generation job id.
-- Exported rows require that `selectedGenerationJobId` is present in `shownGenerationJobIdsJson`.
+- The worker writes one immutable exposure per analysis in the same save as its style items and generation jobs.
+- The exposure records telemetry identity, automatic primary, eligible candidate pool, ranking scores, inclusion propensity, and shown order.
+- `POST /api/recommendations/jobs/{id}/ratings` rejects generation IDs outside the recorded shown set.
+- Preference rows are exported only when explicit feedback maps to a shown candidate with complete exposure linkage.
+- Missing feedback creates no preference row and is never interpreted as rejection.
+- Legacy `selectedGenerationJobId` finalization does not define either export.
 
-**Purpose:** Collect recommendation tuples (face shape, recommendations, selected style, rating) for model training, audit trails, and performance analysis.
+### GetCoverageQuery
+
+`GET /api/analytics/coverage` accepts the same optional `from` and `to` filters. It returns eligible, shown, primary, succeeded-generation, preference-label, average-propensity, and sparse-support counts per style. It also reports support in continuous analysis-confidence ranges (`0.00-0.60`, `0.60-0.80`, `0.80-0.90`, and `0.90-1.00`). A range or style is marked `isSparse=true` below the current minimum of 20 samples.
 
 ### GetMetricsQuery
 
@@ -525,7 +552,7 @@ Training row integrity rules:
 **Metrics definitions:**
 - **Success rate**: `successfulAnalyses / totalAnalyses` — percentage of analysis jobs that completed without errors.
 - **Click-through rate (CTR)**: `analysesWithFeedback / totalAnalyses` — percentage of users who submitted feedback.
-- **Positive feedback rate**: `positiveFeedbackCount / analysesWithFeedback` — percentage of feedback ratings ≥ 4.
+- **Positive feedback rate**: `rankOneFeedbackSessionCount / analysesWithFeedback` — percentage of feedback-bearing sessions with an explicit rank-1 preference.
 - **Average confidence**: Mean of `analysis_confidence` across all completed jobs.
 - **Face shape distribution**: Count of completed jobs per face shape.
 - **Top recommended styles**: Top 5 styles by selection frequency (regardless of rating).

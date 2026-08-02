@@ -109,8 +109,10 @@ flowchart LR
 
 Experimental mode extension (pre-MVP default):
 
-11. Enqueue three variant generation jobs for feedback collection.
-12. Persist feedback and learning metrics.
+11. Keep the top heuristic candidate as primary and deterministically sample up to three generation-eligible challengers.
+12. Randomize challenger presentation order independently from candidate selection.
+13. Persist the eligible pool, experiment version, rank/score, shown order, marginal selection probability, and generation linkage before enqueueing variants.
+14. Accept optional feedback only for candidates recorded as shown.
 
 ## 5.2 Quality Gate Rules (Initial)
 
@@ -273,6 +275,8 @@ Rules:
 - Each ranking `rank` must be between 1 and 3.
 - Duplicate `generationJobId` values are rejected.
 - Duplicate `rank` values are rejected.
+- Every `generationJobId` must belong to the immutable shown-candidate set for the route's analysis job and authenticated user.
+- Missing feedback produces no preference label and is never interpreted as rejection.
 
 ## 6.2 Queue Contract Extension (data/Queue)
 
@@ -332,7 +336,27 @@ Additive schema only.
 - comment (varchar1000, nullable)
 - created_at_utc (timestamptz)
 
-## 7.3 Optional Future Table (Not Required for V1)
+## 7.3 Tables: recommendation_exposures and recommendation_exposure_candidates
+
+`recommendation_exposures` contains one immutable decision snapshot per analysis job:
+
+- analysis job and user linkage
+- telemetry schema version and source
+- experiment version and applied state
+- system-selected primary style and generation job
+- creation timestamp
+
+`recommendation_exposure_candidates` contains the complete generation-eligible candidate pool:
+
+- style ID/name, heuristic rank, and score
+- primary and shown flags
+- one-based shown order for generated candidates
+- marginal selection probability used by controlled challenger sampling
+- nullable style-item and generation-job IDs for unshown candidates
+
+Unique constraints prevent multiple exposure records per analysis and duplicate styles within an exposure. Restricting deletes on generated artifacts prevents audit rows from becoming orphaned.
+
+## 7.4 Optional Future Table (Not Required for V1)
 
 - style_catalog for central management of style metadata and constraints.
 
@@ -352,12 +376,18 @@ Add endpoints under /api/recommendations.
 
 3. POST /api/recommendations/jobs/{id}/ratings
 - Auth required.
-- Stores ranking feedback for experimental generation jobs in the learning loop.
+- Stores ranking feedback only after every generation job is verified against the exposure's shown set.
 
 4. POST /api/recommendations/jobs/{id}/finalize
 - Auth required.
 - Persists a legacy experimentation selection separately from the automatic primary result.
 - Idempotent when the same winner is submitted multiple times.
+
+Analytics exports are intentionally separate:
+
+- `GET /api/analytics/export-recommendations?dataset=exposures` emits candidate-level decisions and outcomes for every persisted exposure, even without feedback.
+- `GET /api/analytics/export-recommendations?dataset=preferences` emits only complete explicit ranking labels.
+- `GET /api/analytics/coverage` reports support by style and continuous analysis-confidence range.
 
 ## 9. Worker Design
 
@@ -495,8 +525,12 @@ If no candidate survives constraints:
 
 For pre-MVP recommendation sessions:
 
-- Select controlled challengers from the eligible candidate pool
-- Record experiment policy, candidate probability, and shown order
+- Use `controlled-exploration-v1` as the persisted experiment version.
+- Keep the top heuristic candidate as primary with selection probability `1.0`.
+- Select up to three challengers by a deterministic per-analysis hash over the generation-eligible pool.
+- Record each challenger's marginal inclusion probability as `min(3, poolSize) / poolSize` when experimentation applies, otherwise `0`.
+- Use a separate per-analysis hash to randomize the selected challengers' shown order.
+- Persist unshown eligible candidates so the complete candidate pool remains reconstructable.
 - Keep bestRecommendation and bestVariant unchanged as canonical output
 - Treat explicit feedback on generated variants as subjective preference labels for future evaluation and tuning
 

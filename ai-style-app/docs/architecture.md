@@ -137,6 +137,14 @@ Recommendation analysis is the entrypoint. `style_items` and `style_jobs` are do
 | `started_at_utc` | timestamptz | |
 | `completed_at_utc` | timestamptz | |
 
+### `recommendation_exposures`
+
+One immutable row per analyzed recommendation session. It links the telemetry identity and experiment version to the automatic primary style and generation job.
+
+### `recommendation_exposure_candidates`
+
+One row per generation-eligible ranked candidate. Rows persist recommendation rank/score, primary role, whether the candidate was shown, shown order, marginal selection probability, and optional style-item/generation-job IDs. Unshown rows preserve the candidate pool without creating generation jobs.
+
 ## Data Flow
 
 1. User uploads a photo (`POST /api/upload/image`).
@@ -144,12 +152,13 @@ Recommendation analysis is the entrypoint. `style_items` and `style_jobs` are do
 3. Backend creates analysis records and a public post placeholder in `Queued`/`Publishing` states, then enqueues a face-analysis job.
 4. Frontend polls `GET /api/recommendations/jobs/{analysisJobId}`.
 5. Worker processes analysis, extracts ONNX telemetry, ranks candidates, and persists the automatic primary style, post, and generation-job identifiers on the analysis job.
-6. Worker enqueues the primary generation job and, when experimentation applies, up to three additional private variants (`jobType = generate-style`) for Replicate.
-7. Replicate sends webhook callback to `POST /api/webhooks/replicate` for best-variant completion.
-8. Backend verifies HMAC signatures, updates generated variant states/results, and archives final images.
-9. Status and public-feed reads resolve the persisted primary generation; pre-migration rows use the legacy linked-post fallback.
-10. Frontend renders the system-selected primary result without requiring user finalization.
-11. Optional comparison/ranking feedback is stored separately and does not replace the automatic primary.
+6. Worker keeps the top heuristic result as primary and deterministically samples up to three eligible challengers. Challenger order is independently randomized per analysis.
+7. Worker atomically persists generation jobs and an immutable exposure snapshot containing telemetry identity, experiment version, the eligible pool, ranking scores, shown order, and selection propensities.
+8. Replicate sends webhook callback to `POST /api/webhooks/replicate` for variant completion.
+9. Backend verifies HMAC signatures, updates generated variant states/results, and archives final images.
+10. Status and public-feed reads resolve the persisted primary generation; pre-migration rows use the legacy linked-post fallback.
+11. Frontend renders the system-selected primary result without requiring user finalization.
+12. Optional comparison/ranking feedback is accepted only for generation jobs recorded as shown in that exposure and does not replace the automatic primary.
 
 Experimental note: experimentation may expose additional generated variants for optional feedback. Experiment traffic is configurable and must not block primary-result delivery.
 
@@ -185,7 +194,14 @@ This section describes the canonical app flow where recommendation analysis is t
   - Keeps `selected_generation_job_id` separate as optional experimentation feedback from the earlier finalization flow.
 
 - `recommendation_feedback`
-  - Stores selected style, rating, tags, and optional comment for learning loops.
+  - Stores ranking, tags, and optional comment for learning loops after shown-candidate validation.
+
+- `recommendation_exposures`
+  - Stores one analysis-linked experiment and automatic-decision snapshot.
+  - Carries telemetry schema/source, experiment version/applied state, primary style, and primary generation job.
+
+- `recommendation_exposure_candidates`
+  - Stores the complete generation-eligible candidate pool and each candidate's rank, score, inclusion propensity, shown state/order, and generated artifact linkage.
 
 ### EF Core Entity and Migration Shape
 
@@ -193,6 +209,8 @@ Implemented entity names and table mapping in `AiStyleApp.Data`:
 
 - `FaceAnalysisJobEntity` -> `face_analysis_jobs`
 - `RecommendationFeedbackEntity` -> `recommendation_feedback`
+- `RecommendationExposureEntity` -> `recommendation_exposures`
+- `RecommendationExposureCandidateEntity` -> `recommendation_exposure_candidates`
 
 Recommended `FaceAnalysisJobEntity` properties:
 
@@ -234,6 +252,9 @@ Implemented relational configuration:
 - FK: `recommendation_feedback.analysis_job_id` -> `face_analysis_jobs.id` with cascade delete.
 - FK: `face_analysis_jobs.primary_style_item_id` -> `style_items.id` with set-null delete behavior.
 - FK: `face_analysis_jobs.primary_generation_job_id` -> `style_jobs.id` with set-null delete behavior.
+- Unique FK: `recommendation_exposures.analysis_job_id` -> `face_analysis_jobs.id` with cascade delete.
+- FK: `recommendation_exposures.primary_generation_job_id` -> `style_jobs.id` with restrict delete behavior.
+- FK: exposure-candidate style-item and generation-job IDs use restrict delete behavior so audit linkage cannot be orphaned.
 
 Implemented indexes:
 
@@ -243,11 +264,16 @@ Implemented indexes:
 - `face_analysis_jobs (primary_generation_job_id)`
 - `recommendation_feedback (user_id)`
 - `recommendation_feedback (analysis_job_id)`
+- unique `recommendation_exposures (analysis_job_id)`
+- `recommendation_exposures (user_id, created_at_utc, primary_generation_job_id)`
+- unique `recommendation_exposure_candidates (exposure_id, style_id)`
+- `recommendation_exposure_candidates (generation_job_id, style_item_id)`
 
 Migration notes:
 
 - Migration `AddFaceAnalysisRecommendations` is applied by EF tooling.
 - Migration `AddAutomaticPrimaryRecommendation` adds explicit primary linkage without changing `style_items` or `style_jobs`.
+- Migration `AddRecommendationExposureIntegrity` adds normalized exposure and candidate audit records.
 
 ### Queue Contract Evolution
 
@@ -265,10 +291,10 @@ Migration notes:
 4. Worker dequeues message and marks analysis job `Processing`.
 5. Worker validates image URL format/reachability.
 7. Worker runs quality, ONNX landmark extraction when enabled, and segmentation stages, then writes feature vector (including `faceShape`) + stage telemetry (landmarks `notes` contains the shape label). Segmentation records visible lower-face beard density independently of gender; gender and user permission remain separate beard-recommendation eligibility rules.
-8. Worker persists recommendation payload plus automatic primary linkage and enqueues generation jobs to `style-jobs`.
+8. Worker persists recommendation payload, automatic primary linkage, generated variants, and the exposure/candidate audit snapshot before publishing generation messages to `style-jobs`.
 9. Frontend polls through downstream generation. It displays `completed` as soon as the primary succeeds while continuing background refresh for nonterminal experimental variants.
 10. A failed primary is not replaced by an experimental result; terminal failures are surfaced after the returned variant set settles.
-11. Frontend submits optional feedback, backend persists to `recommendation_feedback`.
+11. Frontend submits optional feedback; backend verifies every ranked generation against the exposure's shown set before persisting `recommendation_feedback`.
 
 ### Analytics and Data Collection
 
@@ -277,11 +303,14 @@ Migration notes:
 **Components:**
 
 1. **AnalyticsService** (`ai-style-app/backend/Services/AnalyticsService.cs`)
-   - `ExportRecommendationsDataAsync()`: Joins `face_analysis_jobs` + `recommendation_feedback` for export as training dataset.
-  - `GetMetricsAsync()`: Computes aggregated KPIs (success rate, CTR, positive feedback rate, face shape distribution, top styles).
+  - `ExportExposureOutcomesAsync()`: emits one candidate-level decision/outcome row for all persisted exposures, including sessions without feedback.
+  - `ExportPreferenceLabelsAsync()`: emits only explicit feedback with complete shown-candidate linkage.
+  - `GetCoverageAsync()`: reports style support and continuous analysis-confidence ranges with sparse-support flags.
+  - `GetMetricsAsync()`: computes aggregated KPIs (success rate, feedback rate, rank-1 preference rate, face shape distribution, top styles).
 
 2. **AnalyticsController** (`ai-style-app/backend/Controllers/AnalyticsController.cs`)
-  - `GET /api/analytics/export-recommendations` (JSON/CSV): Exports recommendation tuples with face shape, confidence, and user feedback.
+  - `GET /api/analytics/export-recommendations?dataset=exposures|preferences` (JSON/CSV): exports system decisions/outcomes separately from preference labels.
+  - `GET /api/analytics/coverage`: returns style and telemetry-range support.
    - `GET /api/analytics/metrics`: Returns system health metrics over a date range.
 
 3. **MetricsLogger** (`ai-style-app/data/MetricsLogger.cs`)

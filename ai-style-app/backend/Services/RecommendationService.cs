@@ -388,6 +388,26 @@ public class RecommendationService : IRecommendationService
             throw new ArgumentException("Duplicate rank values are not allowed.", nameof(request));
         }
 
+        var rankedGenerationJobIds = request.Rankings
+            .Select(ranking => ranking.GenerationJobId)
+            .ToHashSet();
+        var shownGenerationJobIds = await _db.RecommendationExposureCandidates
+            .AsNoTracking()
+            .Where(candidate => candidate.Exposure.AnalysisJobId == analysisJobId
+                && candidate.Exposure.UserId == userId
+                && candidate.WasShown
+                && candidate.GenerationJobId.HasValue
+                && rankedGenerationJobIds.Contains(candidate.GenerationJobId.Value))
+            .Select(candidate => candidate.GenerationJobId!.Value)
+            .ToListAsync(ct);
+
+        if (shownGenerationJobIds.Count != rankedGenerationJobIds.Count)
+        {
+            throw new ArgumentException(
+                "Every ranked generation job must belong to the recorded shown candidate set.",
+                nameof(request));
+        }
+
         var serializedTags = request.FeedbackTags is null
             ? null
             : JsonSerializer.Serialize(request.FeedbackTags);
