@@ -449,7 +449,7 @@ onMounted(async () => {
                     {{ bestRecommendation?.styleName ?? 'Preparing your best look' }}
                   </h3>
                 </div>
-                <span v-if="hasCompleted" class="text-sm font-medium text-emerald-200">Ready</span>
+                <span v-if="primaryResultImageUrl" class="text-sm font-medium text-emerald-200">Ready</span>
               </div>
 
               <img
@@ -460,7 +460,9 @@ onMounted(async () => {
               />
               <div v-else class="grid min-h-80 place-items-center px-6 text-center">
                 <div>
-                  <p class="text-sm font-medium text-white">Creating your automatic result</p>
+                  <p class="text-sm font-medium text-white">
+                    {{ hasCompleted ? 'Archiving your automatic result' : 'Creating your automatic result' }}
+                  </p>
                   <p class="mt-1 text-sm text-slate-400">
                     {{ bestVariant ? `Generation status: ${bestVariant.status}` : 'Preparing generation…' }}
                   </p>
