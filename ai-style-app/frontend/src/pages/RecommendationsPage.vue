@@ -479,7 +479,7 @@ onMounted(async () => {
                 <a
                   :href="primaryResultImageUrl"
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   class="rounded-xl border border-white/15 px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-white/10"
                 >
                   View full size
