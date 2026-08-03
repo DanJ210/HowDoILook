@@ -40,6 +40,26 @@ Deliver one automatic primary result after a photo-only submission. Additional v
 3. Optionally compare experimental variants and submit preference feedback.
 4. Continue using the automatic primary as the canonical result.
 
+## Current Roadmap Checkpoint
+
+Status (2026-08-02): the MVP implementation sequence through Phase 4 is merged. This document remains active as a post-MVP roadmap; it is not an MVP release checklist.
+
+Completed for the MVP:
+
+- Phase 2: automatic primary completion and publication.
+- Phase 3: webhook and multi-stage idempotency hardening.
+- Phase 4: automatic-result UX polish.
+- Core Phase 1 linkage and exposure auditing needed for the current heuristic decision flow.
+
+Continue after MVP release validation with:
+
+1. [ ] Phase 1 remainder: persist resolved prompt, generation-model, and guardrail snapshots per generated variant.
+2. [ ] Data learning loop remainder: pairwise outcomes, complete generation metadata, broader coverage reporting, sparse/out-of-distribution policy, and held-out evaluation.
+3. [ ] Phase 5 and Phase 6 only as explicitly approved post-MVP work; both are deferred by `docs/mvp-best-look-2week-plan.md`.
+4. [ ] Phase 7 remainder: operational metrics/alerts and the experimentation ramp-down path.
+
+Do not start model-training or telemetry-v3 work merely to close this plan. Validate the MVP first, then choose the next phase based on observed reliability and data coverage.
+
 ## Phase Plan
 
 ## Phase 1: Recommendation Decision Contract Hardening
@@ -86,6 +106,8 @@ Exit criteria:
 
 ## Phase 3: Webhook and Multi-Stage Idempotency Hardening
 
+Status (2026-08-02): implemented. Webhook and worker transitions use stage-bound conditional claims, duplicate/stale/unknown callbacks are non-regressive, queue publication failures remain retryable, and replay/out-of-order behavior is covered by tests.
+
 Goal: make stage completion deterministic under duplicate/out-of-order callbacks.
 
 - Lock valid state transitions for stage and overall job.
@@ -116,6 +138,8 @@ Exit criteria:
 
 ## Phase 5: Telemetry v3 and Stage Interface Evolution
 
+Status (2026-08-02): deferred until after MVP release validation.
+
 Goal: raise telemetry quality for research-grade recommendation tuning.
 
 - Introduce v3 feature vector shape with face detection summary and richer stage metadata.
@@ -129,6 +153,8 @@ Exit criteria:
 - Existing records continue to work in status responses.
 
 ## Phase 6: Research Mapping Extraction
+
+Status (2026-08-02): deferred until after MVP release validation and sufficient coverage/evaluation evidence exists.
 
 Goal: make ranking data-driven and explainable.
 
@@ -166,6 +192,8 @@ Exit criteria:
 - Team can quantify whether enough labeled data exists before attempting model training.
 
 ## Phase 7: Reliability, Tests, and Rollout Controls
+
+Status (2026-08-02): partially implemented. Contract, primary-result, PostgreSQL concurrency, webhook replay, and frontend workflow coverage exist. Operational alerting and the post-MVP experimentation ramp-down path remain open.
 
 Goal: make rollout safe and measurable.
 

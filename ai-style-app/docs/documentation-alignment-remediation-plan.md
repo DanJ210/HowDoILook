@@ -4,6 +4,21 @@
 > **Created:** 2026-08-01
 > **Remove when:** every required item below is complete, permanent documents reflect the implemented behavior, and the final validation checklist passes.
 
+## Current Resume Point
+
+Checkpoint (2026-08-02): PRs 1 through 5 of the MVP plan are merged. PR 5 implementation is complete, including automatic-result hierarchy, completion-only share/full-size actions, frontend tests, production build, and mocked desktop/mobile layout checks. The MVP is not yet release-validated because the live end-to-end smoke test and this document's final validation checklist have not been completed.
+
+Resume in this order:
+
+1. [ ] Sync local `master` with `origin/master`; PR #31 is the merged PR 5 baseline.
+2. [ ] Resolve the local public-image transport configuration needed for a real Replicate run, including the callback/source-image base decision or an explicit temporary deferral.
+3. [ ] Start PostgreSQL, Azurite, backend, worker, frontend, and the public tunnel; preflight the exact uploaded source-image URL through the tunnel.
+4. [ ] Run one live portrait through upload -> analysis -> automatic recommendation -> primary generation -> webhook completion, with no style selection or feedback required.
+5. [ ] Run and record every command and behavioral check in **Validation Checklist**. Do not infer live-smoke completion from mocked browser validation.
+6. [ ] Re-audit Workstream 7 against current permanent documents before checking items off; several entries may now be implemented but have not yet been verified item by item.
+
+After release validation, continue with the unresolved decisions and workstreams below. Do not remove this file until its removal gate passes.
+
 ## Purpose
 
 Track the gaps found while reviewing the repository READMEs, `ai-style-app/docs`, current runtime code, and configuration. This document is an execution aid, not a permanent product specification.
@@ -34,7 +49,7 @@ Top-level alignment assessment:
 
 - The upload, analysis, async queue, worker, Replicate, webhook, and status architecture remains aligned.
 - Automatic recommendation ranking and downstream generation remain aligned conceptually.
-- The active frontend is broader than the confirmed flow because it asks for gender, maintenance, vibe, hair-color, and beard preferences. The target first action should require only a portrait.
+- The active recommendations frontend now requires only a portrait and delivers the automatic primary before optional comparison or feedback.
 - The 3-to-4-variant final-selection experience should be treated as temporary data collection, not the long-term product north star.
 - The current short-style and beard-heavy catalog needs evaluation against the intended launch audience before recommendation quality claims are made.
 
@@ -221,7 +236,7 @@ Exit criteria:
 
 ### Planning and Prompt Notes
 
-- [ ] Add implementation status to `docs/recommendation-finalization-plan.md` so completed phases are not presented as future work.
+- [x] Add implementation status to `docs/recommendation-finalization-plan.md` so completed phases are not presented as future work.
 - [x] Update `docs/mvp-best-look-2week-plan.md` for the confirmed automatic-best product north star without expanding deferred scope.
 - [ ] Change `hairColor` to Replicate wire key `hair_color` in `docs/prompts/README.md`, or explicitly distinguish internal DTO names from external payload keys.
 
@@ -269,3 +284,5 @@ Record only meaningful decisions and completed work so this remains concise.
 | 2026-08-01 | Product direction | Confirmed photo-only automatic best recommendation as the target experience; reclassified multi-variant user ranking as optional learning data. |
 | 2026-08-01 | Automatic primary contract | Added persisted primary style/post/job linkage, owner-scoped status fields, public/feed alignment, legacy-row fallback, migration, and focused backend tests. Frontend polling alignment remains open. |
 | 2026-08-02 | Frontend automatic result | Added photo-only submission, session-level polling through generation, automatic primary completion without finalization, secondary experiments/feedback, and aligned smoke-test contracts. |
+| 2026-08-02 | PR 5 polish | Merged automatic-result hierarchy and completion-only share/full-size actions in PR #31; frontend tests, production build, and mocked desktop/mobile layout checks passed. Live end-to-end smoke validation remains open. |
+| 2026-08-02 | Planning checkpoint | Marked MVP implementation as merged but not release-validated, classified Phases 5 and 6 as post-MVP, and recorded the ordered resume path for validation and remaining remediation. |

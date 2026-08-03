@@ -16,6 +16,19 @@ During the learning phase, the system may generate 3 to 4 candidates and optiona
 4. The primary result is available without requiring style selection, preferences, or finalization.
 5. Telemetry, the system decision, generation outcome, and optional user feedback can be exported for future evaluation and model development.
 
+## Current Completion Checkpoint
+
+Status (2026-08-02): implementation for PRs 1 through 5 is merged. The MVP is feature-complete but not yet release-validated.
+
+Resume with:
+
+1. [ ] Run the full automated validation suite listed in `docs/documentation-alignment-remediation-plan.md`.
+2. [ ] Complete a live local smoke test using real backend, worker, PostgreSQL, Azurite, public image transport, Replicate submission, and webhook callback: upload one portrait -> automatic recommendation -> generated primary result.
+3. [ ] Verify the automatic primary is the result shown by status and public/feed retrieval, and that no style selection or feedback is required.
+4. [ ] Record the validation evidence in the remediation plan. If all MVP release checks pass, change this plan's status to release-validated.
+
+The mocked desktop/mobile browser pass completed during PR 5 validates frontend layout only; it does not satisfy the live smoke-test requirement.
+
 ## Must Build Now
 
 ## 1) Automatic Best-Decision Contract
@@ -129,7 +142,7 @@ MVP acceptance:
 - Telemetry v3 schema redesign.
 - Full ONNX stage interface refactor.
 - Advanced research mapping/scoring module extraction.
-- Multi-step polished redesign with share/gallery enhancements.
+- Gallery/history enhancements beyond the completion-only share and full-size actions implemented in PR 5.
 - Complex experimentation ramp controls beyond current pre-MVP defaults.
 
 ## Remove or Stop Doing Now
@@ -196,9 +209,11 @@ Exit:
 
 ## PR 5 (Days 13-14): MVP Polish and Release Checklist
 
-- UX copy cleanup for clarity.
-- Docs update for new canonical flow and endpoint usage.
-- Final smoke test pass across upload -> automatic recommendation -> generated primary result.
+Status: implementation complete and merged in PR #31. The automatic result now leads the active-session UI, rationale/experiments/feedback/telemetry remain secondary, and completion-only share/full-size actions are implemented. Release validation remains open pending the live smoke test and final suite in the checkpoint above.
+
+- [x] UX copy cleanup for clarity.
+- [x] Docs update for new canonical flow and endpoint usage.
+- [ ] Final smoke test pass across upload -> automatic recommendation -> generated primary result.
 
 Exit:
 
