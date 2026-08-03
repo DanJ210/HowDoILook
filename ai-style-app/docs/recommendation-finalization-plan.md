@@ -99,6 +99,8 @@ Exit criteria:
 
 ## Phase 4: Automatic-Result UX Polish
 
+Status (2026-08-02): implemented. The active session leads with the uncropped automatic primary result, keeps rationale, experiments, feedback, and telemetry secondary, and exposes share/full-size actions only after primary generation succeeds.
+
 Goal: refine the photo-only automatic-result experience without adding required choices.
 
 - Keep portrait upload, progress, and the automatic primary result as the page hierarchy.

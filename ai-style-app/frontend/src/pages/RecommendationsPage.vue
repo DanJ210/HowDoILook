@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useImageFileInput } from '@/composables/useImageFileInput'
 import StateCard from '@/components/StateCard.vue'
+import { sharePrimaryResult } from '@/utils/primaryResultActions'
 import { computeWorkflowStateLabel, hasPrimaryGenerationFailed } from '@/utils/recommendationWorkflow'
 
 const authStore = useAuthStore()
@@ -27,6 +28,9 @@ const variantRanks = ref<Record<string, 1 | 2 | 3 | null>>({})
 const feedbackMessage = ref<string | null>(null)
 const feedbackError = ref<string | null>(null)
 const isSubmittingFeedback = ref(false)
+const resultActionMessage = ref<string | null>(null)
+const resultActionError = ref<string | null>(null)
+const isSharingResult = ref(false)
 
 const feedbackTagOptions = [
   { value: 'tooBold', label: 'Too bold' },
@@ -62,6 +66,9 @@ const workflowStateLabel = computed(() => {
 const analysisSucceeded = computed(() => activeJob.value?.status === 'Succeeded')
 const hasFailed = computed(() => workflowStateLabel.value === 'failed')
 const hasCompleted = computed(() => workflowStateLabel.value === 'completed')
+const primaryResultImageUrl = computed(() => (
+  hasCompleted.value ? bestVariant.value?.resultImageUrl ?? null : null
+))
 const generationFailureMessage = computed(() => {
   if (!hasGenerationFailure.value) {
     return null
@@ -171,6 +178,12 @@ function resetFeedbackState() {
   isSubmittingFeedback.value = false
 }
 
+function resetResultActionState() {
+  resultActionMessage.value = null
+  resultActionError.value = null
+  isSharingResult.value = false
+}
+
 async function startRecommendation() {
   submitError.value = null
   feedbackMessage.value = null
@@ -192,6 +205,7 @@ async function startRecommendation() {
     persistJobId(created.analysisJobId)
     await syncRouteJobId(created.analysisJobId)
     resetFeedbackState()
+    resetResultActionState()
 
     recommendationsStore.startPolling(created.analysisJobId)
   } catch (err: unknown) {
@@ -269,6 +283,25 @@ function toggleTag(tag: string) {
   feedbackTags.value = [...feedbackTags.value, tag]
 }
 
+async function onSharePrimaryResult() {
+  if (!primaryResultImageUrl.value) return
+
+  isSharingResult.value = true
+  resultActionMessage.value = null
+  resultActionError.value = null
+
+  try {
+    const outcome = await sharePrimaryResult(primaryResultImageUrl.value)
+    resultActionMessage.value = outcome === 'copied' ? 'Result link copied.' : 'Result shared.'
+  } catch (err: unknown) {
+    if ((err as { name?: string })?.name !== 'AbortError') {
+      resultActionError.value = (err as { message?: string })?.message ?? 'Could not share this result.'
+    }
+  } finally {
+    isSharingResult.value = false
+  }
+}
+
 onUnmounted(() => {
   if (activeJobId.value) {
     recommendationsStore.stopPolling(activeJobId.value)
@@ -281,7 +314,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="mx-auto max-w-4xl px-4 py-6 sm:py-8">
+  <main class="mx-auto max-w-5xl px-4 py-6 sm:py-8">
     <h1 class="mb-2 text-2xl font-bold text-white">How do I look?</h1>
     <p class="mb-6 text-sm text-slate-300">
       Upload one portrait to receive an automatically selected best-look recommendation.
@@ -295,9 +328,20 @@ onMounted(async () => {
       padding-class="p-6"
     />
 
-    <div v-else class="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-      <section class="rounded-3xl border border-white/10 bg-white/5 p-5">
-        <h2 class="text-lg font-semibold text-white">Your portrait</h2>
+    <div
+      v-else
+      :class="[
+        'grid gap-6',
+        activeJobId ? 'grid-cols-1' : 'lg:grid-cols-[0.9fr_1.1fr]'
+      ]"
+    >
+      <section :class="['rounded-2xl border border-white/10 bg-white/5 p-5', activeJobId ? 'order-2' : 'order-1']">
+        <h2 class="text-lg font-semibold text-white">
+          {{ activeJobId ? 'Try another portrait' : 'Your portrait' }}
+        </h2>
+        <p v-if="activeJobId" class="mt-1 text-sm text-slate-400">
+          Your current result stays available until a new analysis starts.
+        </p>
 
         <div class="mt-4 space-y-4">
           <div>
@@ -343,13 +387,32 @@ onMounted(async () => {
             @click="startRecommendation"
             class="w-full rounded-2xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {{ isSubmitting ? 'Submitting…' : 'Analyze and Recommend' }}
+            {{ isSubmitting ? 'Submitting…' : activeJobId ? 'Analyze another portrait' : 'Analyze and Recommend' }}
           </button>
         </div>
       </section>
 
-      <section class="rounded-3xl border border-white/10 bg-white/5 p-5">
-        <h2 class="text-lg font-semibold text-white">Your automatic result</h2>
+      <section :class="['rounded-2xl border border-white/10 bg-white/5 p-5', activeJobId ? 'order-1' : 'order-2']">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-wide text-sky-300">Automatic pick</p>
+            <h2 class="mt-1 text-xl font-semibold text-white">Your result</h2>
+          </div>
+
+          <span
+            v-if="activeJobId"
+            :class="[
+              'rounded-full px-3 py-1 text-sm font-medium capitalize',
+              hasFailed
+                ? 'bg-rose-500/20 text-rose-100'
+                : hasCompleted
+                  ? 'bg-emerald-500/20 text-emerald-100'
+                  : 'bg-sky-500/20 text-sky-100'
+            ]"
+          >
+            {{ workflowStateLabel }}
+          </span>
+        </div>
 
         <StateCard
           v-if="!activeJobId"
@@ -359,19 +422,7 @@ onMounted(async () => {
         />
 
         <div v-else-if="activeJob" class="mt-4 space-y-4">
-          <div class="flex flex-wrap items-center gap-2">
-            <span
-              :class="[
-                'rounded-full px-3 py-1 text-sm font-medium capitalize',
-                hasFailed
-                  ? 'bg-rose-500/20 text-rose-100'
-                  : hasCompleted
-                    ? 'bg-emerald-500/20 text-emerald-100'
-                    : 'bg-sky-500/20 text-sky-100'
-              ]"
-            >
-              {{ workflowStateLabel }}
-            </span>
+          <div v-if="pollingState === 'polling' || pollingState === 'error'" class="flex flex-wrap items-center gap-2">
             <span v-if="pollingState === 'polling'" class="text-sm text-slate-400">Checking for updates…</span>
             <span v-else-if="pollingState === 'error'" class="text-sm text-rose-300">Updates paused</span>
           </div>
@@ -389,8 +440,61 @@ onMounted(async () => {
             </p>
           </div>
 
-          <div v-if="analysisSucceeded" class="space-y-3">
-            <h3 class="text-base font-semibold">Best recommendation</h3>
+          <div v-if="analysisSucceeded && !hasFailed" class="space-y-4">
+            <div class="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/60">
+              <div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                <div>
+                  <p class="text-xs uppercase tracking-wide text-slate-400">Selected for you</p>
+                  <h3 class="mt-1 text-lg font-semibold text-white">
+                    {{ bestRecommendation?.styleName ?? 'Preparing your best look' }}
+                  </h3>
+                </div>
+                <span v-if="primaryResultImageUrl" class="text-sm font-medium text-emerald-200">Ready</span>
+              </div>
+
+              <img
+                v-if="primaryResultImageUrl"
+                :src="primaryResultImageUrl"
+                alt="Your automatic generated style result"
+                class="mx-auto max-h-160 min-h-80 w-full bg-black/20 object-contain"
+              />
+              <div v-else class="grid min-h-80 place-items-center px-6 text-center">
+                <div>
+                  <p class="text-sm font-medium text-white">
+                    {{ hasCompleted ? 'Archiving your automatic result' : 'Creating your automatic result' }}
+                  </p>
+                  <p class="mt-1 text-sm text-slate-400">
+                    {{ bestVariant ? `Generation status: ${bestVariant.status}` : 'Preparing generation…' }}
+                  </p>
+                </div>
+              </div>
+
+              <div v-if="primaryResultImageUrl" class="flex flex-wrap gap-2 border-t border-white/10 px-4 py-3">
+                <button
+                  type="button"
+                  :disabled="isSharingResult"
+                  @click="onSharePrimaryResult"
+                  class="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {{ isSharingResult ? 'Sharing…' : 'Share result' }}
+                </button>
+                <a
+                  :href="primaryResultImageUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="rounded-xl border border-white/15 px-4 py-2 text-sm font-medium text-slate-100 transition hover:bg-white/10"
+                >
+                  View full size
+                </a>
+              </div>
+            </div>
+
+            <p v-if="resultActionMessage" aria-live="polite" class="text-sm text-emerald-200">
+              {{ resultActionMessage }}
+            </p>
+            <p v-if="resultActionError" role="alert" class="text-sm text-rose-200">
+              {{ resultActionError }}
+            </p>
 
             <StateCard
               v-if="!bestRecommendation"
@@ -399,41 +503,20 @@ onMounted(async () => {
               padding-class="p-4"
             />
 
-            <article
-              v-else
-              class="rounded-2xl border border-white/10 bg-slate-900/50 p-4"
-            >
-              <div class="mb-2 flex items-center justify-between gap-4">
-                <h4 class="text-sm font-semibold text-white">{{ bestRecommendation.styleName }}</h4>
-                <span class="rounded-full bg-sky-500/20 px-2 py-1 text-xs font-medium text-sky-200">
-                  {{ bestRecommendation.score.toFixed(3) }}
-                </span>
+            <details v-else class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
+              <summary class="cursor-pointer text-sm font-semibold text-white">Why this look</summary>
+              <div class="mt-3">
+                <p class="mb-1 text-xs uppercase tracking-wide text-slate-400">Reasons</p>
+                <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
+                  <li v-for="reason in bestRecommendation.reasons" :key="reason">{{ reason }}</li>
+                </ul>
+
+                <p class="mb-1 mt-3 text-xs uppercase tracking-wide text-slate-400">Constraints</p>
+                <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
+                  <li v-for="constraint in bestRecommendation.constraints" :key="constraint">{{ constraint }}</li>
+                </ul>
               </div>
-
-              <p class="mb-1 text-xs uppercase tracking-wide text-slate-400">Reasons</p>
-              <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
-                <li v-for="reason in bestRecommendation.reasons" :key="reason">{{ reason }}</li>
-              </ul>
-
-              <p class="mb-1 mt-3 text-xs uppercase tracking-wide text-slate-400">Constraints</p>
-              <ul class="list-disc space-y-1 pl-5 text-sm text-slate-200">
-                <li v-for="constraint in bestRecommendation.constraints" :key="constraint">{{ constraint }}</li>
-              </ul>
-            </article>
-
-            <div class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
-              <h3 class="text-sm font-semibold">Generated preview</h3>
-              <div v-if="bestVariant" class="mt-2 text-sm text-slate-200">
-                <img
-                  v-if="bestVariant.resultImageUrl"
-                  :src="bestVariant.resultImageUrl"
-                  alt="Best generated recommendation"
-                  class="max-h-72 w-full rounded-xl object-cover"
-                />
-                <p v-else>Generation status: {{ bestVariant.status }}</p>
-              </div>
-              <p v-else class="mt-2 text-sm text-slate-400">Preparing your automatic result…</p>
-            </div>
+            </details>
 
             <details v-if="hasCompleted && succeededExperimentalVariants.length > 0" class="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
               <summary class="cursor-pointer text-sm font-semibold text-white">Optional comparison</summary>
